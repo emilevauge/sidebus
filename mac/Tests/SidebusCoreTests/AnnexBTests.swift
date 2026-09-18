@@ -1,0 +1,61 @@
+import Foundation
+import XCTest
+
+@testable import SidebusCore
+
+final class AnnexBTests: XCTestCase {
+
+    func testConversionDeuxNalUnits() throws {
+        var avcc = Data()
+        avcc.append(contentsOf: [0x00, 0x00, 0x00, 0x03])
+        avcc.append(contentsOf: [0x65, 0x88, 0x84])
+        avcc.append(contentsOf: [0x00, 0x00, 0x00, 0x02])
+        avcc.append(contentsOf: [0x41, 0x9A])
+
+        let annexB = try AnnexB.fromLengthPrefixed(avcc, nalLengthSize: 4)
+
+        XCTAssertEqual(
+            annexB,
+            Data([
+                0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84,
+                0x00, 0x00, 0x00, 0x01, 0x41, 0x9A,
+            ])
+        )
+    }
+
+    func testConversionPrefixeSurDeuxOctets() throws {
+        let avcc = Data([0x00, 0x02, 0x41, 0x9A])
+        let annexB = try AnnexB.fromLengthPrefixed(avcc, nalLengthSize: 2)
+        XCTAssertEqual(annexB, Data([0x00, 0x00, 0x00, 0x01, 0x41, 0x9A]))
+    }
+
+    func testBufferVide() throws {
+        XCTAssertEqual(try AnnexB.fromLengthPrefixed(Data(), nalLengthSize: 4), Data())
+    }
+
+    func testPrefixeInvalide() {
+        XCTAssertThrowsError(try AnnexB.fromLengthPrefixed(Data([0x01]), nalLengthSize: 5)) { error in
+            guard case AnnexB.Error.invalidLengthSize(5) = error else {
+                return XCTFail("erreur inattendue : \(error)")
+            }
+        }
+    }
+
+    func testFluxTronque() {
+        // Annonce 4 octets de NAL, n'en fournit que 2.
+        let avcc = Data([0x00, 0x00, 0x00, 0x04, 0x41, 0x9A])
+        XCTAssertThrowsError(try AnnexB.fromLengthPrefixed(avcc, nalLengthSize: 4)) { error in
+            guard case AnnexB.Error.truncated = error else {
+                return XCTFail("erreur inattendue : \(error)")
+            }
+        }
+    }
+
+    func testEnteteTronquee() {
+        XCTAssertThrowsError(try AnnexB.fromLengthPrefixed(Data([0x00, 0x00]), nalLengthSize: 4)) { error in
+            guard case AnnexB.Error.truncated = error else {
+                return XCTFail("erreur inattendue : \(error)")
+            }
+        }
+    }
+}

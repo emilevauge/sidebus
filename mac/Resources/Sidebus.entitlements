@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Sidebus n'est pas sandboxé : CGVirtualDisplay est une API privée, donc la
+	  distribution passe hors App Store de toute façon.
+
+	  L'injection d'événements et la capture d'écran ne s'obtiennent pas par entitlement
+	  mais par autorisation TCC, accordée par l'utilisateur.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- Runtime renforcé : exigé pour la notarisation. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+</dict>
+</plist>

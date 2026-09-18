@@ -1,0 +1,18 @@
+.DS_Store
+
+# macOS, SwiftPM
+mac/.build/
+mac/.swiftpm/
+*.xcuserdatad
+
+# Android, Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.iml
+.idea/
+
+# bundle produit par mac/Scripts/bundle.sh
+mac/build/
