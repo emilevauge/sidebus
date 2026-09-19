@@ -61,6 +61,46 @@ public enum AnnexB {
         return output
     }
 
+    /// Convertit un buffer AVCC en Annex B **sur place**, sans allouer.
+    ///
+    /// Le préfixe de longueur fait quatre octets, le code de départ aussi : il suffit donc
+    /// de réécrire les quatre octets de longueur par `00 00 00 01`. Ça supprime une copie
+    /// complète de chaque frame encodée.
+    ///
+    /// Les tailles de préfixe autres que quatre, jamais vues en sortie de VideoToolbox,
+    /// retombent sur la conversion avec allocation.
+    public static func convertInPlace(_ data: inout Data, nalLengthSize: Int) throws {
+        guard nalLengthSize == 4 else {
+            data = try fromLengthPrefixed(data, nalLengthSize: nalLengthSize)
+            return
+        }
+
+        try data.withUnsafeMutableBytes { raw in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+            let count = raw.count
+            var offset = 0
+
+            while offset < count {
+                guard offset + 4 <= count else {
+                    throw Error.truncated(offset: offset)
+                }
+                let length = (Int(base[offset]) << 24)
+                    | (Int(base[offset + 1]) << 16)
+                    | (Int(base[offset + 2]) << 8)
+                    | Int(base[offset + 3])
+                guard length >= 0, offset + 4 + length <= count else {
+                    throw Error.truncated(offset: offset + 4)
+                }
+
+                base[offset] = 0
+                base[offset + 1] = 0
+                base[offset + 2] = 0
+                base[offset + 3] = 1
+                offset += 4 + length
+            }
+        }
+    }
+
     /// Jeux de paramètres d'une description de format, concaténés en Annex B :
     /// SPS et PPS en H.264, VPS, SPS et PPS en HEVC.
     public static func parameterSets(from formatDescription: CMFormatDescription) -> Data? {

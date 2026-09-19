@@ -128,14 +128,13 @@ class TransportServer(
     ) {
         val input = socket.getInputStream()
         val decoder = MessageDecoder()
-        val chunk = ByteArray(64 * 1024)
 
         while (currentCoroutineContext().isActive) {
-            val read = input.read(chunk)
+            // Lecture directe dans le tampon du décodeur : pas de tableau intermédiaire.
+            val read = decoder.readFrom(input)
             if (read < 0) return
             if (read == 0) continue
 
-            decoder.append(chunk, read)
             while (true) {
                 val message = decoder.next() ?: break
                 onEvent(Event.Received(message, connection))

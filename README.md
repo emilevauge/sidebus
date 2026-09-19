@@ -165,6 +165,26 @@ Attention aux décodeurs logiciels. Celui de l'émulateur Android rend des chrom
 HEVC, blocs verts et magenta, là où H.264 passe parfaitement sur le même montage.
 `SIDEBUS_CODEC=h264` force le repli.
 
+## Où passe le travail
+
+Rien de lourd ne touche le CPU. La capture, la mise à l'échelle et la conversion de format
+se font dans le chemin graphique du système, l'encodage sur le moteur média dédié, et côté
+tablette le décodage matériel écrit directement dans la `Surface`, composée sans copie. Il
+ne faut surtout pas insérer d'étape GPU à la main dans ce chemin : rendre dans une texture
+au lieu d'une `SurfaceView` ajouterait une frame de latence.
+
+Ce qui reste sur CPU ne concerne que des octets déjà compressés :
+
+- la conversion vers Annex B se fait **sur place**. Le préfixe de longueur AVCC et le code
+  de départ font tous deux quatre octets, il suffit donc de réécrire les quatre octets de
+  longueur, sans allouer.
+- le tampon de réception côté Android travaille par déplacement d'index, et le socket est
+  lu directement dedans. La version naïve recopiait tout l'en cours à chaque paquet : une
+  frame arrivant en plusieurs morceaux se payait autant de recopies complètes. Mesuré sur
+  un Xiaomi 15 sous charge : 28,5 % de CPU avant, 25,0 % après.
+- une frame sans rectangle modifié n'est pas encodée du tout. Écran immobile : 0,4 % de CPU
+  sur le Mac, 0,3 % sur le téléphone.
+
 ## Rendu côté tablette
 
 `MediaCodec` en mode asynchrone, configuré directement sur la `Surface`, avec

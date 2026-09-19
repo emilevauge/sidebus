@@ -41,6 +41,14 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
             "API privée absente"
         )
 
+        // macOS refuse un second écran virtuel : si l'application tourne déjà et détient
+        // le sien, ce test n'a pas de place pour s'exécuter.
+        let existing = await MainActor.run { (try? DisplayEnumerator.activeDisplays()) ?? [] }
+        try XCTSkipIf(
+            existing.contains { $0.name.contains("Sidebus") },
+            "un écran virtuel Sidebus est déjà actif, application lancée"
+        )
+
         let before = try DisplayEnumerator.activeDisplayIDs()
         try XCTSkipIf(before.isEmpty, "aucun écran éveillé")
 

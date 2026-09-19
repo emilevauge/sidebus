@@ -263,10 +263,17 @@ private final class OutputSink: @unchecked Sendable {
         }
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
-        guard let data = try? AnnexB.fromLengthPrefixed(
-            avcc,
-            nalLengthSize: AnnexB.nalLengthSize(of: formatDescription)
-        ) else { return }
+        // Conversion sur place : les octets copiés du `CMBlockBuffer` deviennent
+        // directement de l'Annex B, sans seconde allocation.
+        var data = avcc
+        do {
+            try AnnexB.convertInPlace(
+                &data,
+                nalLengthSize: AnnexB.nalLengthSize(of: formatDescription)
+            )
+        } catch {
+            return
+        }
 
         var parameterSets: Data?
         lock.lock()

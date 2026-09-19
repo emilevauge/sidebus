@@ -128,6 +128,12 @@ private final class FrameOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             status == .complete
         else { return }
 
+        // Rectangles modifiés : une frame qui n'en a aucun ne montre rien de neuf.
+        // L'encoder coûterait du CPU et du débit pour une image identique.
+        if let rects = attachments.first?[.dirtyRects] as? [Any], rects.isEmpty {
+            return
+        }
+
         guard let imageBuffer = sampleBuffer.imageBuffer else { return }
 
         continuation.yield(

@@ -59,3 +59,39 @@ final class AnnexBTests: XCTestCase {
         }
     }
 }
+
+final class AnnexBInPlaceTests: XCTestCase {
+
+    private let avcc = Data([0x00, 0x00, 0x00, 0x03, 0x65, 0x88, 0x84])
+        + Data([0x00, 0x00, 0x00, 0x02, 0x41, 0x9A])
+
+    func testMemeResultatQueLaVersionAvecAllocation() throws {
+        var inPlace = avcc
+        try AnnexB.convertInPlace(&inPlace, nalLengthSize: 4)
+        XCTAssertEqual(inPlace, try AnnexB.fromLengthPrefixed(avcc, nalLengthSize: 4))
+    }
+
+    func testTailleInchangee() throws {
+        var data = avcc
+        try AnnexB.convertInPlace(&data, nalLengthSize: 4)
+        XCTAssertEqual(data.count, avcc.count, "la conversion sur place ne doit rien ajouter")
+        XCTAssertEqual(data.prefix(4), AnnexB.startCode)
+    }
+
+    func testBufferVide() throws {
+        var data = Data()
+        try AnnexB.convertInPlace(&data, nalLengthSize: 4)
+        XCTAssertTrue(data.isEmpty)
+    }
+
+    func testFluxTronqueDetecte() {
+        var data = Data([0x00, 0x00, 0x00, 0x04, 0x41, 0x9A])
+        XCTAssertThrowsError(try AnnexB.convertInPlace(&data, nalLengthSize: 4))
+    }
+
+    func testPrefixeSurDeuxOctetsRetombeSurLAutreChemin() throws {
+        var data = Data([0x00, 0x02, 0x41, 0x9A])
+        try AnnexB.convertInPlace(&data, nalLengthSize: 2)
+        XCTAssertEqual(data, Data([0x00, 0x00, 0x00, 0x01, 0x41, 0x9A]))
+    }
+}

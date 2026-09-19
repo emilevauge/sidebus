@@ -91,8 +91,16 @@ object MessageCodec {
     }
 
     /** Décode le payload d'un message dont l'en tête a déjà été lu. */
-    fun decodePayload(type: Int, flags: Int, payload: ByteArray): Message {
-        val reader = ByteReader(payload)
+    fun decodePayload(type: Int, flags: Int, payload: ByteArray): Message =
+        decodePayload(type, flags, payload, 0, payload.size)
+
+    /**
+     * Même chose, sans exiger que le payload occupe un tableau à lui : il est lu en place
+     * dans le tampon de réception. Une frame vidéo n'est copiée qu'une fois, au moment de
+     * constituer le tableau qui part au décodeur.
+     */
+    fun decodePayload(type: Int, flags: Int, source: ByteArray, offset: Int, length: Int): Message {
+        val reader = ByteReader(source, offset, offset + length)
         return when (type) {
             MessageType.HELLO -> Message.Hello(reader.u16(), reader.string(), reader.uuid())
 
@@ -134,7 +142,7 @@ object MessageCodec {
             MessageType.KEYFRAME_REQ -> Message.KeyframeRequest
             MessageType.STATS -> Message.Stats(reader.u32(), reader.u32(), reader.u16())
             MessageType.BYE -> Message.Bye(reader.u8())
-            else -> Message.Unknown(type, flags, payload)
+            else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }
 
@@ -177,12 +185,14 @@ object MessageCodec {
     }
 }
 
-/** Lecture little endian, bornée. */
-private class ByteReader(private val data: ByteArray) {
-    private var offset = 0
-
+/** Lecture little endian, bornée, sur une tranche d'un tableau. */
+private class ByteReader(
+    private val data: ByteArray,
+    private var offset: Int = 0,
+    private val end: Int = data.size,
+) {
     private fun take(count: Int): Int {
-        if (offset + count > data.size) {
+        if (offset + count > end) {
             throw ProtocolException("payload tronqué à l'offset $offset")
         }
         val start = offset
@@ -225,40 +235,99 @@ private class ByteReader(private val data: ByteArray) {
         return UUID(buffer.long, buffer.long)
     }
 
-    fun rest(): ByteArray = data.copyOfRange(offset, data.size).also { offset = data.size }
+    fun rest(): ByteArray = data.copyOfRange(offset, end).also { offset = end }
 }
 
-/** Accumule les octets reçus et en sort les messages complets. */
-class MessageDecoder {
-    private var buffer = ByteArray(0)
+/**
+ * Accumule les octets reçus et en sort les messages complets.
+ *
+ * Le tampon est lu et écrit par déplacements d'index, sans jamais recopier ce qui est
+ * déjà là. La version naïve, qui agrandissait le tableau à chaque paquet, recopiait tout
+ * l'en cours à chaque fois : une frame vidéo arrivant en plusieurs morceaux se payait
+ * autant de recopies complètes.
+ */
+class MessageDecoder(initialCapacity: Int = 256 * 1024) {
+    private var buffer = ByteArray(initialCapacity)
+    private var readOffset = 0
+    private var writeOffset = 0
+
+    /** Lit directement du socket dans le tampon, sans tableau intermédiaire. */
+    fun readFrom(input: java.io.InputStream): Int {
+        ensureWritable(READ_CHUNK)
+        val read = input.read(buffer, writeOffset, buffer.size - writeOffset)
+        if (read > 0) writeOffset += read
+        return read
+    }
 
     fun append(data: ByteArray, count: Int = data.size) {
-        buffer = buffer.copyOf(buffer.size + count).also { data.copyInto(it, buffer.size, 0, count) }
+        ensureWritable(count)
+        data.copyInto(buffer, writeOffset, 0, count)
+        writeOffset += count
     }
 
     /** Renvoie le prochain message complet, ou `null` s'il manque des octets. */
     fun next(): Message? {
-        if (buffer.size < MessageCodec.HEADER_SIZE) return null
+        val available = writeOffset - readOffset
+        if (available < MessageCodec.HEADER_SIZE) return null
 
-        val header = ByteBuffer.wrap(buffer, 0, MessageCodec.HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN)
-        val magic = header.get().toInt() and 0xFF
+        val magic = buffer[readOffset].toInt() and 0xFF
         if (magic != MessageCodec.MAGIC) {
             throw ProtocolException("octet magique invalide : 0x%02X".format(magic))
         }
-        val type = header.get().toInt() and 0xFF
-        val flags = header.short.toInt() and 0xFFFF
-        val length = header.int
+        val type = buffer[readOffset + 1].toInt() and 0xFF
+        val flags = (buffer[readOffset + 2].toInt() and 0xFF) or
+            ((buffer[readOffset + 3].toInt() and 0xFF) shl 8)
+        var length = 0
+        for (index in 0 until 4) {
+            length = length or ((buffer[readOffset + 4 + index].toInt() and 0xFF) shl (8 * index))
+        }
 
         if (length < 0 || length > MessageCodec.MAX_PAYLOAD_LENGTH) {
             throw ProtocolException("payload de $length octets, au dessus de la borne")
         }
 
         val total = MessageCodec.HEADER_SIZE + length
-        if (buffer.size < total) return null
+        if (available < total) {
+            // Réserve la place du message entier : la lecture suivante le complétera
+            // d'un coup, sans réallocation au milieu.
+            ensureWritable(total - available)
+            return null
+        }
 
-        val payload = buffer.copyOfRange(MessageCodec.HEADER_SIZE, total)
-        buffer = buffer.copyOfRange(total, buffer.size)
+        val message = MessageCodec.decodePayload(
+            type,
+            flags,
+            buffer,
+            readOffset + MessageCodec.HEADER_SIZE,
+            length,
+        )
+        readOffset += total
+        if (readOffset == writeOffset) {
+            readOffset = 0
+            writeOffset = 0
+        }
+        return message
+    }
 
-        return MessageCodec.decodePayload(type, flags, payload)
+    private fun ensureWritable(count: Int) {
+        if (buffer.size - writeOffset >= count) return
+
+        val used = writeOffset - readOffset
+        if (used + count <= buffer.size) {
+            // Le compactage suffit : on ramène l'en cours au début.
+            buffer.copyInto(buffer, 0, readOffset, writeOffset)
+        } else {
+            var capacity = buffer.size
+            while (capacity - used < count) capacity *= 2
+            val grown = ByteArray(capacity)
+            buffer.copyInto(grown, 0, readOffset, writeOffset)
+            buffer = grown
+        }
+        readOffset = 0
+        writeOffset = used
+    }
+
+    private companion object {
+        const val READ_CHUNK = 64 * 1024
     }
 }

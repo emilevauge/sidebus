@@ -155,6 +155,42 @@ class MessageCodecTest {
         assertNotNull(decoder.next())
     }
 
+    /** Le tampon à index doit survivre à une frame plus grosse que sa capacité initiale. */
+    @Test
+    fun grosseFrameEnPlusieursMorceaux() {
+        val payload = ByteArray(400_000) { (it % 251).toByte() }
+        val encoded = MessageCodec.encode(Message.VideoFrame(42, true, payload))
+
+        val decoder = MessageDecoder(initialCapacity = 4096)
+        var offset = 0
+        val chunk = 7_000
+        while (offset < encoded.size) {
+            val count = minOf(chunk, encoded.size - offset)
+            decoder.append(encoded.copyOfRange(offset, offset + count), count)
+            offset += count
+            if (offset < encoded.size) {
+                assertNull("message rendu avant d'être complet", decoder.next())
+            }
+        }
+
+        val decoded = decoder.next() as Message.VideoFrame
+        assertEquals(42L, decoded.timestamp)
+        assertTrue(decoded.isKeyframe)
+        assertArrayEquals(payload, decoded.data)
+        assertNull(decoder.next())
+    }
+
+    /** Plusieurs messages d'affilée, pour vérifier le compactage du tampon. */
+    @Test
+    fun centMessagesDeSuite() {
+        val decoder = MessageDecoder(initialCapacity = 1024)
+        repeat(100) { index ->
+            decoder.append(MessageCodec.encode(Message.Ping(index.toLong())))
+            assertEquals(Message.Ping(index.toLong()), decoder.next())
+            assertNull(decoder.next())
+        }
+    }
+
     @Test
     fun magicInvalideEstFatal() {
         val decoder = MessageDecoder()
