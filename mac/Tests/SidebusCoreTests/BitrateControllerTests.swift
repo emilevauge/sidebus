@@ -4,7 +4,7 @@ import XCTest
 
 final class BitrateControllerTests: XCTestCase {
 
-    func testBaisseFranchementQuandCaDroppeBeaucoup() {
+    func testCutsSharplyOnHeavyDropping() {
         var controller = BitrateController(profile: .wifi)
         let start = controller.bitrate
 
@@ -14,27 +14,27 @@ final class BitrateControllerTests: XCTestCase {
         XCTAssertEqual(controller.bitrate, Int(Double(start) * 0.6))
     }
 
-    func testBaisseDoucementSurQuelquesDroppes() {
+    func testCutsGentlyOnAFewDrops() {
         var controller = BitrateController(profile: .wifi)
         let start = controller.bitrate
         controller.apply(received: 92, dropped: 8)
         XCTAssertEqual(controller.bitrate, Int(Double(start) * 0.85))
     }
 
-    func testNeRemontePasImmediatement() {
+    func testDoesNotClimbBackImmediately() {
         var controller = BitrateController(profile: .wifi)
         controller.apply(received: 50, dropped: 50)
         let low = controller.bitrate
 
         XCTAssertNil(controller.apply(received: 100, dropped: 0))
         XCTAssertNil(controller.apply(received: 100, dropped: 0))
-        XCTAssertEqual(controller.bitrate, low, "remontée trop rapide")
+        XCTAssertEqual(controller.bitrate, low, "climbed back too fast")
 
         XCTAssertNotNil(controller.apply(received: 100, dropped: 0))
         XCTAssertGreaterThan(controller.bitrate, low)
     }
 
-    func testResteDansLesBornesDuProfil() {
+    func testStaysWithinTheProfileBounds() {
         var controller = BitrateController(profile: .wifi)
         for _ in 0..<50 { controller.apply(received: 10, dropped: 90) }
         XCTAssertEqual(controller.bitrate, BitrateController.Profile.wifi.minimum)
@@ -43,7 +43,7 @@ final class BitrateControllerTests: XCTestCase {
         XCTAssertEqual(controller.bitrate, BitrateController.Profile.wifi.maximum)
     }
 
-    func testProfilUsbPlusGenereuxQueWifi() {
+    func testUsbProfileIsMoreGenerousThanWifi() {
         XCTAssertGreaterThan(
             BitrateController.Profile.usb.start,
             BitrateController.Profile.wifi.start
@@ -54,7 +54,7 @@ final class BitrateControllerTests: XCTestCase {
         )
     }
 
-    func testBaisseLaCadenceQuandLeDebitPlancherNeSuffitPas() {
+    func testDropsTheFrameRateWhenTheFloorBitrateIsNotEnough() {
         var controller = BitrateController(profile: .wifi)
         for _ in 0..<50 { controller.apply(received: 10, dropped: 90) }
 
@@ -62,14 +62,14 @@ final class BitrateControllerTests: XCTestCase {
             controller.suggestedFrameRate(current: 60, received: 10, dropped: 90),
             30
         )
-        // Une fois la tablette apaisée, on peut revenir à 60.
+        // Once the tablet has calmed down, 60 is reachable again.
         XCTAssertEqual(
             controller.suggestedFrameRate(current: 30, received: 100, dropped: 0),
             60
         )
     }
 
-    func testMesureVideIgnoree() {
+    func testEmptyMeasurementIsIgnored() {
         var controller = BitrateController(profile: .usb)
         XCTAssertNil(controller.apply(received: 0, dropped: 0))
     }

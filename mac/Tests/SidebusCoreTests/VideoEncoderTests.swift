@@ -7,7 +7,7 @@ import XCTest
 
 final class VideoEncoderTests: XCTestCase {
 
-    func testEncodageProduitDuAnnexBAvecParametres() async throws {
+    func testEncodingProducesAnnexBWithParameterSets() async throws {
         let width = 640
         let height = 480
         let fps = 30
@@ -45,15 +45,15 @@ final class VideoEncoderTests: XCTestCase {
         XCTAssertFalse(frames.isEmpty)
 
         let first = try XCTUnwrap(frames.first)
-        XCTAssertTrue(first.isKeyframe, "la première frame doit être une keyframe")
+        XCTAssertTrue(first.isKeyframe, "the first frame must be a keyframe")
         XCTAssertEqual(first.data.prefix(4), AnnexB.startCode)
 
-        let parameterSets = try XCTUnwrap(first.parameterSets, "SPS/PPS attendus sur la première frame")
+        let parameterSets = try XCTUnwrap(first.parameterSets, "SPS/PPS expected on the first frame")
         XCTAssertEqual(parameterSets.prefix(4), AnnexB.startCode)
-        // SPS puis PPS, donc deux codes de départ au moins.
+        // SPS then PPS, so at least two start codes.
         XCTAssertGreaterThanOrEqual(occurrences(of: AnnexB.startCode, in: parameterSets), 2)
 
-        // Les frames suivantes ne réémettent pas les paramètres.
+        // Later frames do not re-emit the parameter sets.
         XCTAssertTrue(frames.dropFirst().allSatisfy { $0.parameterSets == nil })
     }
 
@@ -62,7 +62,7 @@ final class VideoEncoderTests: XCTestCase {
     private func makePixelBuffer(width: Int, height: Int, luma: UInt8) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [
-            // L'encodeur matériel exige un buffer adossé à un IOSurface.
+            // The hardware encoder demands a buffer backed by an IOSurface.
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
         ]
         let status = CVPixelBufferCreate(
@@ -98,10 +98,10 @@ final class VideoEncoderTests: XCTestCase {
 
 final class EncoderTerminationTests: XCTestCase {
 
-    /// Quand la capture s'arrête, l'encodeur doit fermer son flux : c'est ce qui prévient
-    /// le consommateur. Sans ça, il attend des frames qui ne viendront jamais et la
-    /// tablette reste figée sur sa dernière image.
-    func testLeFluxSeTermineQuandLEncodeurEstArrete() async throws {
+    /// When capture stops, the encoder must close its stream: that is what tells the
+    /// consumer. Without it, the consumer waits for frames that never come and the tablet
+    /// stays frozen on its last picture.
+    func testTheStreamEndsWhenTheEncoderStops() async throws {
         let encoder = try VideoEncoder(
             configuration: VideoEncoderConfiguration(width: 320, height: 240, fps: 30)
         )
@@ -114,6 +114,6 @@ final class EncoderTerminationTests: XCTestCase {
         await encoder.finish()
 
         let completed = try await withTimeout(.seconds(3)) { await terminated.value }
-        XCTAssertTrue(completed, "le flux encodé ne s'est pas terminé")
+        XCTAssertTrue(completed, "the encoded stream did not end")
     }
 }

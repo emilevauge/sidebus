@@ -1,13 +1,12 @@
 import Foundation
 import Network
 
-/// Découverte USB : suit les appareils vus par le serveur adb, met en place le tunnel de
-/// port, et lance l'application sur la tablette si besoin.
+/// USB discovery: follows the devices the adb server sees, sets up the port tunnel, and
+/// starts the application on the tablet when needed.
 ///
-/// Le flux `host:track-devices` du serveur adb est persistant : le serveur pousse une
-/// nouvelle liste à chaque branchement ou débranchement, sans qu'on ait à interroger.
-/// C'est la même approche que scrcpy (Apache 2.0, voir PLAN.md section 5), réimplémentée
-/// ici sur `NWConnection`.
+/// The adb server's `host:track-devices` stream is persistent: the server pushes a fresh
+/// list on every plug and unplug, with no polling on our side. Same approach as scrcpy
+/// (Apache 2.0, see mac/THIRD_PARTY.md), reimplemented here on `NWConnection`.
 public actor AdbWatcher: PeerDiscovery {
 
     public struct Device: Sendable, Hashable {
@@ -30,12 +29,12 @@ public actor AdbWatcher: PeerDiscovery {
                     utiliser le Wi-Fi.
                     """
             case let .commandFailed(command, status, output):
-                return "adb \(command) a échoué (code \(status)) : \(output)"
+                return "adb \(command) failed (code \(status)): \(output)"
             }
         }
     }
 
-    /// Emplacements fouillés, dans l'ordre. Le PATH d'abord, comme pour tout outil.
+    /// Locations searched, in order. PATH first, as for any tool.
     private static let searchPaths = [
         "/opt/homebrew/bin/adb",
         "/usr/local/bin/adb",
@@ -66,8 +65,8 @@ public actor AdbWatcher: PeerDiscovery {
 
     public let port: UInt16
 
-    /// Nom commercial de chaque appareil, appris par `getprop`. Sans lui la liste n'affiche
-    /// que des numéros de série adb, illisibles.
+    /// Marketing name of each device, learned through `getprop`. Without it the list shows
+    /// nothing but unreadable adb serials.
     private var models: [String: String] = [:]
     private var connection: NWConnection?
     private var continuation: AsyncStream<[Peer]>.Continuation?
@@ -77,7 +76,7 @@ public actor AdbWatcher: PeerDiscovery {
         self.port = port
     }
 
-    /// Flux des tablettes vues en USB. Chaque élément est la liste complète, pas un delta.
+    /// Stream of tablets seen on USB. Each element is the full list, not a delta.
     public func start() async -> AsyncStream<[Peer]> {
         await stop()
 
@@ -103,7 +102,7 @@ public actor AdbWatcher: PeerDiscovery {
             return
         }
 
-        // Le serveur adb n'est pas forcément démarré, et le flux exige qu'il le soit.
+        // The adb server may not be running, and the stream requires it to be.
         _ = try? await run(adb, ["start-server"])
 
         let connection = NWConnection(
@@ -133,8 +132,8 @@ public actor AdbWatcher: PeerDiscovery {
                 connection.start(queue: queue)
             }
 
-            // Requête du protocole adb : longueur sur 4 caractères hexadécimaux, puis
-            // le service demandé.
+            // adb protocol request: length on 4 hexadecimal characters, then the service
+            // being asked for.
             let request = "host:track-devices"
             let framed = String(format: "%04x", request.count) + request
             try await send(Data(framed.utf8), on: connection)
@@ -154,11 +153,11 @@ public actor AdbWatcher: PeerDiscovery {
                 let devices = Self.parseDevices(String(decoding: body, as: UTF8.self))
                 let usable = devices.filter(\.isUsable)
                 continuation?.yield(usable.map(peer(for:)))
-                // En tâche de fond : la liste sort tout de suite, les noms arrivent après.
+                // In the background: the list goes out right away, the names follow.
                 Task { await self.learnModels(of: usable) }
             }
         } catch {
-            // Perte du serveur adb : le flux se termine, l'appelant décidera de relancer.
+            // adb server lost: the stream ends, the caller decides whether to restart.
         }
 
         continuation?.finish()
@@ -167,8 +166,8 @@ public actor AdbWatcher: PeerDiscovery {
     private func peer(for device: Device) -> Peer {
         Peer(
             id: device.serial,
-            // Le modèle si on l'a déjà demandé, sinon le numéro de série en attendant. Le
-            // nom exact, celui que l'utilisateur a donné à sa tablette, arrive plus tard
+            // The model when already asked for, otherwise the serial in the meantime. The
+            // exact name, the one the user gave the tablet, arrives later
             // dans DEVICE_INFO.
             name: models[device.serial] ?? device.serial,
             kind: .usb,
@@ -177,19 +176,19 @@ public actor AdbWatcher: PeerDiscovery {
         )
     }
 
-    /// Demande le modèle des appareils qu'on ne connaît pas encore, puis republie la liste.
+    /// Asks for the model of devices not known yet, then republishes the list.
     ///
-    /// Un `getprop` par appareil, une seule fois : c'est un aller retour de quelques
-    /// millisecondes, mais le faire à chaque annonce de `track-devices` serait du gaspillage.
+    /// One `getprop` per device, once. It is a few milliseconds of round trip, but doing it
+    /// on every `track-devices` announcement would be waste.
     private func learnModels(of devices: [Device]) async {
         guard let adb = Self.locateAdb() else { return }
         var learned = false
 
         for device in devices where models[device.serial] == nil {
-            // Le nom commercial d'abord : `ro.product.model` donne le code usine, du genre
-            // 24129PN74G, là où marketname donne « Xiaomi 15 ». Ces clés varient d'un
-            // constructeur à l'autre, d'où la liste. Un seul appel shell pour les essayer
-            // toutes, et la première ligne non vide gagne.
+            // Marketing name first: `ro.product.model` gives the factory code, something like
+            // 24129PN74G, where marketname gives "Xiaomi 15". These keys vary from one
+            // manufacturer to the next, hence the list. One shell call tries them all, and
+            // the first non empty line wins.
             guard let output = try? await run(
                 adb,
                 [
@@ -216,8 +215,7 @@ public actor AdbWatcher: PeerDiscovery {
         continuation?.yield(devices.filter(\.isUsable).map(peer(for:)))
     }
 
-    /// Analyse la charge utile de `track-devices` : une ligne par appareil,
-    /// `<série>\t<état>`.
+    /// Parses the `track-devices` payload: one line per device, `<serial>\t<state>`.
     static func parseDevices(_ text: String) -> [Device] {
         text.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\t", maxSplits: 1)
@@ -229,10 +227,10 @@ public actor AdbWatcher: PeerDiscovery {
         }
     }
 
-    // MARK: - Commandes adb
+    // MARK: - adb commands
 
-    /// `adb forward` mappe un port local du Mac vers un port en écoute sur l'appareil.
-    /// C'est la direction dont on a besoin, la tablette étant le serveur.
+    /// `adb forward` maps a local Mac port onto a port the device listens on. That is the
+    /// direction we need, the tablet being the server.
     public func forward(serial: String, localPort: UInt16, devicePort: UInt16) async throws {
         guard let adb = Self.locateAdb() else { throw AdbError.adbNotFound }
         _ = try await run(adb, ["-s", serial, "forward", "tcp:\(localPort)", "tcp:\(devicePort)"])
@@ -243,8 +241,8 @@ public actor AdbWatcher: PeerDiscovery {
         _ = try? await run(adb, ["forward", "--remove", "tcp:\(localPort)"])
     }
 
-    /// Lance l'application sur la tablette. Utile quand la connexion échoue : c'est en
-    /// général qu'elle n'est pas au premier plan.
+    /// Starts the application on the tablet. Useful when the connection fails: usually the
+    /// app is simply not in the foreground.
     public func launchApp(serial: String) async throws {
         guard let adb = Self.locateAdb() else { throw AdbError.adbNotFound }
         _ = try await run(
@@ -276,7 +274,7 @@ public actor AdbWatcher: PeerDiscovery {
         return output
     }
 
-    // MARK: - Entrées sorties du socket adb
+    // MARK: - adb socket input and output
 
     private func send(_ data: Data, on connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (resume: CheckedContinuation<Void, Error>) in

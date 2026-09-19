@@ -1,15 +1,15 @@
 import Foundation
 
-/// Borne la durée d'une opération asynchrone.
+/// Bounds the duration of an asynchronous operation.
 ///
-/// Indispensable pour la connexion : une tablette annoncée mais injoignable, cas courant
-/// sur les réseaux qui isolent les clients entre eux, ne renvoie rien du tout. Les paquets
-/// sont jetés en silence, aucun refus n'arrive, et `NWConnection` attend indéfiniment.
-/// - Parameter suspendedWhile: tant que ce test répond vrai, le chronomètre ne court pas.
-///   Sert au dialogue d'appairage : il s'ouvre au milieu du handshake TLS, et le temps que
-///   l'utilisateur compare les deux codes n'a rien à voir avec la joignabilité de la
-///   tablette. Sans cette pause, l'appairage échoue dès qu'on met plus de huit secondes à
-///   répondre, ce qui arrive dès qu'on doit aller chercher la tablette.
+/// Essential when connecting: a tablet that is advertised but unreachable, the common case
+/// on networks isolating their clients, returns nothing at all. Packets are dropped in
+/// silence, no refusal arrives, and `NWConnection` waits forever.
+/// - Parameter suspendedWhile: while this test answers true, the clock does not run.
+///   It exists for the pairing dialog, which opens in the middle of the TLS handshake. The
+///   time a user spends comparing two codes says nothing about whether the tablet is
+///   reachable. Without this pause, pairing fails as soon as someone takes more than eight
+///   seconds to answer, which happens the moment the tablet is in another room.
 public func withTimeout<T: Sendable>(
     _ duration: Duration,
     suspendedWhile pause: (@Sendable () async -> Bool)? = nil,
@@ -22,7 +22,7 @@ public func withTimeout<T: Sendable>(
                 try await Task.sleep(for: duration)
                 throw TransportError.timedOut
             }
-            // Décompte par tranches : une tranche écoulée pendant une pause ne compte pas.
+            // Counted down in slices: a slice that elapses during a pause does not count.
             let tranche = Duration.milliseconds(200)
             var restant = duration
             while restant > .zero {

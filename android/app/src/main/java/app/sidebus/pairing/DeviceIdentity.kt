@@ -19,12 +19,11 @@ import javax.net.ssl.X509ExtendedKeyManager
 import javax.security.auth.x500.X500Principal
 
 /**
- * Identité de la tablette : un identifiant persistant, et une paire de clés avec son
- * certificat auto signé, générés au premier lancement et conservés dans l'Android
- * Keystore.
+ * The tablet's identity: a persistent identifier, and a key pair with its self signed
+ * certificate, generated on first launch and kept in the Android Keystore.
  *
- * Pas besoin de BouncyCastle : `KeyGenParameterSpec` fait produire au Keystore un
- * certificat auto signé qu'on relit ensuite depuis l'entrée.
+ * No need for BouncyCastle: `KeyGenParameterSpec` has the Keystore produce a self signed
+ * certificate, which is then read back from the entry.
  */
 object DeviceIdentity {
 
@@ -33,7 +32,7 @@ object DeviceIdentity {
     private const val PREFS = "sidebus"
     private const val KEY_UUID = "deviceUuid"
 
-    /** Identifiant persistant, partagé par DEVICE_INFO et la clé `id` de l'annonce mDNS. */
+    /** Persistent identifier, shared by DEVICE_INFO and the `id` key of the mDNS advertisement. */
     fun uuid(context: Context): UUID {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.getString(KEY_UUID, null)?.let { return UUID.fromString(it) }
@@ -44,9 +43,8 @@ object DeviceIdentity {
     }
 
     /**
-     * Efface l'identité de la tablette : nouvelle paire de clés, nouveau certificat,
-     * nouvel identifiant. Le Mac la verra comme un appareil inconnu et redemandera le
-     * code d'appairage.
+     * Erases the tablet's identity: new key pair, new certificate, new identifier. The Mac
+     * will see it as an unknown device and ask for a pairing code again.
      */
     fun reset(context: Context) {
         runCatching {
@@ -61,15 +59,15 @@ object DeviceIdentity {
     fun certificate(): X509Certificate {
         entry()?.let { return it.certificate as X509Certificate }
         generate()
-        return (entry() ?: error("certificat introuvable après génération"))
+        return (entry() ?: error("certificate missing after generation"))
             .certificate as X509Certificate
     }
 
-    /** SHA-256 du certificat au format DER. */
+    /** SHA-256 of the certificate in DER form. */
     fun fingerprint(): ByteArray =
         MessageDigest.getInstance("SHA-256").digest(certificate().encoded)
 
-    /** Code à six chiffres dérivé de l'empreinte, voir PROTOCOL.md section 7. */
+    /** Six digit code derived from the fingerprint, see PROTOCOL.md section 7. */
     fun pairingCode(): String = pairingCode(fingerprint())
 
     fun pairingCode(fingerprint: ByteArray): String {
@@ -80,15 +78,15 @@ object DeviceIdentity {
         return "%06d".format(value % 1_000_000)
     }
 
-    /** Huit premiers octets de l'empreinte, en hexadécimal, pour le TXT `fp`. */
+    /** First eight bytes of the fingerprint, in hex, for the `fp` TXT record. */
     fun fingerprintPrefix(): String =
         fingerprint().take(8).joinToString("") { "%02x".format(it) }
 
-    /** Contexte TLS 1.3 côté serveur, adossé à la clé non extractible du Keystore. */
+    /** Server side TLS 1.3 context, backed by the Keystore's non extractable key. */
     fun sslContext(): SSLContext {
         val entry = entry() ?: run {
             generate()
-            entry() ?: error("clé introuvable après génération")
+            entry() ?: error("key missing after generation")
         }
         val chain = arrayOf(entry.certificate as X509Certificate)
         val keyManager = KeystoreKeyManager(ALIAS, chain, entry.privateKey)
@@ -112,10 +110,10 @@ object DeviceIdentity {
             KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
         )
             .setDigests(
-                // DIGEST_NONE est indispensable : en TLS 1.3, Conscrypt hache lui même le
-                // message puis demande une signature ECDSA brute. Sans ce digest, le
-                // Keystore refuse l'opération (INCOMPATIBLE_DIGEST) et le handshake meurt
-                // sans alerte, ce qui donne un « unexpected eof » côté client.
+                // DIGEST_NONE is essential: in TLS 1.3 Conscrypt hashes the message itself
+                // then asks for a raw ECDSA signature. Without this digest the Keystore
+                // refuses the operation (INCOMPATIBLE_DIGEST) and the handshake dies without
+                // an alert, which shows up as an "unexpected eof" on the client.
                 KeyProperties.DIGEST_NONE,
                 KeyProperties.DIGEST_SHA256,
                 KeyProperties.DIGEST_SHA384,
@@ -135,8 +133,8 @@ object DeviceIdentity {
 }
 
 /**
- * Expose l'unique clé du Keystore au moteur TLS. La clé privée n'est jamais extraite :
- * l'objet renvoyé est une référence que le Keystore utilise pour signer.
+ * Exposes the Keystore's single key to the TLS engine. The private key is never extracted:
+ * the object returned is a reference the Keystore uses to sign.
  */
 private class KeystoreKeyManager(
     private val alias: String,
@@ -154,7 +152,7 @@ private class KeystoreKeyManager(
 
     override fun getPrivateKey(alias: String?) = key
 
-    // Le Mac ne présente pas de certificat : rien à choisir côté client.
+    // The Mac presents no certificate: nothing to choose on the client side.
     override fun chooseClientAlias(keyType: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?) = null
 
     override fun getClientAliases(keyType: String?, issuers: Array<out Principal>?) = null

@@ -3,17 +3,17 @@ import CoreGraphics
 import Observation
 import SidebusCore
 
-/// État du sélecteur d'écran du menu bar.
+/// State of the display picker.
 @MainActor
 @Observable
 final class DisplayMenuModel {
     private(set) var displays: [DisplayInfo] = []
     private(set) var lastError: String?
 
-    /// Clé de persistance du choix d'écran, relue par `UsbConnectionModel`.
+    /// Persistence key for the display choice, read back by `DeviceSession`.
     static let selectedDisplayKey = "selectedDisplayID"
 
-    /// Écran que Sidebus capturera. `nil` tant que rien n'est choisi.
+    /// Display Sidebus will capture. `nil` while nothing is chosen.
     var selectedID: CGDirectDisplayID? {
         didSet {
             if let selectedID {
@@ -24,8 +24,8 @@ final class DisplayMenuModel {
         }
     }
 
-    // `nonisolated(unsafe)` pour pouvoir retirer l.observateur dans `deinit`, qui n.est
-    // pas isolé. Écrit une seule fois, depuis `init` sur le main actor.
+    // `nonisolated(unsafe)` so the observer can be removed in `deinit`, which is not
+    // isolated. Written once, from `init` on the main actor.
     @ObservationIgnored
     private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
@@ -33,8 +33,8 @@ final class DisplayMenuModel {
         refresh()
         startAutomaticCaptureIfRequested()
 
-        // macOS poste cette notification au branchement, au débranchement et à tout
-        // changement de résolution, y compris quand DeskPad crée ou retire son écran.
+        // macOS posts this notification on plug, unplug and any resolution change, including
+        // when DeskPad creates or removes its display.
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -61,20 +61,20 @@ final class DisplayMenuModel {
             lastError = String(describing: error)
         }
 
-        // L'écran choisi a pu disparaître, DeskPad quitté par exemple.
+        // The chosen display may have gone, DeskPad quit for instance.
         if let selectedID, !displays.contains(where: { $0.id == selectedID }) {
             self.selectedID = nil
         }
     }
 
-    /// Fournisseur correspondant à la sélection courante.
+    /// Provider matching the current selection.
     var selectedProvider: (any VirtualDisplayProvider)? {
         selectedID.map { ExistingDisplayProvider(targetID: $0) }
     }
 
     // MARK: - Capture
 
-    /// Sortie temporaire de la phase 2, relue avec `ffplay`.
+    /// Temporary phase 2 output, played back with `ffplay`.
     static let outputPath = "/tmp/sidebus.h264"
 
     private(set) var isCapturing = false
@@ -87,11 +87,11 @@ final class DisplayMenuModel {
     private var consumer: Task<Void, Never>?
 
     var captureLabel: String {
-        // Enregistrement local, à ne pas confondre avec le partage vers la tablette.
-        guard isCapturing else { return "Enregistrer le flux dans un fichier" }
+        // Local recording, not to be confused with sharing to the tablet.
+        guard isCapturing else { return "Record the stream to a file" }
         let megabytes = Double(byteCount) / 1_000_000
         return String(
-            format: "Arrêter l'enregistrement (%d frames, %.1f Mo)",
+            format: "Stop recording (%d frames, %.1f MB)",
             frameCount,
             megabytes
         )
@@ -105,18 +105,18 @@ final class DisplayMenuModel {
         }
     }
 
-    /// Crochets de développement, pour mesurer sans passer par le menu.
+    /// Development hooks, to measure without going through the settings.
     ///
-    /// - `SIDEBUS_AUTOCAPTURE` : fragment du nom de l'écran à capturer au lancement.
-    /// - `SIDEBUS_CAPTURE_SCALE` : facteur appliqué à la taille de capture, 1.0 par défaut.
-    /// - `SIDEBUS_FPS` : plafond d'images par seconde, 60 par défaut.
+    /// - `SIDEBUS_AUTOCAPTURE`: fragment of the name of the display to capture at launch.
+    /// - `SIDEBUS_CAPTURE_SCALE`: factor applied to the capture size, 1.0 by default.
+    /// - `SIDEBUS_FPS`: frames per second ceiling, 60 by default.
     private func startAutomaticCaptureIfRequested() {
         let environment = ProcessInfo.processInfo.environment
         guard let needle = environment["SIDEBUS_AUTOCAPTURE"], !needle.isEmpty else { return }
         guard let display = displays.first(
             where: { $0.name.localizedCaseInsensitiveContains(needle) }
         ) else {
-            lastError = "aucun écran dont le nom contient « \(needle) »"
+            lastError = "no display whose name contains \"\(needle)\""
             return
         }
         selectedID = display.id
@@ -124,7 +124,7 @@ final class DisplayMenuModel {
         devLog("autocapture sur \(display.menuLabel), erreur=\(lastError ?? "aucune")")
     }
 
-    /// Trace de développement, active uniquement sous `SIDEBUS_AUTOCAPTURE`.
+    /// Development trace, active under `SIDEBUS_AUTOCAPTURE` only.
     private func devLog(_ message: String) {
         guard ProcessInfo.processInfo.environment["SIDEBUS_AUTOCAPTURE"] != nil else { return }
         let line = "\(Date()) \(message)\n"
@@ -140,7 +140,7 @@ final class DisplayMenuModel {
 
     private func startCapture() {
         guard let display = displays.first(where: { $0.id == selectedID }) else {
-            lastError = "choisir un écran avant de démarrer la capture"
+            lastError = "pick a display before starting the capture"
             return
         }
         guard ScreenCapturer.isAuthorized() else {
@@ -159,7 +159,7 @@ final class DisplayMenuModel {
         let fps = environment["SIDEBUS_FPS"].flatMap(Int.init) ?? 60
 
         let provider = ExistingDisplayProvider(targetID: display.id)
-        // La mise à l'échelle se fait dans ScreenCaptureKit, côté GPU.
+        // Scaling happens inside ScreenCaptureKit, on the GPU.
         let pixelSize = CGSize(
             width: (display.pixelSize.width * scale).rounded(),
             height: (display.pixelSize.height * scale).rounded()
@@ -180,8 +180,8 @@ final class DisplayMenuModel {
                     await writer.write(frame)
                     frames0 += 1
                     bytes0 += frame.data.count + (frame.parameterSets?.count ?? 0)
-                    // Les compteurs sont observés par SwiftUI : les toucher à chaque frame
-                    // réveille l'AttributeGraph 60 fois par seconde pour un menu fermé.
+                    // The counters are observed by SwiftUI: touching them on every frame wakes
+                    // the AttributeGraph 60 times a second for a closed menu.
                     if frames0 % 15 == 0 {
                         frameCount = frames0
                         byteCount = bytes0

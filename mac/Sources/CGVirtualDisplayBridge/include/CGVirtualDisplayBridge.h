@@ -1,7 +1,7 @@
 //
-//  Déclarations des classes privées de CoreGraphics qui créent un écran virtuel.
+//  Declarations of the private CoreGraphics classes that create a virtual display.
 //
-//  Ces interfaces sont reprises du projet DeskPad, sous licence MIT :
+//  These interfaces are taken from the DeskPad project, under the MIT licence:
 //  https://github.com/Stengo/DeskPad
 //  Copyright (c) 2022 Stengo
 //
@@ -22,9 +22,9 @@
 //  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 //  OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-//  Ces classes ne font partie d'aucune API publique : elles peuvent disparaître à
-//  n'importe quelle version de macOS. Tout passe par `VirtualDisplayProvider`, et l'échec
-//  bascule sur un écran existant.
+//  These classes belong to no public API: they can vanish with any macOS release.
+//  Everything goes through `VirtualDisplayProvider`, and failure falls back to an existing
+//  display.
 //
 
 #import <Foundation/Foundation.h>
@@ -52,7 +52,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) NSString *name;
 @property(nonatomic, assign) uint32_t maxPixelsWide;
 @property(nonatomic, assign) uint32_t maxPixelsHigh;
-/// Taille physique déclarée. C'est elle qui donne la densité, donc la netteté.
+/// Declared physical size. This is what sets the density, and so the sharpness.
 @property(nonatomic, assign) CGSize sizeInMillimeters;
 @property(nonatomic, assign) uint32_t serialNum;
 @property(nonatomic, assign) uint32_t productID;

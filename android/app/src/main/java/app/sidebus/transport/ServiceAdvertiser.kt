@@ -8,11 +8,11 @@ import app.sidebus.pairing.DeviceIdentity
 import app.sidebus.protocol.Message
 
 /**
- * Annonce la tablette sur le réseau local. C'est elle le serveur : le Mac parcourt le
- * réseau et se connecte à ce qu'il trouve.
+ * Advertises the tablet on the local network. The tablet is the server: the Mac browses the
+ * network and connects to what it finds.
  *
- * L'annonce ne vit que quand l'application est au premier plan, pour ne pas encombrer le
- * réseau quand elle ne peut rien afficher.
+ * The advertisement only lives while the app is in the foreground, so as not to clutter the
+ * network when it can display nothing.
  */
 class ServiceAdvertiser(private val context: Context) {
 
@@ -23,7 +23,7 @@ class ServiceAdvertiser(private val context: Context) {
         if (listener != null) return
 
         val service = NsdServiceInfo().apply {
-            // Le nom doit être reconnaissable par l'utilisateur dans le menu du Mac.
+            // The name has to be recognisable to the user in the Mac's menu.
             serviceName = info.name
             serviceType = SERVICE_TYPE
             setPort(port)
@@ -33,26 +33,26 @@ class ServiceAdvertiser(private val context: Context) {
             setAttribute("h", info.height.toString())
             setAttribute("d", info.density.toString())
             setAttribute("c", info.codecs.toString())
-            // Permet au Mac de reconnaître une tablette déjà appairée avant même
+            // Lets the Mac recognise an already paired tablet before it even
             // d'ouvrir la connexion.
             setAttribute("fp", DeviceIdentity.fingerprintPrefix())
         }
 
         val registration = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) {
-                Log.i(TAG, "annoncé en mDNS sous « ${info.serviceName} »")
+                Log.i(TAG, "advertised over mDNS as \"${info.serviceName}\"")
             }
 
             override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                Log.e(TAG, "annonce mDNS refusée, code $errorCode")
+                Log.e(TAG, "mDNS advertisement refused, code $errorCode")
             }
 
             override fun onServiceUnregistered(info: NsdServiceInfo) {
-                Log.i(TAG, "annonce mDNS retirée")
+                Log.i(TAG, "mDNS advertisement withdrawn")
             }
 
             override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                Log.w(TAG, "retrait de l'annonce refusé, code $errorCode")
+                Log.w(TAG, "withdrawing the advertisement refused, code $errorCode")
             }
         }
 

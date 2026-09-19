@@ -14,8 +14,8 @@ android {
         versionName = "0.1"
     }
 
-    // Signature de release lue dans les propriétés Gradle ou l'environnement : aucun
-    // secret dans le dépôt. Sans elle, `assembleRelease` produit un APK non signé.
+    // Release signing read from Gradle properties or the environment: no secret in the
+    // repository. Without it, `assembleRelease` produces an unsigned APK.
     val storePath = (project.findProperty("sidebus.keystore") as String?)
         ?: System.getenv("SIDEBUS_KEYSTORE")
 
@@ -49,7 +49,7 @@ android {
 }
 
 dependencies {
-    // Coroutines : imposées par les conventions du PLAN.md, section 11. Rien d'autre.
+    // Coroutines, and nothing else.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     testImplementation("junit:junit:4.13.2")

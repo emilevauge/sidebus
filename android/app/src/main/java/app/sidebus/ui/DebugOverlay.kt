@@ -6,11 +6,11 @@ import android.view.Gravity
 import android.widget.TextView
 
 /**
- * Compteurs affichés en permanence : fps, latence de décodage, débit, frames droppées,
- * transport actif.
+ * Counters shown on demand: fps, decoding latency, bitrate, dropped frames, active
+ * transport.
  *
- * Rafraîchi à 4 Hz et pas à chaque frame : mettre à jour une vue observée 60 fois par
- * seconde coûte plus cher que tout le reste du pipeline, on l'a mesuré côté Mac.
+ * Refreshed at 4 Hz rather than on every frame: updating an observed view 60 times a second
+ * costs more than the rest of the pipeline, as measured on the Mac side.
  */
 class DebugOverlay(context: Context) : TextView(context) {
 
@@ -22,7 +22,7 @@ class DebugOverlay(context: Context) : TextView(context) {
     private var droppedTotal = 0
     private var receivedTotal = 0
 
-    /// Compteurs de la fenêtre STATS en cours, remis à zéro à chaque envoi.
+    /// Counters of the current STATS window, reset on every send.
     private var statsReceived = 0
     private var statsDropped = 0
 
@@ -36,10 +36,10 @@ class DebugOverlay(context: Context) : TextView(context) {
         textSize = 12f
         setPadding(16, 12, 16, 12)
         gravity = Gravity.START
-        text = "en attente"
+        text = "waiting"
     }
 
-    /** Frame reçue du lien et poussée au décodeur. */
+    /** Frame received from the link and pushed to the decoder. */
     fun onFrameReceived(bytes: Int) {
         receivedTotal += 1
         statsReceived += 1
@@ -47,7 +47,7 @@ class DebugOverlay(context: Context) : TextView(context) {
         refreshIfDue()
     }
 
-    /** Frame effectivement affichée. C'est elle qui donne les fps réels. */
+    /** Frame actually displayed. This is what gives the real fps. */
     fun onFrameRendered(latencyMillis: Long) {
         framesInWindow += 1
         latencySum += latencyMillis
@@ -74,9 +74,9 @@ class DebugOverlay(context: Context) : TextView(context) {
         val summary = buildString {
             append("%.0f fps".format(fps))
             append("  %.1f Mbit/s".format(megabitsPerSecond))
-            append("  décodage %d ms".format(latency))
-            append("  reçues %d".format(receivedTotal))
-            append("  droppées %d".format(droppedTotal))
+            append("  decode %d ms".format(latency))
+            append("  received %d".format(receivedTotal))
+            append("  dropped %d".format(droppedTotal))
             append("  $transport")
         }
 
@@ -89,7 +89,7 @@ class DebugOverlay(context: Context) : TextView(context) {
         post { text = summary }
     }
 
-    /** Compteurs de la fenêtre écoulée, pour le message STATS, et remise à zéro. */
+    /** Counters of the window that elapsed, for the STATS message, then reset. */
     fun takeStats(): Pair<Int, Int> {
         val snapshot = statsReceived to statsDropped
         statsReceived = 0

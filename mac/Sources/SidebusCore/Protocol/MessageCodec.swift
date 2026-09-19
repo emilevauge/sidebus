@@ -11,32 +11,32 @@ public enum ProtocolError: Error, CustomStringConvertible, Sendable, Equatable {
     public var description: String {
         switch self {
         case let .badMagic(value):
-            return String(format: "octet magique invalide : 0x%02X", value)
+            return String(format: "invalid magic byte: 0x%02X", value)
         case let .payloadTooLarge(length):
-            return "payload de \(length) octets, au dessus de la borne"
+            return "payload of \(length) bytes, past the bound"
         case let .malformedPayload(type):
-            return "payload mal formé pour \(type)"
+            return "malformed payload for \(type)"
         case let .truncatedPayload(type):
-            return "payload tronqué pour \(type)"
+            return "truncated payload for \(type)"
         case let .stringTooLong(count):
-            return "chaîne de \(count) octets, au dessus de 255"
+            return "string of \(count) bytes, past 255"
         case let .unknownEnumValue(name, value):
-            return String(format: "valeur \(name) inconnue : 0x%02X", value)
+            return String(format: "unknown \(name) value: 0x%02X", value)
         }
     }
 }
 
-/// Encodage et décodage du format sur le fil. Source de vérité : `protocol/PROTOCOL.md`.
+/// Encoding and decoding of the wire format. Source of truth: `protocol/PROTOCOL.md`.
 ///
-/// Tout est en little endian, sauf les préfixes de longueur des NAL units, qui
-/// appartiennent au format vidéo et pas au protocole.
+/// Everything is little endian, except the NAL unit length prefixes, which belong to the
+/// video format rather than to the protocol.
 public enum MessageCodec {
     public static let magic: UInt8 = 0x5B
     public static let headerSize = 8
     public static let maxPayloadLength: UInt32 = 8 * 1024 * 1024
     public static let maxStringLength = 255
 
-    // MARK: - Encodage
+    // MARK: - Encoding
 
     public static func encode(_ message: Message) -> Data {
         var payload = ByteWriter()
@@ -111,9 +111,9 @@ public enum MessageCodec {
         return out.data
     }
 
-    // MARK: - Décodage
+    // MARK: - Decoding
 
-    /// Décode le payload d'un message dont l'en tête a déjà été lu.
+    /// Decodes the payload of a message whose header has already been read.
     public static func decodePayload(
         type rawType: UInt8,
         flags: UInt16,
@@ -173,16 +173,16 @@ public enum MessageCodec {
             case .inputEvent:
                 let rawKind = try reader.u8()
                 guard let kind = InputEventKind(rawValue: rawKind) else {
-                    throw ProtocolError.unknownEnumValue("type d'événement", rawKind)
+                    throw ProtocolError.unknownEnumValue("event kind", rawKind)
                 }
                 let x = try reader.f32()
                 let y = try reader.f32()
                 let rawButton = try reader.u8()
                 guard let button = MouseButton(rawValue: rawButton) else {
-                    throw ProtocolError.unknownEnumValue("bouton", rawButton)
+                    throw ProtocolError.unknownEnumValue("button", rawButton)
                 }
                 let timestamp = try reader.u64()
-                // Les coordonnées hors bornes sont ramenées dans l'intervalle, sans erreur.
+                // Out of range coordinates are clamped, without error.
                 return .inputEvent(
                     kind: kind,
                     x: min(max(x, 0), 1),
@@ -209,7 +209,7 @@ public enum MessageCodec {
             case .bye:
                 let rawReason = try reader.u8()
                 guard let reason = ByeReason(rawValue: rawReason) else {
-                    throw ProtocolError.unknownEnumValue("raison de BYE", rawReason)
+                    throw ProtocolError.unknownEnumValue("BYE reason", rawReason)
                 }
                 return .bye(reason: reason)
 
@@ -217,8 +217,8 @@ public enum MessageCodec {
                 return .pairRequest(code: try reader.u32())
 
             case .pairResult:
-                // Toute valeur autre que 1 vaut refus : une version future qui ajouterait
-                // un code de refus détaillé ne doit pas passer pour une acceptation.
+                // Any value other than 1 counts as a refusal: a future version adding a
+                // detailed refusal code must not read as an acceptance.
                 return .pairResult(accepted: try reader.u8() == 1)
             }
         } catch is ByteReader.OutOfBounds {
@@ -227,7 +227,7 @@ public enum MessageCodec {
     }
 }
 
-/// Accumule les octets reçus et en sort les messages complets.
+/// Accumulates received bytes and yields complete messages.
 public struct MessageDecoder: Sendable {
     private var buffer = Data()
 
@@ -237,7 +237,7 @@ public struct MessageDecoder: Sendable {
         buffer.append(data)
     }
 
-    /// Renvoie le prochain message complet, ou `nil` s'il manque des octets.
+    /// Returns the next complete message, or `nil` when bytes are missing.
     public mutating func next() throws -> Message? {
         guard buffer.count >= MessageCodec.headerSize else { return nil }
 

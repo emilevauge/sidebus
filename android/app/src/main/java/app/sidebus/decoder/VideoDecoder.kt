@@ -12,14 +12,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Décodeur H.264 rendu directement dans une `Surface`.
+ * Hardware decoder rendering straight into a `Surface`.
  *
- * Deux règles tiennent toute la latence de cette classe :
+ * Two rules carry all of this class's latency:
  *
- * - aucune file d'attente au rendu. `releaseOutputBuffer(index, true)` est appelé dès que
- *   la frame sort du décodeur, sans attendre d'horodatage.
- * - en retard, on jette. Si aucun buffer d'entrée n'est libre, la frame est droppée plutôt
- *   que mise en attente : bufferiser ne fait que déplacer le retard.
+ * - no queue at render time. `releaseOutputBuffer(index, true)` is called as soon as the
+ *   frame leaves the decoder, with no wait on a timestamp.
+ * - when late, drop. If no input buffer is free the frame is dropped rather than queued:
+ *   buffering only moves the lag around.
  */
 class VideoDecoder(
     private val surface: Surface,
@@ -30,17 +30,17 @@ class VideoDecoder(
     private val thread = HandlerThread("sidebus-decoder").apply { start() }
     private val handler = Handler(thread.looper)
 
-    /** Index des buffers d'entrée libres, remplis par le callback du décodeur. */
+    /** Indices of the free input buffers, filled by the decoder's callback. */
     private val freeInputBuffers = ConcurrentLinkedQueue<Int>()
 
-    /** Horodatage de réception, pour mesurer le temps passé dans le décodeur. */
+    /** Receive timestamps, to measure the time spent inside the decoder. */
     private val receivedAt = AtomicLong(0)
 
     fun configure(width: Int, height: Int, parameterSets: ByteArray, codec: Int) {
         release()
 
-        // En HEVC, `csd-0` porte VPS, SPS et PPS concaténés, exactement ce que le Mac
-        // envoie dans VIDEO_CONFIG.
+        // In HEVC, `csd-0` carries VPS, SPS and PPS concatenated, exactly what the Mac sends
+        // in VIDEO_CONFIG.
         val mime = if (codec == Codec.HEVC) {
             MediaFormat.MIMETYPE_VIDEO_HEVC
         } else {
@@ -49,9 +49,9 @@ class VideoDecoder(
 
         val format = MediaFormat.createVideoFormat(mime, width, height).apply {
             setByteBuffer("csd-0", ByteBuffer.wrap(parameterSets))
-            // Demande au décodeur de ne pas accumuler de frames avant de sortir la première.
+            // Asks the decoder not to pile up frames before yielding the first one.
             setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-            // 0 = temps réel.
+            // 0 = realtime.
             setInteger(MediaFormat.KEY_PRIORITY, 0)
         }
 
@@ -67,7 +67,7 @@ class VideoDecoder(
                     index: Int,
                     info: MediaCodec.BufferInfo,
                 ) {
-                    // Rendu immédiat, sans file d'attente.
+                    // Immediate rendering, no queue.
                     codec.releaseOutputBuffer(index, true)
                     val elapsed = System.nanoTime() - receivedAt.get()
                     onFrameRendered(elapsed / 1_000_000)
@@ -78,7 +78,7 @@ class VideoDecoder(
                 }
 
                 override fun onError(codec: MediaCodec, error: MediaCodec.CodecException) {
-                    Log.e(TAG, "erreur du décodeur", error)
+                    Log.e(TAG, "decoder error", error)
                 }
             },
             handler,
@@ -87,24 +87,23 @@ class VideoDecoder(
         decoder.configure(format, surface, null, 0)
         decoder.start()
         this.codec = decoder
-        Log.i(TAG, "décodeur $mime démarré en ${width}x$height")
+        Log.i(TAG, "decoder $mime started at ${width}x$height")
     }
 
     /**
-     * Pousse une frame au décodeur. Renvoie false si elle a été droppée.
+     * Pushes a frame to the decoder. Returns false when it was dropped.
      *
-     * Une frame intermédiaire se jette sans remords. Une keyframe, non : c'est le seul
-     * point d'où le décodeur peut repartir après une salve de droppes, et la suivante
-     * peut être à cinq secondes. On lui laisse donc une courte fenêtre pour trouver un
-     * buffer libre.
+     * An intermediate frame is dropped without remorse. A keyframe is not: it is the only
+     * point the decoder can restart from after a burst of drops, and the next one can be five
+     * seconds away. So it gets a short window to find a free buffer.
      */
     fun submit(data: ByteArray, timestampMicroseconds: Long, isKeyframe: Boolean): Boolean {
         val codec = this.codec ?: return false
 
         var index = freeInputBuffers.poll()
         if (index == null) {
-            // Une courte attente évite la plupart des droppes inutiles, sans construire
-            // de file : quelques millisecondes coûtent moins cher qu'une image cassée.
+            // A short wait avoids most needless drops without building a queue: a few
+            // milliseconds cost less than a broken picture.
             val wait = if (isKeyframe) KEYFRAME_WAIT_NANOS else FRAME_WAIT_NANOS
             val deadline = System.nanoTime() + wait
             while (index == null && System.nanoTime() < deadline) {
@@ -148,10 +147,10 @@ class VideoDecoder(
     companion object {
         private const val TAG = "Sidebus"
 
-        /** Attente maximale d'un buffer d'entrée pour une keyframe. */
+        /** Longest wait for an input buffer, for a keyframe. */
         private const val KEYFRAME_WAIT_NANOS = 30_000_000L
 
-        /** Idem pour une frame intermédiaire, bien plus courte. */
+        /** The same for an intermediate frame, far shorter. */
         private const val FRAME_WAIT_NANOS = 5_000_000L
     }
 }

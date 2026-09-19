@@ -15,9 +15,9 @@ struct MenuContent: View {
 
         Divider()
 
-        Section("Appareils") {
+        Section("Devices") {
             if devices.entries.isEmpty {
-                Text("Aucun appareil")
+                Text("No device")
             }
 
             ForEach(devices.entries) { entry in
@@ -32,7 +32,7 @@ struct MenuContent: View {
 
         Divider()
 
-        Button("Réglages…") {
+        Button("Settings…") {
             NSApp.activate(ignoringOtherApps: true)
             permissions.refresh()
             openWindow(id: "settings")
@@ -41,14 +41,14 @@ struct MenuContent: View {
 
         Divider()
 
-        Button("Quitter Sidebus") {
+        Button("Quit Sidebus") {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
     }
 
-    /// Nom, transport, puis l'état sur une deuxième ligne quand il y a quelque chose à
-    /// dire. Un `Text` multiligne passe très bien dans un `NSMenu`.
+    /// Name, transport, then the state on a second line when there is something to say. A
+    /// multiline `Text` sits perfectly well in an `NSMenu`.
     private func label(for entry: DeviceEntry) -> String {
         var text = entry.name
         if entry.isOnline { text += " (\(entry.transportLabel))" }

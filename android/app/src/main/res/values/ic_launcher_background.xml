@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fond de l'icône adaptative : le bleu nuit de la plaque de art/bus-app.svg.
+<!-- Background of the adaptive icon: the night blue of the plate in art/bus-app.svg.
      Couleur plate plutot qu'un degrade, le lanceur fait glisser le fond sous
      le premier plan et un degrade se remarquerait au mouvement. -->
 <resources>

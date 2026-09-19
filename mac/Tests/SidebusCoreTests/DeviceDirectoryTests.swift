@@ -20,13 +20,13 @@ final class DeviceDirectoryTests: XCTestCase {
 
     private var directory: DeviceDirectory { DeviceDirectory(defaults: defaults) }
 
-    func testAppareilInconnuAbsent() {
+    func testUnknownDeviceIsAbsent() {
         XCTAssertNil(directory.device("inconnu"))
         XCTAssertFalse(directory.contains("inconnu"))
         XCTAssertTrue(directory.all().isEmpty)
     }
 
-    func testEnregistrementPuisRelecture() {
+    func testRecordThenReadBack() {
         directory.record(deviceID: "A", name: "Xiaomi 15", transport: .usb)
 
         let device = directory.device("A")
@@ -35,30 +35,30 @@ final class DeviceDirectoryTests: XCTestCase {
         XCTAssertFalse(device?.resumesSharing ?? true)
     }
 
-    /// Réenregistrer met à jour le nom sans effacer l'intention de partage : c'est ce qui
-    /// fait qu'une tablette rebranchée reprend toute seule.
-    func testReenregistrementConserveLaReprise() {
+    /// Recording again updates the name without erasing the sharing intent: that is what
+    /// makes a replugged tablet resume on its own.
+    func testRerecordingKeepsTheResumeIntent() {
         directory.record(deviceID: "A", name: "Tab", transport: .wifi)
         directory.setResumesSharing(true, for: "A")
 
-        directory.record(deviceID: "A", name: "Tab renommée", transport: .usb)
+        directory.record(deviceID: "A", name: "Renamed tab", transport: .usb)
 
         let device = directory.device("A")
-        XCTAssertEqual(device?.name, "Tab renommée")
+        XCTAssertEqual(device?.name, "Renamed tab")
         XCTAssertEqual(device?.lastTransport, .usb)
         XCTAssertTrue(device?.resumesSharing ?? false)
     }
 
-    /// Un transport absent ne doit pas effacer le dernier connu : c'est lui qu'on affiche
-    /// pour un appareil hors ligne.
-    func testTransportNilNEcrasePas() {
+    /// A missing transport must not erase the last known one: that is what an offline device
+    /// displays.
+    func testNilTransportDoesNotOverwrite() {
         directory.record(deviceID: "A", name: "Tab", transport: .usb)
         directory.record(deviceID: "A", name: "Tab", transport: nil)
 
         XCTAssertEqual(directory.device("A")?.lastTransport, .usb)
     }
 
-    func testListeDesReprises() {
+    func testResumeList() {
         directory.record(deviceID: "A", name: "A", transport: .usb)
         directory.record(deviceID: "B", name: "B", transport: .wifi)
         directory.setResumesSharing(true, for: "B")
@@ -69,12 +69,12 @@ final class DeviceDirectoryTests: XCTestCase {
         XCTAssertTrue(directory.resuming().isEmpty)
     }
 
-    func testRepriseIgnoreUnAppareilAbsent() {
-        directory.setResumesSharing(true, for: "fantôme")
+    func testResumeIgnoresAMissingDevice() {
+        directory.setResumesSharing(true, for: "ghost")
         XCTAssertTrue(directory.resuming().isEmpty)
     }
 
-    func testSuppression() {
+    func testRemoval() {
         directory.record(deviceID: "A", name: "A", transport: .usb)
         directory.record(deviceID: "B", name: "B", transport: .usb)
 
@@ -86,17 +86,17 @@ final class DeviceDirectoryTests: XCTestCase {
         XCTAssertTrue(directory.all().isEmpty)
     }
 
-    /// Le plus récemment vu arrive en tête : c'est l'ordre de la fenêtre de réglages.
-    func testTriParDerniereVue() throws {
-        directory.record(deviceID: "vieux", name: "vieux", transport: .usb)
-        var entry = try XCTUnwrap(directory.device("vieux"))
+    /// Most recently seen comes first: that is the order of the settings window.
+    func testSortedByLastSeen() throws {
+        directory.record(deviceID: "old", name: "old", transport: .usb)
+        var entry = try XCTUnwrap(directory.device("old"))
         entry.lastSeen = Date(timeIntervalSinceNow: -3600)
-        // Réécriture directe : `record` remet toujours l'horodatage à maintenant.
-        let encoded = try JSONEncoder().encode(["vieux": entry])
+        // Direct rewrite: `record` always resets the timestamp to now.
+        let encoded = try JSONEncoder().encode(["old": entry])
         defaults.set(encoded, forKey: DeviceDirectory.storageKey)
 
-        directory.record(deviceID: "récent", name: "récent", transport: .wifi)
+        directory.record(deviceID: "recent", name: "recent", transport: .wifi)
 
-        XCTAssertEqual(directory.all().map(\.deviceID), ["récent", "vieux"])
+        XCTAssertEqual(directory.all().map(\.deviceID), ["recent", "old"])
     }
 }

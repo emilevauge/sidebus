@@ -6,11 +6,11 @@ import os
 
 let captureLog = Logger(subsystem: "app.sidebus", category: "capture")
 
-/// Capture un écran avec ScreenCaptureKit et livre les frames en flux asynchrone.
+/// Captures a display with ScreenCaptureKit and delivers frames as an async stream.
 public actor ScreenCapturer {
 
-    /// Autorisation Enregistrement de l'écran. `request` ouvre la fenêtre système la
-    /// première fois, et ne fait rien ensuite : elle ne prend effet qu'après relance.
+    /// Screen Recording permission. `request` opens the system window the first time and
+    /// does nothing afterwards: it only takes effect after a restart.
     public static func isAuthorized() -> Bool {
         CGPreflightScreenCaptureAccess()
     }
@@ -27,13 +27,13 @@ public actor ScreenCapturer {
 
     public init() {}
 
-    /// Démarre la capture de `displayID` et renvoie le flux de frames.
+    /// Starts capturing `displayID` and returns the frame stream.
     ///
     /// - Parameters:
-    ///   - displayID: écran à capturer, fourni par un `VirtualDisplayProvider`.
+    ///   - displayID: display to capture, supplied by a `VirtualDisplayProvider`.
     ///   - pixelSize: taille de capture, en pixels natifs.
     ///   - fps: plafond d'images par seconde. ScreenCaptureKit ne livre une frame que
-    ///     lorsque le contenu change, donc un écran statique coûte zéro.
+    ///     when the content changes, so a static screen costs nothing.
     public func start(
         displayID: CGDirectDisplayID,
         pixelSize: CGSize,
@@ -43,9 +43,9 @@ public actor ScreenCapturer {
             throw CaptureError.screenRecordingNotAuthorized
         }
 
-        // Un écran virtuel qui vient d'être créé n'apparaît pas tout de suite dans le
-        // contenu partageable : le système met quelques centaines de millisecondes à le
-        // publier. On réessaie plutôt que d'échouer sur une course.
+        // A freshly created virtual display does not show up in the shareable content right
+        // away: the system takes a few hundred milliseconds to publish it. Retry rather
+        // than fail on a race.
         var display: SCDisplay?
         for attempt in 0..<6 {
             let content = try await SCShareableContent.excludingDesktopWindows(
@@ -59,7 +59,7 @@ public actor ScreenCapturer {
             if attempt == 0 || attempt == 5 {
                 let ids = content.displays.map { String($0.displayID) }.joined(separator: ", ")
                 captureLog.info(
-                    "écran \(displayID) pas partageable, écrans offerts : [\(ids, privacy: .public)]"
+                    "display \(displayID) not shareable, offered displays: [\(ids, privacy: .public)]"
                 )
             }
             try await Task.sleep(for: .milliseconds(300))
@@ -76,7 +76,7 @@ public actor ScreenCapturer {
         // Format natif de l'encodeur : pas de conversion d'espace couleur en route.
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
-        // Bas, pour la latence : une file profonde ne sert qu'à accumuler du retard.
+        // Low, for latency: a deep queue only accumulates lag.
         configuration.queueDepth = 3
         configuration.showsCursor = true
         configuration.capturesAudio = false
@@ -93,7 +93,7 @@ public actor ScreenCapturer {
         let stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: sampleQueue)
 
-        // Le délégué et la sortie ne sont retenus par personne d'autre.
+        // Nobody else retains the delegate and the output.
         continuation.onTermination = { _ in
             _ = (delegate, output)
         }
@@ -122,7 +122,7 @@ public actor ScreenCapturer {
     }
 }
 
-/// Reçoit les samples sur la file de ScreenCaptureKit et les pousse dans le flux.
+/// Receives samples on ScreenCaptureKit's queue and pushes them into the stream.
 private final class FrameOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     private let continuation: AsyncStream<CapturedFrame>.Continuation
 
@@ -137,8 +137,8 @@ private final class FrameOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     ) {
         guard type == .screen, sampleBuffer.isValid else { return }
 
-        // Seules les frames `complete` portent des pixels neufs. `idle` signale un écran
-        // inchangé, `blank` un écran vide : les deux se jettent.
+        // Only `complete` frames carry fresh pixels. `idle` means an unchanged screen,
+        // `blank` an empty one: both are dropped.
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(
             sampleBuffer,
             createIfNecessary: false
@@ -148,8 +148,8 @@ private final class FrameOutput: NSObject, SCStreamOutput, @unchecked Sendable {
             status == .complete
         else { return }
 
-        // Rectangles modifiés : une frame qui n'en a aucun ne montre rien de neuf.
-        // L'encoder coûterait du CPU et du débit pour une image identique.
+        // Dirty rectangles: a frame with none shows nothing new. Encoding it would cost CPU
+        // and bitrate for an identical picture.
         if let rects = attachments.first?[.dirtyRects] as? [Any], rects.isEmpty {
             return
         }
@@ -173,7 +173,7 @@ private final class StreamDelegate: NSObject, SCStreamDelegate, @unchecked Senda
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        captureLog.info("flux arrêté : \(String(describing: error), privacy: .public)")
+        captureLog.info("stream stopped: \(String(describing: error), privacy: .public)")
         continuation.finish()
     }
 }

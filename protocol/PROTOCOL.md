@@ -1,335 +1,342 @@
-# Protocole Sidebus
+# Sidebus protocol
 
-Version du protocole : **1**
+Protocol version: **1**
 
-Ce fichier est la source de vérité du format sur le fil. Toute modification se fait ici
-d'abord, puis se répercute côté Mac et côté Android dans la même commit, avec les vecteurs
-de `protocol/testvectors/` mis à jour.
+This file is the source of truth for the wire format. Every change lands here first, then
+propagates to the Mac side and the Android side in the same commit, with the vectors in
+`protocol/testvectors/` regenerated.
 
 ---
 
-## 1. Couche de transport
+## 1. Transport layer
 
-- TCP, un seul socket bidirectionnel, port **27183**.
-- Le serveur est la **tablette Android**. Le Mac est toujours le client, en USB comme en Wi-Fi.
-- `TCP_NODELAY` activé des deux côtés.
-- TLS 1.3 à partir de la phase 6 (certificat auto signé côté Android, épinglage côté Mac).
-  En phase 3 le lien est en clair, sur le tunnel adb uniquement.
-- Ordre des octets : **little endian** pour tous les entiers et flottants du protocole.
-  Les flottants sont au format IEEE 754 binary32.
-- Les messages sont émis dans l'ordre sur le socket, sans multiplexage ni entrelacement :
-  un message est écrit intégralement avant le suivant.
+- TCP, a single bidirectional socket, port **27183**.
+- The server is the **Android tablet**. The Mac is always the client, on USB as on Wi-Fi.
+- `TCP_NODELAY` on both sides.
+- TLS 1.3 from phase 6 onwards (self signed certificate on the Android side, pinning on the
+  Mac side). In phase 3 the link was in the clear, over the adb tunnel only.
+- Byte order: **little endian** for every integer and float in the protocol. Floats are
+  IEEE 754 binary32.
+- Messages go out on the socket in order, with no multiplexing and no interleaving: one
+  message is written in full before the next.
 
-## 2. En tête de message
+## 2. Message header
 
-8 octets, présents devant chaque message.
+8 bytes, in front of every message.
 
-| Offset | Taille | Champ  | Description                        |
-| ------ | ------ | ------ | ---------------------------------- |
-| 0      | 1      | magic  | toujours `0x5B`                    |
-| 1      | 1      | type   | voir la table des types            |
-| 2      | 2      | flags  | dépend du type, `0` si non utilisé |
-| 4      | 4      | length | taille du payload, en octets       |
+| Offset | Size | Field  | Description                     |
+| ------ | ---- | ------ | ------------------------------- |
+| 0      | 1    | magic  | always `0x5B`                   |
+| 1      | 1    | type   | see the type table              |
+| 2      | 2    | flags  | depends on the type, `0` unused |
+| 4      | 4    | length | payload size, in bytes          |
 
-Règles de lecture :
+Reading rules:
 
-- Un `magic` différent de `0x5B` est une erreur fatale : fermer le socket, ne pas tenter de
-  resynchroniser.
-- Un `type` inconnu se saute proprement : lire et jeter `length` octets, continuer.
-  C'est ce qui permettra d'ajouter des messages sans casser les versions antérieures.
-- `length` est borné à **8 388 608 octets (8 MiB)**. Au delà, erreur fatale. La borne protège
-  contre une allocation dictée par le pair et couvre largement une frame intra à 15 Mbit/s.
-- Un message sans payload a `length = 0` et aucun octet à sa suite.
+- A `magic` other than `0x5B` is fatal: close the socket, do not try to resynchronise.
+- An unknown `type` is skipped cleanly: read and discard `length` bytes, carry on. That is
+  what will let messages be added without breaking earlier versions.
+- `length` is bounded to **8,388,608 bytes (8 MiB)**. Beyond that, fatal. The bound guards
+  against an allocation dictated by the peer and leaves ample room for an intra frame at
+  15 Mbit/s.
+- A message with no payload has `length = 0` and no bytes after it.
 
-## 3. Types primitifs du payload
+## 3. Primitive payload types
 
-| Notation | Encodage                                                          |
-| -------- | ----------------------------------------------------------------- |
-| `u8`     | 1 octet non signé                                                 |
-| `u16`    | 2 octets non signés, little endian                                |
-| `u32`    | 4 octets non signés, little endian                                |
-| `u64`    | 8 octets non signés, little endian                                |
-| `f32`    | 4 octets, IEEE 754 binary32, little endian                        |
-| `uuid`   | 16 octets bruts, big endian (ordre RFC 4122, celui de la forme texte) |
-| `string` | `u16` longueur en octets, puis ce nombre d'octets en UTF-8, sans terminateur |
+| Notation | Encoding                                                              |
+| -------- | --------------------------------------------------------------------- |
+| `u8`     | 1 unsigned byte                                                       |
+| `u16`    | 2 unsigned bytes, little endian                                       |
+| `u32`    | 4 unsigned bytes, little endian                                       |
+| `u64`    | 8 unsigned bytes, little endian                                       |
+| `f32`    | 4 bytes, IEEE 754 binary32, little endian                             |
+| `uuid`   | 16 raw bytes, big endian (RFC 4122 order, the one of the text form)   |
+| `string` | `u16` length in bytes, then that many UTF-8 bytes, no terminator      |
 
-Une `string` est bornée à 255 octets utiles. Les deux côtés tronquent à l'émission sur une
-frontière de caractère, et refusent le message à la réception si la longueur dépasse.
+A `string` is bounded to 255 useful bytes. Both sides truncate on a character boundary when
+sending, and reject the message on receipt if the length goes over.
 
-Les champs sont sérialisés dans l'ordre du tableau, sans alignement ni remplissage.
+Fields are serialised in table order, with no alignment and no padding.
 
-## 4. Types de messages
+## 4. Message types
 
-| Valeur | Nom            | Sens               | Payload                                   |
-| ------ | -------------- | ------------------ | ----------------------------------------- |
-| `0x01` | HELLO          | Mac vers Android   | voir 4.1                                  |
-| `0x02` | DEVICE_INFO    | Android vers Mac   | voir 4.2                                  |
-| `0x03` | DISPLAY_CONFIG | Mac vers Android   | voir 4.3                                  |
-| `0x04` | VIDEO_CONFIG   | Mac vers Android   | voir 4.4                                  |
-| `0x05` | VIDEO_FRAME    | Mac vers Android   | voir 4.5                                  |
-| `0x06` | INPUT_EVENT    | Android vers Mac   | voir 4.6                                  |
-| `0x07` | PING           | bidirectionnel     | `u64` timestamp µs                        |
-| `0x08` | PONG           | bidirectionnel     | `u64` echo du timestamp du PING           |
-| `0x09` | KEYFRAME_REQ   | Android vers Mac   | vide                                      |
-| `0x0A` | STATS          | Android vers Mac   | voir 4.10                                 |
-| `0x0B` | BYE            | bidirectionnel     | `u8` code de raison                       |
-| `0x0C` | PAIR_REQUEST   | Mac vers Android   | `u32` code d'appairage, voir 4.12         |
-| `0x0D` | PAIR_RESULT    | Android vers Mac   | `u8` 0 refusé, 1 accepté, voir 4.13       |
+| Value  | Name           | Direction          | Payload                                 |
+| ------ | -------------- | ------------------ | --------------------------------------- |
+| `0x01` | HELLO          | Mac to Android     | see 4.1                                 |
+| `0x02` | DEVICE_INFO    | Android to Mac     | see 4.2                                 |
+| `0x03` | DISPLAY_CONFIG | Mac to Android     | see 4.3                                 |
+| `0x04` | VIDEO_CONFIG   | Mac to Android     | see 4.4                                 |
+| `0x05` | VIDEO_FRAME    | Mac to Android     | see 4.5                                 |
+| `0x06` | INPUT_EVENT    | Android to Mac     | see 4.6                                 |
+| `0x07` | PING           | bidirectional      | `u64` timestamp in µs                   |
+| `0x08` | PONG           | bidirectional      | `u64` echo of the PING timestamp        |
+| `0x09` | KEYFRAME_REQ   | Android to Mac     | empty                                   |
+| `0x0A` | STATS          | Android to Mac     | see 4.10                                |
+| `0x0B` | BYE            | bidirectional      | `u8` reason code                        |
+| `0x0C` | PAIR_REQUEST   | Mac to Android     | `u32` pairing code, see 4.12            |
+| `0x0D` | PAIR_RESULT    | Android to Mac     | `u8` 0 refused, 1 accepted, see 4.13    |
 
-Recevoir un message dans le mauvais sens (par exemple un HELLO côté Mac) est une erreur
-fatale : fermer le socket.
+Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
+the socket.
 
 ### 4.1 HELLO (`0x01`)
 
-| Champ    | Type     | Description                          |
-| -------- | -------- | ------------------------------------ |
-| version  | `u16`    | version du protocole parlée par le Mac |
-| name     | `string` | nom du Mac, affiché sur la tablette  |
-| uuid     | `uuid`   | identifiant persistant du Mac        |
+| Field   | Type     | Description                              |
+| ------- | -------- | ---------------------------------------- |
+| version | `u16`    | protocol version the Mac speaks          |
+| name    | `string` | name of the Mac, shown on the tablet     |
+| uuid    | `uuid`   | persistent identifier of the Mac         |
 
-C'est le **Mac** qui envoie HELLO, puisque c'est lui qui ouvre la connexion.
+The **Mac** sends HELLO, since it is the one opening the connection.
 
-Si `version` est supérieure à celle que connaît la tablette, elle répond quand même
-DEVICE_INFO : c'est le Mac, qui connaît les deux versions, qui décide de continuer ou
-d'envoyer BYE avec le code 2.
+If `version` is higher than the one the tablet knows, it answers DEVICE_INFO anyway: the
+Mac, which knows both versions, decides whether to carry on or send BYE with code 2.
 
 ### 4.2 DEVICE_INFO (`0x02`)
 
-| Champ    | Type     | Description                                        |
-| -------- | -------- | -------------------------------------------------- |
-| width    | `u16`    | largeur de la dalle, en pixels                     |
-| height   | `u16`    | hauteur de la dalle, en pixels                     |
-| density  | `u16`    | densité, en dpi (`DisplayMetrics.densityDpi`)      |
-| codecs   | `u8`     | bitmask des codecs décodables, voir 5.1            |
-| name     | `string` | nom de l'appareil (`Settings.Global.DEVICE_NAME`)  |
-| uuid     | `uuid`   | identifiant persistant de l'appareil               |
+| Field   | Type     | Description                                        |
+| ------- | -------- | -------------------------------------------------- |
+| width   | `u16`    | panel width, in pixels                             |
+| height  | `u16`    | panel height, in pixels                            |
+| density | `u16`    | density, in dpi (`DisplayMetrics.densityDpi`)      |
+| codecs  | `u8`     | bitmask of decodable codecs, see 5.1               |
+| name    | `string` | device name (`Settings.Global.DEVICE_NAME`)        |
+| uuid    | `uuid`   | persistent identifier of the device                |
 
-`width` et `height` décrivent la dalle en orientation paysage, indépendamment de
-l'orientation courante.
+`width` and `height` describe the panel in landscape orientation, whatever the current
+orientation is.
 
-`uuid` est le même identifiant que la clé `id` de l'annonce mDNS, généré au premier
-lancement et conservé ensuite. Il est indispensable à l'arbitrage entre transports : sans
-lui, une tablette vue à la fois en USB et en Wi-Fi apparaît comme deux appareils, le port
-USB étant repéré par son numéro de série adb et le Wi-Fi par cet identifiant.
+`uuid` is the same identifier as the `id` key of the mDNS advertisement, generated on first
+launch and kept afterwards. It is what makes arbitration between transports possible:
+without it, a tablet seen on both USB and Wi-Fi looks like two devices, since the USB side
+is known by its adb serial and the Wi-Fi side by this identifier.
 
 ### 4.3 DISPLAY_CONFIG (`0x03`)
 
-| Champ  | Type  | Description                            |
+| Field  | Type  | Description                            |
 | ------ | ----- | -------------------------------------- |
-| width  | `u16` | largeur du flux vidéo, en pixels       |
-| height | `u16` | hauteur du flux vidéo, en pixels       |
-| fps    | `u8`  | images par seconde visées              |
-| codec  | `u8`  | codec retenu, valeur unique, voir 5.1  |
+| width  | `u16` | video stream width, in pixels          |
+| height | `u16` | video stream height, in pixels         |
+| fps    | `u8`  | target frames per second               |
+| codec  | `u8`  | chosen codec, single value, see 5.1    |
 
-Le Mac choisit. La tablette applique, ou envoie BYE code 2 si elle ne peut pas.
+The Mac chooses. The tablet applies it, or sends BYE code 2 if it cannot.
 
 ### 4.4 VIDEO_CONFIG (`0x04`)
 
-Payload : les paramètres du codec en **Annex B**, c'est à dire les NAL units préfixées par
-`00 00 00 01`, concaténées dans l'ordre.
+Payload: the codec parameters in **Annex B**, that is NAL units prefixed with
+`00 00 00 01`, concatenated in order.
 
-- H.264 : SPS puis PPS.
-- HEVC : VPS puis SPS puis PPS.
+- H.264: SPS then PPS.
+- HEVC: VPS then SPS then PPS.
 
-Côté Android, ce payload est passé tel quel dans `csd-0`.
+On the Android side this payload goes straight into `csd-0`.
 
-Un VIDEO_CONFIG est toujours envoyé avant le premier VIDEO_FRAME, et de nouveau à chaque
-changement de configuration de l'encodeur (résolution, codec).
+A VIDEO_CONFIG always precedes the first VIDEO_FRAME, and is sent again on every encoder
+configuration change (resolution, codec).
 
 ### 4.5 VIDEO_FRAME (`0x05`)
 
-| Champ     | Type  | Description                                 |
-| --------- | ----- | ------------------------------------------- |
-| timestamp | `u64` | horodatage de capture, en µs                |
-| data      | reste | NAL units en Annex B, jusqu'au bout du payload |
+| Field     | Type | Description                                      |
+| --------- | ---- | ------------------------------------------------ |
+| timestamp | `u64`| capture timestamp, in µs                         |
+| data      | rest | NAL units in Annex B, to the end of the payload  |
 
-Flags :
+Flags:
 
-| Bit | Signification            |
+| Bit | Meaning                  |
 | --- | ------------------------ |
-| 0   | la frame est une keyframe |
+| 0   | the frame is a keyframe  |
 
-Les autres bits sont réservés et valent `0`.
+The other bits are reserved and hold `0`.
 
-Le timestamp est issu de l'horloge monotone du Mac (`mach_absolute_time` converti en µs).
-Il ne sert pas à cadencer le rendu, qui est immédiat, mais à mesurer la latence et à
-horodater les statistiques.
+The timestamp comes from the Mac's monotonic clock (`mach_absolute_time` converted to µs).
+It does not pace rendering, which is immediate, but measures latency and timestamps the
+statistics.
 
 ### 4.6 INPUT_EVENT (`0x06`)
 
-| Champ     | Type  | Description                         |
-| --------- | ----- | ----------------------------------- |
-| kind      | `u8`  | voir 5.2                            |
-| x         | `f32` | abscisse normalisée, 0.0 à 1.0      |
-| y         | `f32` | ordonnée normalisée, 0.0 à 1.0      |
-| button    | `u8`  | voir 5.3                            |
-| timestamp | `u64` | horodatage de l'événement, en µs    |
+| Field     | Type  | Description                        |
+| --------- | ----- | ---------------------------------- |
+| kind      | `u8`  | see 5.2                            |
+| x         | `f32` | normalised abscissa, 0.0 to 1.0    |
+| y         | `f32` | normalised ordinate, 0.0 to 1.0    |
+| button    | `u8`  | see 5.3                            |
+| timestamp | `u64` | event timestamp, in µs             |
 
-Les coordonnées sont normalisées sur la surface d'affichage de la tablette, indépendamment
-de la résolution négociée. L'origine est en **haut à gauche**. Le Mac remappe sur
+Coordinates are normalised against the tablet's display surface, whatever resolution was
+negotiated. The origin is **top left**. The Mac maps them onto
 `CGDisplayBounds(displayID)`.
 
-Une valeur hors de `[0.0, 1.0]` est ramenée dans l'intervalle à la réception, sans erreur.
+A value outside `[0.0, 1.0]` is clamped on receipt, without error.
 
 ### 4.10 STATS (`0x0A`)
 
-| Champ    | Type  | Description                                  |
-| -------- | ----- | -------------------------------------------- |
-| received | `u32` | frames reçues pendant la fenêtre             |
-| dropped  | `u32` | frames droppées pendant la fenêtre           |
-| window   | `u16` | durée de la fenêtre de mesure, en ms         |
+| Field    | Type  | Description                            |
+| -------- | ----- | -------------------------------------- |
+| received | `u32` | frames received during the window      |
+| dropped  | `u32` | frames dropped during the window       |
+| window   | `u16` | measurement window duration, in ms     |
 
-Les compteurs portent sur la fenêtre écoulée, pas depuis le début de la session.
+The counters cover the window that just elapsed, not the whole session.
 
 ### 4.11 BYE (`0x0B`)
 
-| Champ  | Type | Description        |
-| ------ | ---- | ------------------ |
-| reason | `u8` | voir 5.4           |
+| Field  | Type | Description |
+| ------ | ---- | ----------- |
+| reason | `u8` | see 5.4     |
 
-L'émetteur ferme le socket après l'envoi, sans attendre de réponse.
+The sender closes the socket after sending, without waiting for an answer.
 
 ### 4.12 PAIR_REQUEST (`0x0C`)
 
-| Champ | Type  | Description                                          |
-| ----- | ----- | ---------------------------------------------------- |
-| code  | `u32` | code à six chiffres dérivé de l'empreinte, voir 7    |
+| Field | Type  | Description                                         |
+| ----- | ----- | --------------------------------------------------- |
+| code  | `u32` | six digit code derived from the fingerprint, see 7  |
 
-Le Mac l'envoie après DEVICE_INFO, et seulement quand il ne connaissait pas l'empreinte du
-certificat présenté : c'est à dire quand il vient lui même de demander confirmation à son
-utilisateur. La tablette affiche alors le code et demande confirmation à son tour.
+The Mac sends it after DEVICE_INFO, and only when it did not already know the fingerprint
+of the certificate presented: that is, when it has just asked its own user for
+confirmation. The tablet then shows the code and asks in turn.
 
-Le Mac n'enregistre l'empreinte qu'après un PAIR_RESULT accepté. Un appairage refusé d'un
-côté ne laisse donc rien derrière lui de l'autre.
+The Mac only records the fingerprint after an accepted PAIR_RESULT. A pairing refused on
+one side therefore leaves nothing behind on the other.
 
-La tablette compare le code reçu à celui qu'elle dérive de son propre certificat. Ils
-doivent être identiques : une différence signifie que le certificat vu par le Mac n'est pas
-celui de la tablette, et la tablette le signale dans sa demande de confirmation.
+The tablet compares the code it received with the one it derives from its own certificate.
+They must match: a difference means the certificate the Mac sees is not the tablet's, and
+the tablet says so in its confirmation prompt.
 
 ### 4.13 PAIR_RESULT (`0x0D`)
 
-| Champ    | Type | Description            |
-| -------- | ---- | ---------------------- |
-| accepted | `u8` | 0 refusé, 1 accepté    |
+| Field    | Type | Description             |
+| -------- | ---- | ----------------------- |
+| accepted | `u8` | 0 refused, 1 accepted   |
 
-Toute valeur autre que 1 vaut refus.
+Any value other than 1 counts as a refusal.
 
-Le Mac attend ce message au plus 120 s après PAIR_REQUEST. Passé ce délai, il traite
-l'absence de réponse comme un refus et envoie BYE avec le code 0.
+The Mac waits at most 120 s for this message after PAIR_REQUEST. Past that, it treats the
+silence as a refusal and sends BYE with code 0.
 
-## 5. Énumérations
+## 5. Enumerations
 
 ### 5.1 Codecs
 
-| Bit | Valeur du bitmask | Valeur unique (`codec`) | Codec |
-| --- | ----------------- | ----------------------- | ----- |
-| 0   | `0x01`            | `0x01`                  | H.264 |
-| 1   | `0x02`            | `0x02`                  | HEVC  |
+| Bit | Bitmask value | Single value (`codec`) | Codec |
+| --- | ------------- | ---------------------- | ----- |
+| 0   | `0x01`        | `0x01`                 | H.264 |
+| 1   | `0x02`        | `0x02`                 | HEVC  |
 
-Dans DEVICE_INFO, `codecs` est un bitmask, plusieurs bits peuvent être à 1. Dans
-DISPLAY_CONFIG, `codec` désigne un seul codec, la valeur est celle du bit correspondant.
+In DEVICE_INFO, `codecs` is a bitmask and several bits may be set. In DISPLAY_CONFIG,
+`codec` names a single codec, and the value is that of the matching bit.
 
-### 5.2 Types d'événement d'entrée
+### 5.2 Input event kinds
 
-| Valeur | Nom  | Origine Android |
+| Value  | Name | Android origin  |
 | ------ | ---- | --------------- |
 | `0x00` | DOWN | `ACTION_DOWN`   |
 | `0x01` | MOVE | `ACTION_MOVE`   |
 | `0x02` | UP   | `ACTION_UP`     |
 
-`ACTION_CANCEL` est émis comme un UP.
+`ACTION_CANCEL` is sent as an UP.
 
-### 5.3 Boutons
+### 5.3 Buttons
 
-| Valeur | Bouton  |
-| ------ | ------- |
-| `0x00` | gauche  |
-| `0x01` | droit   |
-| `0x02` | milieu  |
+| Value  | Button |
+| ------ | ------ |
+| `0x00` | left   |
+| `0x01` | right  |
+| `0x02` | middle |
 
-En v1 la tablette n'émet que `0x00`.
+In v1 the tablet only sends `0x00`.
 
-### 5.4 Codes de raison de BYE
+### 5.4 BYE reason codes
 
-| Valeur | Signification          |
-| ------ | ---------------------- |
-| `0x00` | fermeture normale      |
-| `0x01` | bascule de transport   |
-| `0x02` | erreur                 |
+| Value  | Meaning           |
+| ------ | ----------------- |
+| `0x00` | normal close      |
+| `0x01` | transport switch  |
+| `0x02` | error             |
 
-## 6. Séquence de connexion
+## 6. Connection sequence
 
-1. Le Mac établit le socket (Wi-Fi direct, ou `127.0.0.1:27183` via le tunnel adb), puis
-   le handshake TLS.
-2. Mac envoie HELLO. Android répond DEVICE_INFO.
-3. Si l'appareil n'était pas appairé, Mac envoie PAIR_REQUEST et attend PAIR_RESULT. Un
-   refus met fin à la connexion par un BYE de code 0.
-4. Mac choisit la résolution et le codec, crée l'écran virtuel, envoie DISPLAY_CONFIG.
-5. Mac envoie VIDEO_CONFIG, puis un flux de VIDEO_FRAME démarrant par une keyframe.
-6. PING toutes les secondes dans les deux sens. Un pair sans PONG ni trafic pendant 5 s est
-   considéré déconnecté : fermer le socket.
-7. STATS toutes les 2 s, depuis la tablette. Alimente l'adaptation de débit.
+1. The Mac opens the socket (Wi-Fi directly, or `127.0.0.1:27183` through the adb tunnel),
+   then the TLS handshake.
+2. Mac sends HELLO. Android answers DEVICE_INFO.
+3. If the device was not paired, the Mac sends PAIR_REQUEST and waits for PAIR_RESULT. A
+   refusal ends the connection with a BYE of code 0.
+4. Mac picks the resolution and the codec, creates the virtual display, sends
+   DISPLAY_CONFIG.
+5. Mac sends VIDEO_CONFIG, then a stream of VIDEO_FRAME starting with a keyframe.
+6. PING every second in both directions. A peer with no PONG and no traffic for 5 s counts
+   as disconnected: close the socket.
+7. STATS every 2 s, from the tablet. Feeds the bitrate adaptation.
 
-INPUT_EVENT et KEYFRAME_REQ peuvent être émis à tout moment une fois DISPLAY_CONFIG passé.
+INPUT_EVENT and KEYFRAME_REQ can be sent at any time once DISPLAY_CONFIG has passed.
 
-## 7. Sécurité et appairage
+Neither side lets a timeout run while a dialog waits for a human. The 5 s silence rule and
+the ordinary read timeouts apply once the handshake is through, not during it: pairing asks
+a question of both users, and they need longer than a few seconds to answer.
 
-TLS 1.3 uniquement, dans les deux modes de transport. La tablette est le serveur et
-présente un certificat auto signé de longue durée, généré au premier lancement et conservé
-dans l'Android Keystore. Le Mac est le client et ne présente aucun certificat.
+## 7. Security and pairing
 
-La vérification côté Mac ne valide pas une chaîne de confiance, il n'y en a pas : elle
-compare l'empreinte SHA-256 du certificat présenté à celle enregistrée pour cet appareil.
-C'est le modèle de `known_hosts` de SSH.
+TLS 1.3 only, in both transport modes. The tablet is the server and presents a long lived
+self signed certificate, generated on first launch and kept in the Android Keystore. The
+Mac is the client and presents no certificate.
 
-### Code d'appairage
+Verification on the Mac side does not validate a chain of trust, there is none: it compares
+the SHA-256 fingerprint of the presented certificate with the one recorded for that device.
+This is SSH's `known_hosts` model.
 
-À la première connexion à un appareil inconnu, les deux côtés dérivent le même code à six
-chiffres de l'empreinte du certificat :
+### Pairing code
+
+On the first connection to an unknown device, both sides derive the same six digit code
+from the certificate fingerprint:
 
 ```
-empreinte = SHA-256(certificat au format DER)
-code      = (empreinte[0] << 24 | empreinte[1] << 16 | empreinte[2] << 8 | empreinte[3]) mod 1 000 000
+fingerprint = SHA-256(certificate in DER form)
+code        = (fingerprint[0] << 24 | fingerprint[1] << 16 | fingerprint[2] << 8 | fingerprint[3]) mod 1,000,000
 ```
 
-Le résultat est affiché sur six chiffres, zéros de tête compris. La comparaison des deux
-codes affichés reste visuelle et hors bande : c'est elle qui protège du pair qui se fait
-passer pour la tablette, et aucun échange de protocole ne peut la remplacer.
+The result is shown on six digits, leading zeros included. Comparing the two displayed
+codes stays visual and out of band: that is what protects against a peer impersonating the
+tablet, and no protocol exchange can take its place.
 
-L'appairage demande une confirmation **des deux côtés**, dans cet ordre :
+Pairing asks for confirmation on **both sides**, in this order:
 
-1. Le Mac affiche le code dès le handshake TLS, puisque c'est là qu'il découvre
-   l'empreinte. Un refus ferme le socket, rien n'est enregistré.
-2. Une fois DEVICE_INFO reçu, le Mac envoie PAIR_REQUEST. La tablette affiche le code à son
-   tour et répond PAIR_RESULT.
+1. The Mac shows the code as soon as the TLS handshake reaches it, since that is where it
+   discovers the fingerprint. A refusal closes the socket and records nothing.
+2. Once DEVICE_INFO has arrived, the Mac sends PAIR_REQUEST. The tablet shows the code in
+   turn and answers PAIR_RESULT.
 
-PAIR_REQUEST ne transporte pas un secret : le code se déduit du certificat, que quiconque
-écoute le handshake voit passer. Il sert à déclencher la confirmation sur la tablette et à
-lui permettre de détecter que le Mac ne voit pas le même certificat qu'elle présente.
+The tablet keeps its code on the waiting screen throughout, and that is what makes step 1
+meaningful: the Mac asks first, so without the tablet's own code in sight the user would
+accept blind.
 
-Le Mac enregistre l'empreinte dans le trousseau, associée à l'`uuid` de l'appareil, une
-fois les deux confirmations obtenues.
-Si l'empreinte d'un appareil connu change, la connexion est refusée et l'utilisateur
-alerté, sans proposition de passer outre en un clic.
+PAIR_REQUEST carries no secret: the code follows from the certificate, which anyone
+listening to the handshake sees go by. It exists to trigger the confirmation on the tablet
+and to let the tablet notice that the Mac is not seeing the certificate it presented.
 
-## 8. Enregistrements TXT de l'annonce mDNS
+The Mac records the fingerprint in the keychain, tied to the device's `uuid`, once both
+confirmations are in. If the fingerprint of a known device changes, the connection is
+refused and the user warned, with no one click way to override.
 
-Type de service : `_sidebus._tcp`, port 27183. Valeurs TXT en ASCII.
+## 8. TXT records of the mDNS advertisement
 
-| Clé  | Contenu                                                    |
-| ---- | ---------------------------------------------------------- |
-| `v`  | version du protocole, en décimal                           |
-| `id` | UUID persistant de l'appareil, forme texte RFC 4122        |
-| `w`  | largeur en pixels, en décimal                              |
-| `h`  | hauteur en pixels, en décimal                              |
-| `d`  | densité en dpi, en décimal                                 |
-| `c`  | bitmask des codecs, en décimal                             |
-| `fp` | 8 premiers octets du SHA-256 du certificat, en hexadécimal minuscule |
+Service type: `_sidebus._tcp`, port 27183. TXT values in ASCII.
 
-## 9. Vecteurs de test
+| Key  | Content                                                       |
+| ---- | ------------------------------------------------------------- |
+| `v`  | protocol version, in decimal                                  |
+| `id` | persistent device UUID, RFC 4122 text form                    |
+| `w`  | width in pixels, in decimal                                   |
+| `h`  | height in pixels, in decimal                                  |
+| `d`  | density in dpi, in decimal                                    |
+| `c`  | codec bitmask, in decimal                                     |
+| `fp` | first 8 bytes of the certificate SHA-256, lowercase hex       |
 
-`protocol/testvectors/` contient un fichier par cas, encodé une fois pour toutes. Les tests
-unitaires des deux côtés décodent chaque vecteur, vérifient les champs, réencodent et
-comparent octet à octet avec le fichier d'origine.
+## 9. Test vectors
 
-Les vecteurs arrivent en phase 3, avec `MessageCodec`.
+`protocol/testvectors/` holds one file per case, encoded once and for all. The unit tests on
+both sides decode each vector, check the fields, re-encode and compare byte for byte with
+the original file.
+
+The vectors arrived in phase 3, alongside `MessageCodec`.

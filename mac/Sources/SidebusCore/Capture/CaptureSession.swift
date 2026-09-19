@@ -2,16 +2,16 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 
-/// Chaîne complète capture vers encodage : acquiert l'écran auprès d'un
+/// The full capture to encode chain: acquires the display from a
 /// `VirtualDisplayProvider`, branche ScreenCaptureKit sur VideoToolbox, et livre les
-/// frames encodées.
+/// encoded frames.
 ///
 /// En phase 2 la sortie part dans un fichier. En phase 3 elle partira sur le socket,
 /// sans rien changer ici.
 public actor CaptureSession {
 
-    /// Taille du flux à envoyer : l'écran capturé, ramené dans la dalle de la tablette
-    /// sans déformer ni agrandir. Les dimensions sont paires, l'encodeur travaillant par
+    /// Size of the stream to send: the captured display fitted into the tablet's panel
+    /// without distorting or enlarging. Dimensions are even, since the encoder works in
     /// macroblocs.
     public static func streamSize(display: CGSize, device: CGSize) -> CGSize {
         guard display.width > 0, display.height > 0 else { return device }
@@ -32,8 +32,8 @@ public actor CaptureSession {
     private var provider: (any VirtualDisplayProvider)?
     private var encoder: VideoEncoder?
     private var pump: Task<Void, Never>?
-    /// Dernière frame capturée, conservée pour pouvoir répondre à une demande de keyframe
-    /// même quand l'écran ne bouge plus.
+    /// Last captured frame, kept so that a keyframe request can be answered even when the
+    /// screen has stopped moving.
     private var lastFrame: CapturedFrame?
 
     public init() {}
@@ -75,7 +75,7 @@ public actor CaptureSession {
                 }
             }
 
-            // La capture s'est arrêtée, par exemple parce que macOS a coupé le partage.
+            // Capture stopped, for instance because macOS cut the share.
             // Terminer l'encodeur propage la nouvelle au consommateur, qui attendrait
             // sinon des frames qui ne viendront plus.
             await encoder.finish()
@@ -84,7 +84,7 @@ public actor CaptureSession {
         return encoder.frames
     }
 
-    /// Ajuste le débit visé sans interrompre la capture.
+    /// Adjusts the target bitrate without interrupting capture.
     public func setBitrate(_ bitrate: Int) async {
         await encoder?.setBitrate(bitrate)
     }
@@ -102,11 +102,11 @@ public actor CaptureSession {
         lastFrame = frame
     }
 
-    /// Force une keyframe, en réponse à KEYFRAME_REQ.
+    /// Forces a keyframe, in answer to KEYFRAME_REQ.
     ///
-    /// ScreenCaptureKit ne livre une frame que lorsque le contenu change. Sur un écran
+    /// ScreenCaptureKit only delivers a frame when the content changes. On a still
     /// immobile, se contenter d'armer le drapeau laisserait la tablette corrompue jusqu'au
-    /// prochain mouvement. On réencode donc tout de suite la dernière frame connue.
+    /// next movement. So the last known frame is re-encoded right away.
     public func requestKeyframe() async {
         guard let encoder else { return }
         await encoder.requestKeyframe()

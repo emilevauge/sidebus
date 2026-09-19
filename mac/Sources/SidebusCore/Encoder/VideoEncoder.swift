@@ -9,14 +9,14 @@ public struct VideoEncoderConfiguration: Sendable {
     public var fps: Int
     public var bitrate: Int
     public var maxKeyFrameInterval: Int
-    /// Intervalle maximal entre deux keyframes, en secondes.
+    /// Maximum interval between two keyframes, in seconds.
     ///
-    /// Un intervalle exprimé en nombre de frames ne protège de rien quand la cadence
-    /// tombe : 300 frames à 7 fps font 43 secondes d'image corrompue après la moindre
-    /// perte. Une borne temporelle tient quelle que soit la cadence.
+    /// An interval counted in frames protects nothing when the frame rate drops: 300
+    /// frames at 7 fps is 43 seconds of corrupted picture after the smallest loss. A
+    /// time bound holds at any frame rate.
     public var maxKeyFrameIntervalSeconds: Double
-    /// HEVC coûte 30 à 40 % de débit en moins, ce qui compte beaucoup en Wi-Fi. Retenu
-    /// seulement si la tablette annonce savoir le décoder.
+    /// HEVC costs 30 to 40 % less bitrate, which counts for a lot on Wi-Fi. Only chosen
+    /// when the tablet announces it can decode it.
     public var codec: Codec
 
     public init(
@@ -47,24 +47,24 @@ public enum EncoderError: Error, CustomStringConvertible, Sendable {
     public var description: String {
         switch self {
         case let .sessionCreationFailed(status):
-            return "création de la session VideoToolbox impossible (OSStatus \(status))"
+            return "cannot create the VideoToolbox session (OSStatus \(status))"
         case let .propertyFailed(key, status):
-            return "propriété \(key) refusée (OSStatus \(status))"
+            return "property \(key) refused (OSStatus \(status))"
         case let .encodeFailed(status):
-            return "encodage refusé (OSStatus \(status))"
+            return "encoding refused (OSStatus \(status))"
         case .sessionClosed:
-            return "session d'encodage fermée"
+            return "encoding session closed"
         }
     }
 }
 
-/// Encodeur H.264 matériel, réglé pour la latence.
+/// Hardware H.264 encoder, tuned for latency.
 ///
-/// Reçoit des `CVImageBuffer` adossés à un `IOSurface` et les passe directement à
+/// Takes `CVImageBuffer`s backed by an `IOSurface` and hands them straight to
 /// VideoToolbox. Aucune copie de framebuffer.
 public actor VideoEncoder {
 
-    /// Flux des frames encodées, dans l'ordre de présentation.
+    /// Stream of encoded frames, in presentation order.
     public nonisolated let frames: AsyncStream<EncodedFrame>
 
     private let sink: OutputSink
@@ -83,8 +83,8 @@ public actor VideoEncoder {
         frames = stream
         sink = OutputSink(continuation: continuation)
 
-        // Ces deux réglages appartiennent à la spécification de l'encodeur, pas aux
-        // propriétés de session : ils sont lus au moment de choisir l'encodeur.
+        // These two belong to the encoder specification, not to the session properties:
+        // they are read when the encoder is chosen.
         let specification: [CFString: Any] = [
             kVTVideoEncoderSpecification_EnableLowLatencyRateControl: kCFBooleanTrue as Any,
             kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: kCFBooleanTrue as Any,
@@ -111,7 +111,7 @@ public actor VideoEncoder {
         self.session = session
 
         try Self.set(session, kVTCompressionPropertyKey_RealTime, true)
-        // Pas de B frames : elles imposent de réordonner, donc d'attendre.
+        // No B frames: they force reordering, so they force waiting.
         try Self.set(session, kVTCompressionPropertyKey_AllowFrameReordering, false)
         try Self.set(
             session,
@@ -129,14 +129,14 @@ public actor VideoEncoder {
         VTCompressionSessionPrepareToEncodeFrames(session)
     }
 
-    // Pas d'invalidation de la session ici : `deinit` n'est pas isolé et ne peut pas
-    // toucher à l'état de l'acteur. Appeler `finish()` avant de lâcher l'encodeur.
-    // La session elle même est libérée avec l'acteur, CoreFoundation s'en charge.
+    // The session is not invalidated here: `deinit` is not isolated and cannot touch the
+    // actor's state. Call `finish()` before letting the encoder go. The session itself is
+    // released along with the actor, CoreFoundation takes care of it.
     deinit {
         sink.finish()
     }
 
-    /// Change le débit visé en cours de route.
+    /// Changes the target bitrate mid flight.
     public func setBitrate(_ bitrate: Int) {
         guard let session, bitrate != currentBitrate else { return }
         let status = VTSessionSetProperty(
@@ -149,13 +149,13 @@ public actor VideoEncoder {
 
     public var bitrate: Int { currentBitrate }
 
-    /// Demande une keyframe sur la prochaine frame encodée. Sert à répondre à
-    /// KEYFRAME_REQ, quand le décodeur a perdu le fil.
+    /// Asks for a keyframe on the next encoded frame. Used to answer KEYFRAME_REQ, when the
+    /// decoder has lost the thread.
     public func requestKeyframe() {
         keyframeRequested = true
     }
 
-    /// Encode une frame. Le résultat sort plus tard dans `frames`.
+    /// Encodes a frame. The result comes out later in `frames`.
     public func encode(_ frame: CapturedFrame) throws {
         guard let session else { throw EncoderError.sessionClosed }
 
@@ -217,7 +217,7 @@ public actor VideoEncoder {
     }
 }
 
-/// Reçoit les frames encodées sur la file interne de VideoToolbox, les convertit en
+/// Receives encoded frames on VideoToolbox's internal queue, converts them to
 /// Annex B et les pousse dans le flux.
 private final class OutputSink: @unchecked Sendable {
     private let lock = NSLock()
@@ -263,7 +263,7 @@ private final class OutputSink: @unchecked Sendable {
         }
         guard copyStatus == kCMBlockBufferNoErr else { return }
 
-        // Conversion sur place : les octets copiés du `CMBlockBuffer` deviennent
+        // Conversion in place: the bytes copied from the `CMBlockBuffer` become
         // directement de l'Annex B, sans seconde allocation.
         var data = avcc
         do {

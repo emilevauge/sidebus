@@ -3,24 +3,25 @@ import CoreGraphics
 import Foundation
 import os
 
-/// Crée un vrai écran virtuel, à la demande, aux dimensions de la tablette.
+/// Creates a real virtual display, on demand, at the tablet's dimensions.
 ///
-/// C'est la valeur ajoutée par rapport au harnais DeskPad : l'écran épouse exactement la
-/// dalle de la tablette au lieu d'une résolution fixée d'avance.
+/// That is what this adds over the DeskPad harness: the display matches the tablet's panel
+/// exactly, instead of a resolution fixed in advance.
 ///
-/// L'écran est créé à la connexion et détruit à la déconnexion. Un écran fantôme qui
-/// persiste sans tablette branchée dérange l'agencement des fenêtres, c'est le reproche
-/// principal fait à ce genre d'outil.
+/// The display is created on connection and destroyed on disconnection. A ghost display
+/// that lingers with no tablet attached disturbs the window layout, and that is the main
+/// complaint aimed at tools of this kind.
 ///
-/// Les classes utilisées sont privées : tout passe par `VirtualDisplayProvider`, et
-/// l'échec d'initialisation est détecté explicitement pour basculer sur un écran existant.
+/// The classes involved are private: everything goes through `VirtualDisplayProvider`, and
+/// an initialisation failure is detected explicitly so we can fall back to an existing
+/// display.
 public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
 
     public struct Configuration: Sendable {
         /// Dimensions en pixels de la dalle de la tablette.
         public var width: Int
         public var height: Int
-        /// Densité annoncée par la tablette, en dpi.
+        /// Density announced by the tablet, in dpi.
         public var density: Int
         public var refreshRate: Double
         public var name: String
@@ -39,10 +40,10 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
             self.name = name
         }
 
-        /// Taille physique à déclarer pour obtenir la densité voulue.
+        /// Physical size to declare in order to land on the wanted density.
         ///
-        /// macOS déduit la densité de la taille physique et du nombre de pixels. Se
-        /// tromper ici donne une interface soit minuscule, soit énorme.
+        /// macOS derives the density from the physical size and the pixel count. Getting it
+        /// wrong here yields an interface that is either minuscule or enormous.
         public var sizeInMillimeters: CGSize {
             let dpi = max(Double(density), 72)
             let millimetersPerInch = 25.4
@@ -52,7 +53,7 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
             )
         }
 
-        /// Dimensions logiques du mode HiDPI. La tablette étant dense, on affiche en 2x.
+        /// Logical dimensions of the HiDPI mode. The tablet being dense, we show at 2x.
         public var pointSize: (width: Int, height: Int) {
             density >= 200 ? (width / 2, height / 2) : (width, height)
         }
@@ -66,11 +67,11 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         public var description: String {
             switch self {
             case .unavailable:
-                return "l'API d'écran virtuel n'existe pas sur cette version de macOS"
+                return "the virtual display API does not exist on this version of macOS"
             case .creationFailed:
-                return "création de l'écran virtuel impossible"
+                return "cannot create the virtual display"
             case .settingsRefused:
-                return "l'écran virtuel a refusé la configuration demandée"
+                return "the virtual display refused the requested configuration"
             }
         }
     }
@@ -83,8 +84,8 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         self.configuration = configuration
     }
 
-    /// Vrai si les classes privées sont présentes. À vérifier avant de tenter la création,
-    /// pour pouvoir basculer proprement.
+    /// True when the private classes are present. Check before attempting creation, so the
+    /// fallback stays clean.
     public static var isSupported: Bool {
         NSClassFromString("CGVirtualDisplay") != nil
             && NSClassFromString("CGVirtualDisplayDescriptor") != nil
@@ -104,9 +105,9 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         descriptor.sizeInMillimeters = configuration.sizeInMillimeters
         descriptor.productID = 0x1234
         descriptor.vendorID = 0x5342  // "SB"
-        // Numéro de série tiré au hasard à chaque création. Réutiliser le même triplet
-        // fabricant, produit, série finit par se heurter aux entrées que le système garde
-        // des écrans précédents.
+        // Serial number drawn at random on every creation. Reusing the same vendor, product,
+        // serial triple eventually collides with the records the system keeps of earlier
+        // displays.
         descriptor.serialNum = UInt32.random(in: 1...UInt32.max)
         descriptor.terminationHandler = { _, _ in }
 
@@ -114,7 +115,7 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
 
         let (pointWidth, pointHeight) = configuration.pointSize
         let settings = CGVirtualDisplaySettings()
-        // Un mode HiDPI se déclare en points ; `hiDPI = 1` fait doubler les pixels.
+        // A HiDPI mode is declared in points; `hiDPI = 1` doubles the pixels.
         settings.modes = [
             CGVirtualDisplayMode(
                 width: UInt32(pointWidth),
@@ -131,22 +132,22 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
             throw VirtualDisplayError.creationFailed
         }
 
-        // L'écran propose bien un mode HiDPI, mais macOS retient par défaut celui qui a
-        // le plus de points, donc le 1x. Sur une dalle dense, l'interface serait
-        // minuscule : on sélectionne le mode 2x nous mêmes.
+        // The display does offer a HiDPI mode, but macOS defaults to the one with the most
+        // points, so 1x. On a dense panel the interface would be minuscule, so we pick the
+        // 2x mode ourselves.
         selectHiDPIMode(for: display.displayID)
 
         self.display = display
         log.info(
             """
-            écran virtuel \(display.displayID) créé en \(pointWidth)×\(pointHeight) points, \
+            virtual display \(display.displayID) created at \(pointWidth)×\(pointHeight) points, \
             \(self.configuration.width)×\(self.configuration.height) pixels
             """
         )
         return display.displayID
     }
 
-    /// Bascule l'écran sur son mode 2x, s'il en propose un à la bonne définition.
+    /// Switches the display to its 2x mode, when it offers one at the right definition.
     private func selectHiDPIMode(for id: CGDirectDisplayID) {
         guard configuration.pointSize.width != configuration.width else { return }
 
@@ -161,22 +162,22 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
                 && $0.width * 2 == $0.pixelWidth
         }
         guard let target else {
-            log.error("aucun mode HiDPI offert par l'écran virtuel, affichage en 1x")
+            log.error("no HiDPI mode offered by the virtual display, showing at 1x")
             return
         }
 
         var handle: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&handle) == .success else { return }
         CGConfigureDisplayWithDisplayMode(handle, id, target, nil)
-        // `forSession` : l'écran est éphémère, inutile d'écrire une préférence durable.
+        // `forSession`: the display is ephemeral, no need to write a lasting preference.
         CGCompleteDisplayConfiguration(handle, .forSession)
     }
 
     public func release() async {
         guard let display else { return }
-        log.info("écran virtuel \(display.displayID) retiré")
-        // Le relâchement de l'objet retire l'écran : macOS restaure alors l'agencement
-        // des fenêtres de l'utilisateur.
+        log.info("virtual display \(display.displayID) removed")
+        // Releasing the object removes the display, and macOS then restores the user's window
+        // layout.
         self.display = nil
     }
 }

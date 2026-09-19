@@ -1,20 +1,19 @@
 import Foundation
 
-/// Décide d'accepter ou non le certificat présenté par une tablette.
+/// Decides whether to accept the certificate a tablet presents.
 ///
-/// La vérification ne valide aucune chaîne de confiance, il n'y en a pas : elle compare
-/// l'empreinte à celle enregistrée, et demande confirmation à l'utilisateur quand
-/// l'appareil est inconnu.
+/// Verification validates no chain of trust, there is none: it compares the fingerprint
+/// with the recorded one, and asks the user for confirmation when the device is unknown.
 public protocol CertificateValidator: Sendable {
     /// - Parameters:
-    ///   - fingerprint: SHA-256 du certificat présenté.
-    ///   - expectedDeviceID: identifiant attendu quand il est connu d'avance, c'est à dire
-    ///     en Wi-Fi où il vient de l'annonce mDNS. `nil` en USB, où il n'arrive qu'avec
-    ///     DEVICE_INFO.
+    ///   - fingerprint: SHA-256 of the presented certificate.
+    ///   - expectedDeviceID: the expected identifier when known in advance, that is on
+    ///     Wi-Fi where it comes from the mDNS advertisement. `nil` on USB, where it only
+    ///     arrives with DEVICE_INFO.
     func shouldAccept(fingerprint: Data, expectedDeviceID: String?) async -> Bool
 }
 
-/// Accepte tout. Réservé aux tests.
+/// Accepts everything. Tests only.
 public struct AcceptAnyCertificate: CertificateValidator {
     public init() {}
 

@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# Régénère tous les assets d'icône à partir des SVG de art/.
+# Regenerates every icon asset from the SVGs in art/.
 #
 #   art/bus-app.svg            -> mac/Resources/Sidebus.icns
 #   art/bus-template.svg       -> mac/Sources/SidebusApp/Resources/MenuBar.pdf
-#   art/bus-template-actif.svg -> mac/Sources/SidebusApp/Resources/MenuBarActif.pdf
+#   art/bus-template-active.svg -> mac/Sources/SidebusApp/Resources/MenuBarActive.pdf
 #
-# Les icônes Android sont des VectorDrawable écrits à la main, convertis une
+# The Android icons are VectorDrawables written by hand, converted once
 # fois depuis les memes SVG : elles ne sont pas regenerees ici. Voir README.md.
 #
 # Usage : art/build.sh
@@ -23,7 +23,7 @@ for outil in rsvg-convert iconutil; do
 	}
 done
 
-# --- icône d'application macOS -------------------------------------------
+# --- macOS application icon -----------------------------------------------
 # Un iconset complet, 16 a 512, chacun en 1x et 2x, assemble par iconutil.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -39,7 +39,7 @@ done
 
 mkdir -p "$RACINE/mac/Resources"
 iconutil --convert icns "$ICONSET" --output "$RACINE/mac/Resources/Sidebus.icns"
-echo "écrit : mac/Resources/Sidebus.icns"
+echo "written: mac/Resources/Sidebus.icns"
 
 # --- gabarits de la barre de menus ----------------------------------------
 # En PDF et non en PNG : NSImage charge un PDF en vectoriel, donc le meme
@@ -48,6 +48,6 @@ echo "écrit : mac/Resources/Sidebus.icns"
 RES="$RACINE/mac/Sources/SidebusApp/Resources"
 mkdir -p "$RES"
 rsvg-convert --format pdf "$ART/bus-template.svg" --output "$RES/MenuBar.pdf"
-rsvg-convert --format pdf "$ART/bus-template-actif.svg" --output "$RES/MenuBarActif.pdf"
-echo "écrit : mac/Sources/SidebusApp/Resources/MenuBar.pdf"
-echo "écrit : mac/Sources/SidebusApp/Resources/MenuBarActif.pdf"
+rsvg-convert --format pdf "$ART/bus-template-active.svg" --output "$RES/MenuBarActive.pdf"
+echo "written: mac/Sources/SidebusApp/Resources/MenuBar.pdf"
+echo "written: mac/Sources/SidebusApp/Resources/MenuBarActive.pdf"

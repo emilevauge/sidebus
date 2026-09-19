@@ -1,14 +1,14 @@
 import Foundation
 
-/// Constantes partagées avec le côté Android. Toute valeur ici est décrite dans
-/// `protocol/PROTOCOL.md`, qui reste la source de vérité.
+/// Constants shared with the Android side. Every value here is described in
+/// `protocol/PROTOCOL.md`, which stays the source of truth.
 public enum Sidebus {
-    /// Version du protocole implémentée par ce binaire.
+    /// Protocol version implemented by this binary.
     public static let protocolVersion: UInt16 = 1
 
-    /// Port d'écoute de la tablette. Fixe, pour rester compatible avec `adb forward`.
+    /// Port the tablet listens on. Fixed, so that `adb forward` keeps working.
     public static let port: UInt16 = 27183
 
-    /// Type de service mDNS annoncé par la tablette.
+    /// mDNS service type advertised by the tablet.
     public static let serviceType = "_sidebus._tcp"
 }

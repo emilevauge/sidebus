@@ -13,14 +13,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
 /**
- * Transforme les touchers de la vue vidéo en INPUT_EVENT.
+ * Turns touches on the video view into INPUT_EVENT messages.
  *
- * Les coordonnées sont normalisées sur la vue et pas sur l'écran : le flux est affiché à
- * son rapport d'aspect, avec des bandes noires possibles, et c'est l'image qui fait
- * référence.
+ * Coordinates are normalised against the view and not the screen: the stream keeps its aspect
+ * ratio, possibly with black bars, so the picture is the reference.
  *
- * L'envoi passe par un canal consommé sur `Dispatchers.IO` : écrire sur le socket depuis
- * `onTouchEvent` bloquerait le thread principal, donc le rendu.
+ * Sending goes through a channel consumed on `Dispatchers.IO`: writing to the socket from
+ * `onTouchEvent` would block the main thread, and with it the rendering.
  */
 class TouchSender(scope: CoroutineScope) {
 
@@ -28,8 +27,8 @@ class TouchSender(scope: CoroutineScope) {
 
     private val events = Channel<Message.InputEvent>(
         capacity = 128,
-        // Sous saturation, ce sont les déplacements les plus anciens qui perdent leur
-        // intérêt. On ne bufferise jamais pour rattraper.
+        // Under saturation it is the oldest moves that stop mattering. Never buffer to
+        // catch up.
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -45,14 +44,14 @@ class TouchSender(scope: CoroutineScope) {
         this.connection = connection
     }
 
-    /** À brancher sur la vue qui affiche le flux. */
+    /** To be attached to the view showing the stream. */
     fun onTouch(view: View, event: MotionEvent): Boolean {
         val kind = when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> InputEventKind.DOWN
             MotionEvent.ACTION_MOVE -> InputEventKind.MOVE
             MotionEvent.ACTION_UP -> InputEventKind.UP
-            // Un geste annulé par le système se termine comme un relâchement, sinon le
-            // Mac garde le bouton enfoncé.
+            // A gesture the system cancels ends as a release, otherwise the Mac keeps the
+            // button down.
             MotionEvent.ACTION_CANCEL -> InputEventKind.UP
             else -> return false
         }

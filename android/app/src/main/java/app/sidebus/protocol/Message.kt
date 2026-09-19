@@ -2,7 +2,7 @@ package app.sidebus.protocol
 
 import java.util.UUID
 
-/** Types de messages du protocole. Voir `protocol/PROTOCOL.md`, section 4. */
+/** Protocol message types. See `protocol/PROTOCOL.md`, section 4. */
 object MessageType {
     const val HELLO = 0x01
     const val DEVICE_INFO = 0x02
@@ -42,7 +42,7 @@ object ByeReason {
     const val ERROR = 0x02
 }
 
-/** Un message du protocole, décodé. */
+/** A decoded protocol message. */
 sealed class Message {
     abstract val type: Int
 
@@ -56,7 +56,7 @@ sealed class Message {
         val density: Int,
         val codecs: Int,
         val name: String,
-        /** Identifiant persistant de l'appareil, clé de l'arbitrage entre transports. */
+        /** Persistent device identifier, the key to arbitrating between transports. */
         val uuid: UUID,
     ) : Message() {
         override val type = MessageType.DEVICE_INFO
@@ -132,21 +132,21 @@ sealed class Message {
     }
 
     /**
-     * Demande de confirmation d'appairage, envoyée par le Mac après DEVICE_INFO quand il ne
-     * connaissait pas l'empreinte du certificat. Voir `protocol/PROTOCOL.md` 4.12.
+     * Pairing confirmation request, sent by the Mac after DEVICE_INFO when it did not already
+     * know the certificate fingerprint. See `protocol/PROTOCOL.md` 4.12.
      */
     data class PairRequest(val code: Int) : Message() {
         override val type = MessageType.PAIR_REQUEST
     }
 
-    /** Réponse de la tablette à PAIR_REQUEST. */
+    /** The tablet's answer to PAIR_REQUEST. */
     data class PairResult(val accepted: Boolean) : Message() {
         override val type = MessageType.PAIR_RESULT
     }
 
     /**
-     * Message d'un type que cette version ne connaît pas. Conservé pour pouvoir l'ignorer
-     * proprement plutôt que de fermer la connexion.
+     * A message of a type this version does not know. Kept so that it can be skipped cleanly
+     * rather than closing the connection.
      */
     data class Unknown(
         override val type: Int,

@@ -5,16 +5,16 @@ import XCTest
 
 @testable import SidebusCore
 
-/// Mesure temporaire : coût CPU du seul chemin encodage, hors ScreenCaptureKit.
+/// Temporary measurement: CPU cost of the encoding path alone, ScreenCaptureKit excluded.
 /// Lancer avec `swift test -c release --filter EncoderBenchmark`.
 final class EncoderBenchmark: XCTestCase {
 
-    func testCoutCpuDuChemminEncodage() async throws {
+    func testCpuCostOfTheEncodingPath() async throws {
         // Ne tourne pas dans la suite normale : 15 s de mesure.
         // Lancer avec `SIDEBUS_BENCH=1 swift test -c release --filter EncoderBenchmark`.
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["SIDEBUS_BENCH"] == "1",
-            "benchmark désactivé, poser SIDEBUS_BENCH=1"
+            "benchmark disabled, set SIDEBUS_BENCH=1"
         )
         try await mesure(width: 2880, height: 1800)
         try await mesure(width: 2560, height: 1600)
@@ -39,8 +39,8 @@ final class EncoderBenchmark: XCTestCase {
             return (frames, bytes)
         }
 
-        // Motif décalé d'une frame à l'autre : des résidus réalistes, comme une fenêtre
-        // qu'on déplace. Généré hors de la fenêtre de mesure.
+        // A pattern shifted from frame to frame: realistic residuals, like a window being
+        // dragged. Generated outside the measurement window.
         let buffers = try (0..<16).map { try makePixelBuffer(width: width, height: height, offset: $0 * 7) }
 
         let startWall = Date()
@@ -68,7 +68,7 @@ final class EncoderBenchmark: XCTestCase {
 
         print(
             String(
-                format: "benchmark %dx%d @%d fps : %d frames encodées, %.1f Mo, %.2f s mur, %.2f s CPU, %.1f %% CPU",
+                format: "benchmark %dx%d @%d fps: %d frames encoded, %.1f MB, %.2f s wall, %.2f s CPU, %.1f %% CPU",
                 width, height, fps, result.frames,
                 Double(result.bytes) / 1_000_000, wall, cpu, cpu / wall * 100
             )
@@ -98,7 +98,7 @@ final class EncoderBenchmark: XCTestCase {
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
 
-        // Plan Y : damier fin décalé, plus du bruit, pour donner du travail à l'encodeur.
+        // Y plane: a shifted fine checkerboard plus noise, to give the encoder some work.
         if let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0) {
             let stride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
             let rows = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)

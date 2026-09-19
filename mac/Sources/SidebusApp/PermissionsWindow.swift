@@ -3,10 +3,10 @@ import ApplicationServices
 import SidebusCore
 import SwiftUI
 
-/// État des trois autorisations que Sidebus doit obtenir, et moyen de les demander.
+/// State of the three permissions Sidebus needs, and a way to ask for them.
 ///
-/// Elles ne prennent effet qu'après relance de l'application : inutile de boucler sur une
-/// vérification, elle ne passera jamais à vrai dans la session courante.
+/// They only take effect after the app restarts: no point polling a check, it will never
+/// turn true in the current session.
 @MainActor
 @Observable
 final class PermissionsModel {
@@ -32,26 +32,25 @@ final class PermissionsModel {
         permissions = [
             Permission(
                 id: "screen",
-                title: "Enregistrement de l'écran",
-                explanation: "Sans elle, Sidebus ne peut rien capturer : la tablette reste noire.",
+                title: "Screen Recording",
+                explanation: "Without it Sidebus captures nothing, and the tablet stays black.",
                 isGranted: ScreenCapturer.isAuthorized(),
                 settingsPane: "com.apple.preference.security?Privacy_ScreenCapture",
                 request: { ScreenCapturer.requestAuthorization() }
             ),
             Permission(
                 id: "accessibility",
-                title: "Accessibilité",
-                explanation: "Sans elle, les touchers arrivent au Mac mais ne bougent pas le curseur.",
+                title: "Accessibility",
+                explanation: "Without it touches reach the Mac but never move the cursor.",
                 isGranted: AccessibilityPermission.isTrusted(),
                 settingsPane: "com.apple.preference.security?Privacy_Accessibility",
                 request: { AccessibilityPermission.request() }
             ),
             Permission(
                 id: "network",
-                title: "Réseau local",
-                explanation: "Sans elle, aucune tablette n'apparaît en Wi-Fi, et sans message d'erreur.",
-                // macOS ne publie pas d'API pour lire cet état : on ne peut que le
-                // constater à l'usage.
+                title: "Local Network",
+                explanation: "Without it no tablet shows up over Wi-Fi, and no error says so.",
+                // macOS publishes no API to read this state: it can only be noticed in use.
                 isGranted: true,
                 settingsPane: "com.apple.preference.security?Privacy_LocalNetwork",
                 request: nil
@@ -72,13 +71,13 @@ struct PermissionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Autorisations")
+            Text("Permissions")
                 .font(.title2.bold())
 
             Text(
                 """
-                macOS demande votre accord pour chacune. Elles ne prennent effet qu'au \
-                lancement suivant de Sidebus.
+                macOS asks for your agreement on each one. They only take effect on the \
+                next launch of Sidebus.
                 """
             )
             .foregroundStyle(.secondary)
@@ -100,7 +99,7 @@ struct PermissionsView: View {
 
                     Spacer()
 
-                    Button("Réglages") {
+                    Button("Open Settings") {
                         permission.request?()
                         model.openSettings(permission)
                     }
@@ -110,9 +109,9 @@ struct PermissionsView: View {
             Divider()
 
             HStack {
-                Button("Revérifier") { model.refresh() }
+                Button("Check again") { model.refresh() }
                 Spacer()
-                Button("Relancer Sidebus") { Self.relaunch() }
+                Button("Restart Sidebus") { Self.relaunch() }
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -120,7 +119,7 @@ struct PermissionsView: View {
         .frame(width: 520)
     }
 
-    /// Relance l'application, seul moyen de prendre en compte une autorisation accordée.
+    /// Restarts the app, the only way a granted permission takes effect.
     static func relaunch() {
         let url = Bundle.main.bundleURL
         let configuration = NSWorkspace.OpenConfiguration()

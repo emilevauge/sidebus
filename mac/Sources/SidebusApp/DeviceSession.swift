@@ -5,29 +5,29 @@ import Observation
 import SidebusCore
 import os
 
-/// Tout ce qui concerne **un** appareil : le lien, l'appairage, l'écran virtuel, la
-/// capture, l'encodeur, le flux et les entrées.
+/// Everything about **one** device: the link, pairing, the virtual display, capture, the
+/// encoder, the stream and the input events.
 ///
-/// Une instance par appareil en partage. Elles ne partagent rien : chacune a sa connexion,
-/// son écran virtuel, son encodeur matériel et son contrôleur de débit. C'est ce qui rend
-/// le partage vers plusieurs tablettes possible sans état commun à arbitrer.
+/// One instance per shared device. They share nothing: each has its own connection, virtual
+/// display, hardware encoder and bitrate controller. That is what makes sharing to several
+/// tablets possible with no common state to arbitrate.
 ///
-/// La découverte, elle, reste chez `DeviceManager` : elle est globale par nature.
+/// Discovery stays with `DeviceManager`, being global by nature.
 @MainActor
 @Observable
 final class DeviceSession {
 
-    /// Ce que la session est venue faire.
+    /// What the session came to do.
     enum Mode: Sendable {
-        /// Se connecter le temps d'échanger l'appairage, puis raccrocher.
+        /// Connect long enough to exchange the pairing, then hang up.
         case pairing
-        /// Se connecter et diffuser, en se reconnectant tant que l'appareil est visible.
+        /// Connect and stream, reconnecting while the device stays visible.
         case sharing
     }
 
     enum Phase: Equatable {
         case connecting
-        /// Les deux côtés doivent confirmer : le Mac l'a fait, la tablette pas encore.
+        /// Both sides must confirm: the Mac has, the tablet has not yet.
         case awaitingRemotePairing(code: String)
         case connected
         case streaming
@@ -35,8 +35,8 @@ final class DeviceSession {
         case failed(String)
     }
 
-    /// Clé de l'appareil : son identifiant persistant quand il est connu, sinon la clé de
-    /// découverte. Voir `DeviceManager.key(for:)`.
+    /// Device key: its persistent identifier when known, otherwise the discovery key. See
+    /// `DeviceManager.key(for:)`.
     private(set) var key: String
     let mode: Mode
 
@@ -49,11 +49,11 @@ final class DeviceSession {
     private(set) var currentBitrate: Int?
     private(set) var dropRatePercent: Int?
 
-    /// Vrai quand l'écran virtuel a échoué et qu'on recopie un écran existant.
+    /// True when the virtual display failed and an existing display is mirrored instead.
     private(set) var usesFallbackDisplay = false
 
-    /// Vrai quand l'autorisation Accessibilité manque : les touchers sont alors reçus mais
-    /// ne produisent rien.
+    /// True when the Accessibility permission is missing: touches arrive but produce
+    /// nothing.
     private(set) var needsAccessibilityPermission = false
 
     @ObservationIgnored
@@ -65,10 +65,10 @@ final class DeviceSession {
     private let macUUID: UUID
     @ObservationIgnored
     private let watcher: AdbWatcher
-    /// Meilleur pair connu pour une clé à l'instant présent, ou `nil` si l'appareil a
-    /// disparu. La clé est passée à chaque appel plutôt que capturée : elle change quand
-    /// DEVICE_INFO révèle l'identifiant persistant, et une clé figée ferait chercher un
-    /// appareil qui n'existe plus sous ce nom.
+    /// Best known peer for a key right now, or `nil` when the device has gone. The key is
+    /// passed on every call rather than captured: it changes when DEVICE_INFO reveals the
+    /// persistent identifier, and a frozen key would look for a device that no longer
+    /// exists under that name.
     @ObservationIgnored
     private let peerForKey: @MainActor (String) -> Peer?
     @ObservationIgnored
@@ -93,7 +93,7 @@ final class DeviceSession {
     @ObservationIgnored
     private var byeReason: ByeReason = .normal
 
-    /// Appareil identifié, en attente du PAIR_RESULT de la tablette.
+    /// Device identified, waiting for the tablet's PAIR_RESULT.
     @ObservationIgnored
     private var pendingDevice: PeerSession.DeviceDescription?
     @ObservationIgnored
@@ -124,23 +124,23 @@ final class DeviceSession {
         self.onFinished = onFinished
     }
 
-    /// Réaffecte la clé quand DEVICE_INFO révèle l'identifiant persistant d'une tablette
-    /// jusque là connue par son seul numéro de série adb.
+    /// Reassigns the key when DEVICE_INFO reveals the persistent identifier of a tablet
+    /// known so far by its adb serial alone.
     func adopt(key newKey: String) {
         key = newKey
     }
 
     var isStreaming: Bool { phase == .streaming }
 
-    /// Résumé d'une ligne, affiché sous le nom dans le menu.
+    /// One line summary, shown under the name in the menu.
     var detail: String? {
         switch phase {
         case .connecting:
-            return "connexion…"
+            return "connecting…"
         case let .awaitingRemotePairing(code):
-            return "confirmez le code \(code) sur la tablette"
+            return "confirm code \(code) on the tablet"
         case .connected:
-            return "connecté, préparation du flux"
+            return "connected, preparing the stream"
         case .streaming:
             var parts: [String] = []
             if let streamDescription { parts.append(streamDescription) }
@@ -151,13 +151,13 @@ final class DeviceSession {
                 parts.append(String(format: "%.1f Mbit/s", Double(currentBitrate) / 1_000_000))
             }
             if let dropRatePercent, dropRatePercent > 0 {
-                parts.append("\(dropRatePercent) % droppées")
+                parts.append("\(dropRatePercent) % dropped")
             }
             if usesFallbackDisplay {
-                parts.append("écran virtuel indisponible, recopie d'un écran existant")
+                parts.append("virtual display unavailable, mirroring an existing one")
             }
             if needsAccessibilityPermission {
-                parts.append("Accessibilité refusée, le tactile est ignoré")
+                parts.append("Accessibility refused, touch is ignored")
             }
             return parts.joined(separator: ", ")
         case let .stopped(reason), let .failed(reason):
@@ -165,15 +165,15 @@ final class DeviceSession {
         }
     }
 
-    // MARK: - Cycle de vie
+    // MARK: - Lifecycle
 
     func start() {
         guard task == nil else { return }
         task = Task { await self.loop() }
     }
 
-    /// Arrête la session. `reason` part dans le BYE, pour que la tablette distingue une
-    /// bascule de transport d'un arrêt voulu.
+    /// Stops the session. `reason` goes into the BYE, so the tablet can tell a transport
+    /// switch from a deliberate stop.
     func stop(bye: ByeReason = .normal, status: String) async {
         byeReason = bye
         task?.cancel()
@@ -185,8 +185,8 @@ final class DeviceSession {
             try? await previous.send(.bye(reason: bye))
             await previous.stop(reason: status)
         }
-        // Une demande d'appairage restée sans réponse : ne pas laisser la continuation
-        // pendante, elle bloquerait la boucle.
+        // A pairing request left unanswered: do not leave the wait hanging, it would block
+        // the loop.
         pairingTimeout?.cancel()
         pairingTimeout = nil
         pendingDevice = nil
@@ -206,18 +206,18 @@ final class DeviceSession {
             if mode == .pairing { break }
             if case .failed = phase, pairing.awaitsRemoteConfirmation == false,
                 pairing.lastRefusal != nil {
-                // Appairage refusé d'un côté ou de l'autre : insister ne servirait qu'à
-                // reposer la question en boucle.
+                // Pairing refused on one side or the other: insisting would only ask the
+                // question again in a loop.
                 break
             }
             guard !Task.isCancelled else { break }
 
-            // Jamais de DEVICE_INFO en USB : l'application n'est pas au premier plan sur
-            // la tablette. On la lance et on réessaie. En Wi-Fi il n'y a rien à lancer,
-            // l'annonce ne vit que quand l'app tourne.
+            // No DEVICE_INFO on USB means the app is not in the foreground on the tablet.
+            // Start it and try again. On Wi-Fi there is nothing to start, the
+            // advertisement only lives while the app runs.
             if !sawDeviceInfo, peer.kind == .usb, failures == 0 {
                 phase = .connecting
-                log.info("aucun DEVICE_INFO, lancement de l'app sur \(peer.id, privacy: .public)")
+                log.info("no DEVICE_INFO, starting the app on \(peer.id, privacy: .public)")
                 try? await watcher.launchApp(serial: peer.id)
                 try? await Task.sleep(for: .seconds(1.5))
                 failures += 1
@@ -226,11 +226,11 @@ final class DeviceSession {
 
             guard peerForKey(key) != nil else { break }
 
-            // Backoff exponentiel, plafonné : une tablette éteinte ne doit pas faire
-            // tourner une boucle de reconnexion à vide.
+            // Exponential backoff, capped: a tablet that is off must not spin a reconnection
+            // loop for nothing.
             failures = sawDeviceInfo ? 0 : failures + 1
             let seconds = min(30, Int(pow(2.0, Double(min(failures, 5)))))
-            log.debug("nouvelle tentative dans \(seconds) s")
+            log.debug("retrying in \(seconds) s")
             try? await Task.sleep(for: .seconds(seconds))
         }
 
@@ -239,11 +239,11 @@ final class DeviceSession {
         onFinished(self)
     }
 
-    /// Une tentative de connexion. Renvoie vrai si DEVICE_INFO est passé.
+    /// One connection attempt. Returns true when DEVICE_INFO came through.
     private func runOnce(peer: Peer) async -> Bool {
         var sawDeviceInfo = false
         phase = .connecting
-        log.info("connexion à \(peer.name, privacy: .public) en \(peer.kind.rawValue, privacy: .public)")
+        log.info("connecting to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
 
         do {
             if peer.kind == .usb {
@@ -254,12 +254,12 @@ final class DeviceSession {
                 )
             }
 
-            // La connexion TCP réussit toujours en USB : adb accepte en local même si rien
-            // n'écoute sur l'appareil. C'est l'absence de DEVICE_INFO qui dit que
-            // l'application n'est pas lancée.
+            // The TCP connection always succeeds on USB: adb accepts locally even when nothing
+            // listens on the device. It is the absence of DEVICE_INFO that says the app is
+            // not running.
             //
-            // Le chiffrement reste actif en USB : un seul chemin de code à maintenir et à
-            // tester, et le surcoût de TLS 1.3 est négligeable devant l'encodage vidéo.
+            // Encryption stays on over USB: one code path to maintain and to test, and the
+            // cost of TLS 1.3 is negligible next to video encoding.
             let transport = TransportClient(
                 endpoint: peer.endpoint,
                 kind: peer.kind,
@@ -277,15 +277,15 @@ final class DeviceSession {
             } catch {
                 await transport.close()
                 if case TransportError.timedOut = error, peer.kind == .wifi {
-                    // Le réseau accepte l'annonce mais laisse tomber les paquets : c'est
-                    // la signature de l'isolation des clients, qu'aucun code ne contourne.
+                    // The network accepts the advertisement but drops the packets, the signature
+                    // of client isolation, which no code works around.
                     phase = .failed(
                         """
-                        annoncée mais injoignable, le réseau isole probablement ses \
-                        appareils entre eux
+                        advertised but unreachable, the network probably isolates its \
+                        devices from each other
                         """
                     )
-                    log.error("\(peer.name, privacy: .public) injoignable, isolation probable")
+                    log.error("\(peer.name, privacy: .public) unreachable, isolation likely")
                     return sawDeviceInfo
                 }
                 throw error
@@ -304,14 +304,14 @@ final class DeviceSession {
                     phase = .connected
                     log.info(
                         """
-                        connecté à \(device.name, privacy: .public), \
+                        connected to \(device.name, privacy: .public), \
                         \(device.width)×\(device.height), \(device.density) dpi, \
                         codecs 0x\(String(device.codecs, radix: 16), privacy: .public)
                         """
                     )
 
                     if await requestRemotePairing(device: device, session: session) {
-                        // La suite attend PAIR_RESULT, qui arrive par cette même boucle.
+                        // The rest waits for PAIR_RESULT, which arrives through this very loop.
                         pendingDevice = device
                     } else {
                         await proceed(with: device, session: session, peer: peer)
@@ -324,7 +324,7 @@ final class DeviceSession {
                     await handle(message, session: session, peer: peer)
 
                 case let .closed(reason):
-                    log.info("session fermée : \(reason, privacy: .public)")
+                    log.info("session closed: \(reason, privacy: .public)")
                     await stopStreaming()
                     roundTripMilliseconds = nil
                     if case .failed = phase {} else { phase = .stopped(reason) }
@@ -334,7 +334,7 @@ final class DeviceSession {
             await stopStreaming()
             return sawDeviceInfo
         } catch {
-            log.error("connexion échouée : \(String(describing: error), privacy: .public)")
+            log.error("connection failed: \(String(describing: error), privacy: .public)")
             phase = .failed("\(error)")
         }
 
@@ -349,8 +349,8 @@ final class DeviceSession {
             await applyStats(received: received, dropped: dropped)
 
         case .keyframeRequest:
-            // Le décodeur a perdu le fil : sans keyframe il reste noir jusqu'à la
-            // prochaine, soit cinq secondes.
+            // The decoder lost the thread: without a keyframe it stays black until the next
+            // one, five seconds away.
             await capture?.requestKeyframe()
 
         case let .inputEvent(kind, x, y, button, _):
@@ -360,20 +360,20 @@ final class DeviceSession {
             await completePairing(accepted: accepted, session: session, peer: peer)
 
         default:
-            log.debug("message \(message.type) reçu")
+            log.debug("message \(message.type) received")
         }
     }
 
-    // MARK: - Appairage
+    // MARK: - Pairing
 
-    /// Second temps de l'appairage : la tablette doit confirmer à son tour.
+    /// Second step of pairing: the tablet has to confirm in turn.
     ///
-    /// N'a lieu que si le Mac vient d'accepter une empreinte inconnue. Un appareil déjà
-    /// appairé ne repasse jamais par là.
+    /// Only happens when the Mac has just accepted an unknown fingerprint. An already paired
+    /// device never comes through here.
     ///
-    /// Renvoie vrai quand la demande est partie, donc quand la suite attend PAIR_RESULT.
-    /// L'attente ne bloque surtout pas la boucle d'événements : c'est elle qui apportera la
-    /// réponse, et l'y bloquer serait un interblocage franc.
+    /// Returns true once the request has gone out, so once the rest waits for PAIR_RESULT.
+    /// That wait must not block the event loop: the loop is what brings the answer, and
+    /// blocking it there would be a plain deadlock.
     private func requestRemotePairing(
         device: PeerSession.DeviceDescription,
         session: PeerSession
@@ -382,19 +382,19 @@ final class DeviceSession {
 
         let printable = PairingCode.format(code)
         phase = .awaitingRemotePairing(code: printable)
-        log.info("PAIR_REQUEST envoyé, code \(printable, privacy: .public)")
+        log.info("PAIR_REQUEST sent, code \(printable, privacy: .public)")
 
         do {
             try await session.send(.pairRequest(code: code))
         } catch {
-            pairing.discardPending(reason: "demande d'appairage non transmise : \(error)")
-            phase = .failed("demande d'appairage non transmise")
-            await session.stop(reason: "appairage impossible")
+            pairing.discardPending(reason: "pairing request not delivered: \(error)")
+            phase = .failed("pairing request not delivered")
+            await session.stop(reason: "pairing impossible")
             return false
         }
 
-        // 120 s, comme le protocole l'impose. C'est le temps qu'il faut pour aller chercher
-        // la tablette dans l'autre pièce.
+        // 120 s, as the protocol requires. That is the time it takes to fetch the tablet from
+        // the other room.
         pairingTimeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(120))
             guard !Task.isCancelled else { return }
@@ -406,13 +406,13 @@ final class DeviceSession {
     private func pairingTimedOut(session: PeerSession) async {
         guard pendingDevice != nil else { return }
         pendingDevice = nil
-        pairing.discardPending(reason: "la tablette n'a pas répondu à la demande d'appairage")
-        phase = .failed("la tablette n'a pas répondu")
+        pairing.discardPending(reason: "the tablet did not answer the pairing request")
+        phase = .failed("the tablet did not answer")
         try? await session.send(.bye(reason: .normal))
-        await session.stop(reason: "appairage sans réponse")
+        await session.stop(reason: "pairing unanswered")
     }
 
-    /// PAIR_RESULT reçu : les deux côtés se sont prononcés.
+    /// PAIR_RESULT received: both sides have spoken.
     private func completePairing(accepted: Bool, session: PeerSession, peer: Peer) async {
         pairingTimeout?.cancel()
         pairingTimeout = nil
@@ -421,25 +421,25 @@ final class DeviceSession {
         pendingDevice = nil
 
         guard accepted else {
-            pairing.discardPending(reason: "appairage refusé sur la tablette")
-            phase = .failed("appairage refusé sur la tablette")
-            await session.stop(reason: "appairage refusé")
+            pairing.discardPending(reason: "pairing refused on the tablet")
+            phase = .failed("pairing refused on the tablet")
+            await session.stop(reason: "pairing refused")
             return
         }
 
         do {
             try pairing.commitPending(deviceID: device.uuid)
         } catch {
-            pairing.discardPending(reason: "enregistrement impossible : \(error)")
-            phase = .failed("enregistrement dans le trousseau impossible")
-            await session.stop(reason: "trousseau inaccessible")
+            pairing.discardPending(reason: "cannot record: \(error)")
+            phase = .failed("cannot record in the keychain")
+            await session.stop(reason: "keychain unreachable")
             return
         }
 
         await proceed(with: device, session: session, peer: peer)
     }
 
-    /// Appareil identifié et appairé : on enchaîne sur ce que la session est venue faire.
+    /// Device identified and paired: carry on with what the session came to do.
     private func proceed(
         with device: PeerSession.DeviceDescription,
         session: PeerSession,
@@ -449,17 +449,17 @@ final class DeviceSession {
 
         guard mode == .sharing else {
             try? await session.send(.bye(reason: .normal))
-            await session.stop(reason: "appairage terminé")
-            phase = .stopped("appairé")
+            await session.stop(reason: "pairing done")
+            phase = .stopped("paired")
             return
         }
         await startStreaming(to: device, session: session, peer: peer)
     }
 
-    // MARK: - Diffusion
+    // MARK: - Streaming
 
-    /// Démarre la capture et pousse le flux sur le lien : DISPLAY_CONFIG, puis
-    /// VIDEO_CONFIG à la première frame, puis les VIDEO_FRAME.
+    /// Starts capture and pushes the stream onto the link: DISPLAY_CONFIG, then VIDEO_CONFIG
+    /// on the first frame, then the VIDEO_FRAMEs.
     private func startStreaming(
         to device: PeerSession.DeviceDescription,
         session: PeerSession,
@@ -469,7 +469,7 @@ final class DeviceSession {
 
         guard ScreenCapturer.isAuthorized() else {
             ScreenCapturer.requestAuthorization()
-            phase = .failed("autorisation Enregistrement de l'écran manquante")
+            phase = .failed("Screen Recording permission missing")
             return
         }
 
@@ -478,7 +478,7 @@ final class DeviceSession {
         let displayName: String
 
         if let chosen = Self.explicitlySelectedDisplay() {
-            // L'utilisateur a désigné un écran : on le respecte.
+            // The user named a display: respect it.
             provider = ExistingDisplayProvider(targetID: chosen.id)
             displayID = chosen.id
             displayName = chosen.name
@@ -494,42 +494,42 @@ final class DeviceSession {
                 )
                 displayID = try await virtual.acquire()
                 provider = virtual
-                displayName = "écran virtuel"
+                displayName = "virtual display"
             } catch {
-                // L'API est privée : elle peut casser à n'importe quelle version de macOS.
-                // On le dit, et on retombe sur un écran existant plutôt que d'échouer.
+                // The API is private and can break at any macOS release. Say so, and fall back to
+                // an existing display rather than fail.
                 log.error(
                     """
-                    écran virtuel indisponible \
-                    (\(String(describing: error), privacy: .public)), repli
+                    virtual display unavailable \
+                    (\(String(describing: error), privacy: .public)), falling back
                     """
                 )
                 guard let fallback = Self.firstExistingDisplay() else {
-                    phase = .failed("aucun écran à capturer")
+                    phase = .failed("no display to capture")
                     return
                 }
                 provider = ExistingDisplayProvider(targetID: fallback.id)
                 displayID = fallback.id
-                displayName = "\(fallback.name) (repli)"
+                displayName = "\(fallback.name) (fallback)"
                 usesFallbackDisplay = true
             }
         }
 
         let environment = ProcessInfo.processInfo.environment
-        // Défaut plus prudent en Wi-Fi : moins de pixels à transporter sur un lien qu'on
-        // ne maîtrise pas.
+        // A more careful default on Wi-Fi: fewer pixels to carry over a link we do not
+        // control.
         let defaultScale = peer.kind == .wifi ? 0.75 : 1.0
         let scale = environment["SIDEBUS_CAPTURE_SCALE"].flatMap(Double.init)
             ?? UserDefaults.standard.object(forKey: DeviceManager.resolutionScaleKey) as? Double
             ?? defaultScale
         let fps = environment["SIDEBUS_FPS"].flatMap(Int.init) ?? 60
 
-        // HEVC dès que la tablette l'annonce : mesuré à 0,5 Mbit/s contre 1,4 en H.264 sur
-        // le même contenu, décodé en matériel sans une frame perdue.
+        // HEVC as soon as the tablet announces it: measured at 0.5 Mbit/s against 1.4 in
+        // H.264 on the same content, decoded in hardware without a frame lost.
         //
-        // Attention aux décodeurs logiciels, celui de l'émulateur Android en particulier :
-        // il rend des chromas cassées, blocs verts et magenta, là où H.264 passe. D'où
-        // SIDEBUS_CODEC=h264, qui force le repli.
+        // Beware software decoders, the Android emulator's in particular: it returns broken
+        // chroma, green and magenta blocks, where H.264 sails through. Hence
+        // SIDEBUS_CODEC=h264, which forces the fallback.
         let requested = environment["SIDEBUS_CODEC"]
         let codec: Codec = (requested != "h264" && device.supportsHEVC) ? .hevc : .h264
         let profile: BitrateController.Profile = peer.kind == .usb ? .usb : .wifi
@@ -568,10 +568,10 @@ final class DeviceSession {
             injector = EventInjector(displayID: displayID)
             needsAccessibilityPermission = !AccessibilityPermission.isTrusted()
             if needsAccessibilityPermission {
-                // La demande système n'apparaît qu'une fois, et l'autorisation ne prend
-                // effet qu'au lancement suivant.
+                // The system prompt appears only once, and the permission only takes effect on
+                // the next launch.
                 AccessibilityPermission.request()
-                log.error("autorisation Accessibilité manquante, les touchers seront ignorés")
+                log.error("Accessibility permission missing, touches will be ignored")
             }
 
             streamDescription = "\(displayName) → \(Int(size.width)) × \(Int(size.height))"
@@ -585,8 +585,8 @@ final class DeviceSession {
 
             streamTask = Task { await self.pump(frames: frames, session: session) }
         } catch {
-            log.error("diffusion impossible : \(String(describing: error), privacy: .public)")
-            phase = .failed("diffusion impossible : \(error)")
+            log.error("cannot stream: \(String(describing: error), privacy: .public)")
+            phase = .failed("cannot stream: \(error)")
         }
     }
 
@@ -609,31 +609,30 @@ final class DeviceSession {
                 )
                 sent += 1
             } catch {
-                log.error("envoi de frame impossible : \(String(describing: error), privacy: .public)")
+                log.error("cannot send frame: \(String(describing: error), privacy: .public)")
                 return
             }
         }
 
-        // La capture s'est arrêtée alors que le lien tient : c'est macOS qui l'a coupée,
-        // presque toujours parce que l'utilisateur a cliqué « Arrêter le partage » dans le
-        // Centre de contrôle. C'est une intention explicite, propre à cet appareil : on
-        // arrête son partage, sinon la reconnexion relance la capture dans la seconde et le
-        // geste n'a servi à rien.
+        // Capture stopped while the link holds, which means macOS cut it, almost always
+        // because the user clicked "Stop sharing" in Control Center. That is an explicit
+        // intent, aimed at this device: stop its share, otherwise reconnection restarts the
+        // capture within a second and the gesture served no purpose.
         //
-        // Sauf si la tâche a été annulée : dans ce cas une autre diffusion a déjà pris la
-        // place, et démonter ici tuerait la session suivante.
-        log.info("flux d'encodage terminé après \(sent) frames")
+        // Unless the task was cancelled: another stream has already taken over, and tearing
+        // down here would kill the next session.
+        log.info("encoding stream ended after \(sent) frames")
         guard !Task.isCancelled, phase == .streaming else { return }
-        log.info("capture coupée par macOS, arrêt du partage")
+        log.info("capture cut by macOS, stopping the share")
         systemStoppedCapture?(self)
     }
 
-    /// Appelé quand macOS coupe la capture. `DeviceManager` s'en sert pour retirer
-    /// l'intention de partage, sans quoi la reconnexion la relancerait aussitôt.
+    /// Called when macOS cuts the capture. `DeviceManager` uses it to drop the sharing
+    /// intent, without which reconnection would restart it at once.
     @ObservationIgnored
     var systemStoppedCapture: (@MainActor (DeviceSession) -> Void)?
 
-    /// Applique ce que la tablette rapporte : débit d'abord, cadence en dernier recours.
+    /// Applies what the tablet reports: bitrate first, frame rate as a last resort.
     private func applyStats(received: UInt32, dropped: UInt32) async {
         let total = received + dropped
         if total > 0 {
@@ -652,7 +651,7 @@ final class DeviceSession {
         ), fps != currentFrameRate {
             currentFrameRate = fps
             await capture?.setFrameRate(fps)
-            log.info("cadence ramenée à \(fps) fps")
+            log.info("frame rate brought down to \(fps) fps")
         }
     }
 
@@ -666,7 +665,7 @@ final class DeviceSession {
         streamDescription = nil
     }
 
-    /// Écran désigné explicitement dans les réglages, s'il est toujours là.
+    /// Display named explicitly in the settings, when it is still there.
     private static func explicitlySelectedDisplay() -> DisplayInfo? {
         guard let stored = UserDefaults.standard.object(forKey: DisplayMenuModel.selectedDisplayKey) as? Int
         else { return nil }
@@ -674,8 +673,8 @@ final class DeviceSession {
         return displays.first { $0.id == CGDirectDisplayID(stored) }
     }
 
-    /// Repli quand l'écran virtuel n'est pas disponible : un écran secondaire s'il y en a
-    /// un, sinon l'écran principal, qu'on recopie.
+    /// Fallback when the virtual display is unavailable: a secondary display when there is
+    /// one, otherwise the main display, mirrored.
     private static func firstExistingDisplay() -> DisplayInfo? {
         let displays = (try? DisplayEnumerator.activeDisplays()) ?? []
         return displays.first(where: { !$0.isMain }) ?? displays.first

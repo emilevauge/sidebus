@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Premier plan de l'icône adaptative : le bus de art/bus-app.svg, sans la
-     plaque de fond. Converti à la main depuis le SVG, qui n'utilise que des
-     <path>. Le groupe ramène le repère 1024 du dessin dans la toile de 108 dp.
+<!-- Foreground of the adaptive icon: the bus of art/bus-app.svg, without the
+     background plate. Converted by hand from the SVG, which uses nothing but
+     <path>. The group brings the drawing's 1024 grid into the 108 dp canvas.
 
-     Zone de sécurité : sur une toile de 108 dp, seul le disque central de 66 dp
-     de diamètre est garanti visible, soit 33 dp de rayon. Le dessin est mis à
-     l'échelle pour que son point le plus éloigné du centre tombe à 30,5 dp, ce
-     qui laisse de la marge. Cette marge n'est pas du luxe : certains lanceurs,
-     MIUI en particulier, agrandissent les icônes tierces par dessus le masque,
-     et un dessin calé pile sur la limite se fait trancher.
+     Safe zone: on a 108 dp canvas, only the central 66 dp disc is guaranteed
+     visible, which is 33 dp of radius. The drawing is scaled so that its point
+     furthest from the centre lands at 30.5 dp, which leaves some margin. That
+     margin is not a luxury: some launchers, MIUI in particular, enlarge third
+     party icons on top of the mask, and a drawing pinned right on the limit
+     gets sliced.
 
-     Si le dessin change, recalculer l'échelle et la translation à partir du
-     centre de sa boîte englobante et de son rayon maximal. -->
+     If the drawing changes, recompute the scale and the translation from the
+     centre of its bounding box and its maximum radius. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"

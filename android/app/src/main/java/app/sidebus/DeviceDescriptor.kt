@@ -15,7 +15,7 @@ object DeviceDescriptor {
     fun deviceInfo(context: Context): Message.DeviceInfo {
         val windowManager = context.getSystemService(WindowManager::class.java)
         val bounds = windowManager.currentWindowMetrics.bounds
-        // Toujours en paysage, indépendamment de l'orientation courante.
+        // Always in landscape, whatever the current orientation is.
         val width = maxOf(bounds.width(), bounds.height())
         val height = minOf(bounds.width(), bounds.height())
 
@@ -33,7 +33,7 @@ object DeviceDescriptor {
         Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
             ?: "${Build.MANUFACTURER} ${Build.MODEL}"
 
-    /** Bitmask des codecs que la tablette sait décoder en matériel. */
+    /** Bitmask of the codecs the tablet can decode in hardware. */
     private fun supportedCodecs(): Int {
         var mask = 0
         val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)

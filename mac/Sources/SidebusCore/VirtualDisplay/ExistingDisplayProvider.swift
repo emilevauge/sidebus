@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Cible un écran qui existe déjà. Ne crée ni ne détruit rien.
+/// Targets a display that already exists. Creates and destroys nothing.
 ///
-/// En phase 1 l'écran visé est celui de DeskPad, lancé comme harnais de développement.
+/// In phase 1 the target is DeskPad's display, run as a development harness.
 public actor ExistingDisplayProvider: VirtualDisplayProvider {
     public let targetID: CGDirectDisplayID
 
@@ -19,6 +19,6 @@ public actor ExistingDisplayProvider: VirtualDisplayProvider {
     }
 
     public func release() {
-        // Rien à faire : l'écran ne nous appartient pas.
+        // Nothing to do: the display is not ours.
     }
 }

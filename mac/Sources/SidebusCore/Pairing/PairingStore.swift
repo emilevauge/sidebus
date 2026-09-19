@@ -1,27 +1,25 @@
 import Foundation
 import Security
 
-/// Empreintes des certificats des tablettes appairées.
+/// Certificate fingerprints of the paired tablets.
 ///
-/// Modèle `known_hosts` : une entrée par appareil, la clé étant son identifiant
-/// persistant. Une empreinte qui change pour un appareil connu est un refus, pas une
-/// question.
+/// The `known_hosts` model: one entry per device, keyed by its persistent identifier. A
+/// fingerprint that changes for a known device is a refusal, not a question.
 ///
-/// Le stockage passe par le **trousseau à protection de données**, et non par le trousseau
-/// historique. Dans celui ci, l'autorisation d'accès est liée au binaire qui a écrit
-/// l'entrée : après une recompilation, la moindre lecture ouvre une demande d'accès
-/// modale, qui fige l'application au milieu d'un handshake TLS. Le trousseau à protection
-/// de données range les entrées par identité de signature, sans dialogue.
+/// Storage goes through the **data protection keychain**, not the legacy one. In the legacy
+/// keychain, access is tied to the binary that wrote the entry: after a rebuild, the
+/// slightest read opens a modal access prompt, which freezes the app in the middle of a TLS
+/// handshake. The data protection keychain files entries by signing identity, with no
+/// dialog.
 ///
-/// Quand il n'est pas disponible, faute d'entitlement d'identifiant d'application, on
-/// retombe sur un fichier de l'espace de l'application. Ces empreintes ne sont pas des
-/// secrets : ce sont des données d'intégrité, publiques par nature, et le fichier est
-/// lisible du seul utilisateur.
+/// When it is unavailable, for want of an application identifier entitlement, we fall back
+/// to a file in the application's own space. These fingerprints are not secrets: they are
+/// integrity data, public by nature, and the file is readable by the user alone.
 public struct PairingStore: Sendable {
 
-    /// Entrées de l'application. Les tests utilisent leur propre service, sinon ils
-    /// énumèrent les entrées créées par l'app signée et macOS demande une autorisation,
-    /// ce qui bloque la suite.
+    /// The application's entries. The tests use a service of their own, otherwise they
+    /// enumerate entries written by the signed app, macOS asks for authorisation, and
+    /// everything stalls.
     public static let shared = PairingStore(service: "app.sidebus.pairing")
 
     public let service: String
@@ -36,7 +34,7 @@ public struct PairingStore: Sendable {
         public var description: String {
             switch self {
             case let .keychainFailed(status):
-                return "trousseau inaccessible (OSStatus \(status))"
+                return "keychain unreachable (OSStatus \(status))"
             }
         }
     }
@@ -53,8 +51,8 @@ public struct PairingStore: Sendable {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecSuccess, let data = result as? Data { return data }
-        // Entrée absente du trousseau : elle peut venir du repli fichier, écrit quand le
-        // trousseau à protection de données n'était pas accessible.
+        // Entry missing from the keychain: it may come from the file fallback, written when
+        // the data protection keychain was not reachable.
         return fileStore.read(account: account)
     }
 
@@ -63,24 +61,24 @@ public struct PairingStore: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            // Trousseau moderne : pas d'ACL par binaire, donc pas de dialogue.
+            // Modern keychain: no per binary ACL, so no dialog.
             kSecUseDataProtectionKeychain as String: true,
         ]
     }
 
-    /// Le trousseau à protection de données exige une identité d'application. Une app
-    /// signée localement n'en a pas toujours : on bascule alors sur le fichier.
+    /// The data protection keychain demands an application identity. A locally signed app
+    /// does not always have one, so we switch to the file.
     private func isUnavailable(_ status: OSStatus) -> Bool {
         status == errSecMissingEntitlement || status == errSecNotAvailable || status == -34018
     }
 
     private var fileStore: FingerprintFile { FingerprintFile(service: service) }
 
-    /// Compte de l'index inverse, qui évite d'énumérer le trousseau.
+    /// Account of the reverse index, which avoids enumerating the keychain.
     ///
-    /// Énumérer fait toucher des entrées écrites par d'autres identités de code, par
-    /// exemple après un changement de signature, et macOS ouvre alors une demande d'accès
-    /// qui bloque l'application. Une lecture directe ne touche qu'une entrée.
+    /// Enumerating touches entries written by other code identities, after a signature
+    /// change for instance, and macOS then opens an access prompt that blocks the app. A
+    /// direct read touches one entry only.
     private func reverseAccount(for fingerprint: Data) -> String {
         "fp-" + fingerprint.map { String(format: "%02x", $0) }.joined()
     }
@@ -128,8 +126,8 @@ public struct PairingStore: Sendable {
         fileStore.delete(account: account)
     }
 
-    /// Toutes les entrées, par identifiant d'appareil. Réservé au diagnostic : le chemin
-    /// courant passe par des lectures directes.
+    /// Every entry, by device identifier. Diagnostics only: the normal path goes through
+    /// direct reads.
     public func all() -> [String: Data] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -153,13 +151,13 @@ public struct PairingStore: Sendable {
         return entries
     }
 
-    /// Oublie tous les appareils appairés. Le prochain lien redemandera un code.
+    /// Forgets every paired device. The next link will ask for a code again.
     public func removeAll() {
         for account in all().keys {
             remove(deviceID: account)
         }
-        // Le trousseau peut contenir des entrées d'index inverse orphelines, et le
-        // fichier de repli sa propre copie : on balaie les deux.
+        // The keychain may hold orphaned reverse index entries, and the fallback file its own
+        // copy: sweep both.
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -168,15 +166,15 @@ public struct PairingStore: Sendable {
         fileStore.removeAll()
     }
 
-    /// Vrai si cette empreinte est déjà appairée, quel que soit l'appareil.
+    /// True when this fingerprint is already paired, whatever the device.
     ///
-    /// Sert au cas USB : l'identifiant de l'appareil n'est connu qu'après DEVICE_INFO,
-    /// donc après le handshake TLS. L'empreinte, elle, est disponible tout de suite.
+    /// Serves the USB case: the device identifier is only known after DEVICE_INFO, so
+    /// after the TLS handshake. The fingerprint is available right away.
     public func isKnown(_ fingerprint: Data) -> Bool {
         deviceID(for: fingerprint) != nil
     }
 
-    /// Identifiant associé à une empreinte, par lecture directe de l'index inverse.
+    /// Identifier tied to a fingerprint, by a direct read of the reverse index.
     public func deviceID(for fingerprint: Data) -> String? {
         guard let data = read(account: reverseAccount(for: fingerprint)) else { return nil }
         return String(decoding: data, as: UTF8.self)
@@ -184,7 +182,7 @@ public struct PairingStore: Sendable {
 }
 
 
-/// Repli fichier, quand le trousseau à protection de données n'est pas accessible.
+/// File fallback, when the data protection keychain is not reachable.
 private struct FingerprintFile {
     let service: String
 
@@ -215,7 +213,7 @@ private struct FingerprintFile {
             format: .binary,
             options: 0
         )
-        // Pas de `completeFileProtection` : c'est une option iOS, macOS la refuse.
+        // No `completeFileProtection`: that is an iOS option, macOS refuses it.
         try data.write(to: url, options: [.atomic])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }

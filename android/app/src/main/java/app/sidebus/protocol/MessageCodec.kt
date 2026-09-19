@@ -8,10 +8,10 @@ import java.util.UUID
 class ProtocolException(message: String) : Exception(message)
 
 /**
- * Encodage et décodage du format sur le fil. Source de vérité : `protocol/PROTOCOL.md`.
+ * Encoding and decoding of the wire format. Source of truth: `protocol/PROTOCOL.md`.
  *
- * Tout est en little endian, sauf les préfixes de longueur des NAL units, qui appartiennent
- * au format vidéo et pas au protocole.
+ * Everything is little endian, except the NAL unit length prefixes, which belong to the
+ * video format rather than to the protocol.
  */
 object MessageCodec {
     const val MAGIC = 0x5B
@@ -92,14 +92,14 @@ object MessageCodec {
             .array()
     }
 
-    /** Décode le payload d'un message dont l'en tête a déjà été lu. */
+    /** Decodes the payload of a message whose header has already been read. */
     fun decodePayload(type: Int, flags: Int, payload: ByteArray): Message =
         decodePayload(type, flags, payload, 0, payload.size)
 
     /**
-     * Même chose, sans exiger que le payload occupe un tableau à lui : il est lu en place
-     * dans le tampon de réception. Une frame vidéo n'est copiée qu'une fois, au moment de
-     * constituer le tableau qui part au décodeur.
+     * The same, without demanding that the payload own an array: it is read in place in the
+     * receive buffer. A video frame is copied once only, when building the array that goes to
+     * the decoder.
      */
     fun decodePayload(type: Int, flags: Int, source: ByteArray, offset: Int, length: Int): Message {
         val reader = ByteReader(source, offset, offset + length)
@@ -132,7 +132,7 @@ object MessageCodec {
 
             MessageType.INPUT_EVENT -> Message.InputEvent(
                 kind = reader.u8(),
-                // Les coordonnées hors bornes sont ramenées dans l'intervalle, sans erreur.
+                // Out of range coordinates are clamped, without error.
                 x = reader.f32().coerceIn(0f, 1f),
                 y = reader.f32().coerceIn(0f, 1f),
                 button = reader.u8(),
@@ -145,14 +145,14 @@ object MessageCodec {
             MessageType.STATS -> Message.Stats(reader.u32(), reader.u32(), reader.u16())
             MessageType.BYE -> Message.Bye(reader.u8())
             MessageType.PAIR_REQUEST -> Message.PairRequest(reader.u32())
-            // Toute valeur autre que 1 vaut refus : une version future qui ajouterait un
-            // code de refus détaillé ne doit pas passer pour une acceptation.
+            // Any value other than 1 counts as a refusal: a future version adding a detailed
+            // refusal code must not read as an acceptance.
             MessageType.PAIR_RESULT -> Message.PairResult(reader.u8() == 1)
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }
 
-    // MARK: écriture
+    // MARK: writing
 
     private fun ByteArrayOutputStream.u8(value: Int) = write(value and 0xFF)
 
@@ -171,7 +171,7 @@ object MessageCodec {
 
     private fun ByteArrayOutputStream.f32(value: Float) = u32(java.lang.Float.floatToRawIntBits(value))
 
-    /** Longueur sur 16 bits puis UTF-8, tronqué sur une frontière de caractère. */
+    /** 16 bit length then UTF-8, truncated on a character boundary. */
     private fun ByteArrayOutputStream.string(value: String) {
         var text = value
         var bytes = text.toByteArray(Charsets.UTF_8)
@@ -191,7 +191,7 @@ object MessageCodec {
     }
 }
 
-/** Lecture little endian, bornée, sur une tranche d'un tableau. */
+/** Little endian reading, bounded, over a slice of an array. */
 private class ByteReader(
     private val data: ByteArray,
     private var offset: Int = 0,
@@ -199,7 +199,7 @@ private class ByteReader(
 ) {
     private fun take(count: Int): Int {
         if (offset + count > end) {
-            throw ProtocolException("payload tronqué à l'offset $offset")
+            throw ProtocolException("truncated payload at offset $offset")
         }
         val start = offset
         offset += count
@@ -245,19 +245,18 @@ private class ByteReader(
 }
 
 /**
- * Accumule les octets reçus et en sort les messages complets.
+ * Accumulates received bytes and yields complete messages.
  *
- * Le tampon est lu et écrit par déplacements d'index, sans jamais recopier ce qui est
- * déjà là. La version naïve, qui agrandissait le tableau à chaque paquet, recopiait tout
- * l'en cours à chaque fois : une frame vidéo arrivant en plusieurs morceaux se payait
- * autant de recopies complètes.
+ * The buffer is read and written by moving indices, never by copying what is already there.
+ * The naive version, which grew the array on every packet, copied everything pending each
+ * time: a video frame arriving in several pieces paid for as many full copies.
  */
 class MessageDecoder(initialCapacity: Int = 256 * 1024) {
     private var buffer = ByteArray(initialCapacity)
     private var readOffset = 0
     private var writeOffset = 0
 
-    /** Lit directement du socket dans le tampon, sans tableau intermédiaire. */
+    /** Reads straight from the socket into the buffer, with no intermediate array. */
     fun readFrom(input: java.io.InputStream): Int {
         ensureWritable(READ_CHUNK)
         val read = input.read(buffer, writeOffset, buffer.size - writeOffset)
@@ -294,8 +293,8 @@ class MessageDecoder(initialCapacity: Int = 256 * 1024) {
 
         val total = MessageCodec.HEADER_SIZE + length
         if (available < total) {
-            // Réserve la place du message entier : la lecture suivante le complétera
-            // d'un coup, sans réallocation au milieu.
+            // Reserve room for the whole message: the next read completes it in one go, with
+            // no reallocation midway.
             ensureWritable(total - available)
             return null
         }
@@ -320,7 +319,7 @@ class MessageDecoder(initialCapacity: Int = 256 * 1024) {
 
         val used = writeOffset - readOffset
         if (used + count <= buffer.size) {
-            // Le compactage suffit : on ramène l'en cours au début.
+            // Compacting is enough: move what is pending back to the start.
             buffer.copyInto(buffer, 0, readOffset, writeOffset)
         } else {
             var capacity = buffer.size

@@ -2,27 +2,26 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-/// Autorisation Accessibilité, sans laquelle `CGEventPost` est ignoré en silence.
+/// Accessibility permission, without which `CGEventPost` is silently ignored.
 public enum AccessibilityPermission {
 
     public static func isTrusted() -> Bool {
         AXIsProcessTrusted()
     }
 
-    /// Ouvre la demande système si l'autorisation manque. Elle ne prend effet qu'après
-    /// relance de l'application : ne pas boucler sur `isTrusted()` dans la session
-    /// courante, il ne passera jamais à vrai.
+    /// Opens the system prompt when the permission is missing. It only takes effect after
+    /// the app restarts: do not poll `isTrusted()` in the current session, it will never
+    /// turn true.
     @discardableResult
     public static func request() -> Bool {
-        // La constante `kAXTrustedCheckOptionPrompt` est une variable globale mutable,
-        // que Swift 6 refuse de lire depuis un contexte concurrent. Sa valeur est figée
-        // dans l'API publique.
+        // `kAXTrustedCheckOptionPrompt` is a mutable global that Swift 6 refuses to read
+        // from a concurrent context. Its value is frozen in the public API.
         let options = ["AXTrustedCheckOptionPrompt": true]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 }
 
-/// Injecte les touchers de la tablette comme des événements souris sur l'écran capturé.
+/// Injects the tablet's touches as mouse events on the captured display.
 public actor EventInjector {
     private let displayID: CGDirectDisplayID
     private var isPressed = false
@@ -31,9 +30,9 @@ public actor EventInjector {
         self.displayID = displayID
     }
 
-    /// Remappe des coordonnées normalisées sur les bornes de l'écran, en coordonnées
-    /// globales. `CGDisplayBounds` et `CGEvent` partagent le même repère, origine en haut
-    /// à gauche de l'écran principal.
+    /// Maps normalised coordinates onto the display bounds, in global coordinates.
+    /// `CGDisplayBounds` and `CGEvent` share the same frame, with the origin at the top
+    /// left of the main display.
     public static func point(
         x: Float,
         y: Float,
@@ -58,8 +57,8 @@ public actor EventInjector {
         case (.up, .right): type = .rightMouseUp
         case (.down, .middle), (.up, .middle): type = .otherMouseDown
         case (.move, _):
-            // Entre un appui et un relâchement, un déplacement est un glissement. Un
-            // simple `mouseMoved` ne ferait pas glisser une fenêtre ni tracer une sélection.
+            // Between a press and a release, a move is a drag. A plain `mouseMoved` would
+            // neither drag a window nor draw a selection.
             type = isPressed ? .leftMouseDragged : .mouseMoved
         }
 
@@ -91,7 +90,7 @@ public actor EventInjector {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Relâche le bouton s'il est resté enfoncé, à la perte du lien par exemple.
+    /// Releases the button if it stayed down, on link loss for instance.
     public func releaseIfNeeded() {
         guard isPressed else { return }
         let bounds = CGDisplayBounds(displayID)

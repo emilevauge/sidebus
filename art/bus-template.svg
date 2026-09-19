@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="87 60 850 850">
-  <!-- Barre de menus, au repos : la dalle est évidée.
-       Image template : noir plein sur fond transparent, macOS l'inverse seul
-       en mode sombre. Les retroviseurs sont colles a la caisse et la girouette
-       a disparu : a 18 points ces details fins ne tiennent pas. -->
+  <!-- Menu bar, at rest: the panel is hollow.
+       A template image: solid black on a transparent background, macOS inverts it
+       on its own in dark mode. The mirrors sit flush against the body and the
+       destination blind is gone: at 18 points those fine details do not survive. -->
   <path fill="#000000" d="M214 286H244A26 26 0 0 1 270 312V368A26 26 0 0 1 244 394H214A26 26 0 0 1 188 368V312A26 26 0 0 1 214 286Z
            M780 286H810A26 26 0 0 1 836 312V368A26 26 0 0 1 810 394H780A26 26 0 0 1 754 368V312A26 26 0 0 1 780 286Z
            M326 740H372A30 30 0 0 1 402 770V822A30 30 0 0 1 372 852H326A30 30 0 0 1 296 822V770A30 30 0 0 1 326 740Z

@@ -1,30 +1,29 @@
-# Vecteurs de test du protocole
+# Protocol test vectors
 
-Référence binaire commune aux deux implémentations. Les tests Swift et Kotlin décodent
-chaque fichier, vérifient les champs attendus ci dessous, réencodent et comparent octet à
-octet avec le fichier d'origine.
+A binary reference shared by both implementations. The Swift and Kotlin tests decode each
+file, check the fields listed below, re-encode and compare byte for byte with the original.
 
-Un changement de `PROTOCOL.md` se répercute ici avec `python3 generate.py`, et les tests
-des deux côtés doivent être mis à jour dans la même commit.
+A change to `PROTOCOL.md` propagates here with `python3 generate.py`, and the tests on both
+sides must be updated in the same commit.
 
-| Fichier | Type | Contenu attendu |
+| File | Type | Expected content |
 | --- | --- | --- |
-| `hello.bin` | HELLO | version 1, nom `MacBook d'Émile`, UUID `550e8400-e29b-41d4-a716-446655440000` |
-| `device_info.bin` | DEVICE_INFO | 2560 × 1600, 320 dpi, codecs `0x03`, nom `Galaxy Tab S9` |
-| `display_config.bin` | DISPLAY_CONFIG | 2560 × 1600, 60 fps, codec H.264 |
-| `video_config.bin` | VIDEO_CONFIG | un SPS et un PPS en Annex B, 16 octets |
-| `video_frame_key.bin` | VIDEO_FRAME | horodatage 1 234 567 890 µs, flags bit 0 à 1, 7 octets de NAL |
-| `video_frame_delta.bin` | VIDEO_FRAME | horodatage 1 234 584 557 µs, flags à 0 |
-| `input_event.bin` | INPUT_EVENT | MOVE, x 0.5, y 0.25, bouton gauche, horodatage 42 |
-| `ping.bin` | PING | horodatage `0x0102030405060708` |
-| `pong.bin` | PONG | même horodatage que `ping.bin` |
-| `keyframe_req.bin` | KEYFRAME_REQ | payload vide |
-| `stats.bin` | STATS | 120 reçues, 3 droppées, fenêtre 2000 ms |
-| `bye.bin` | BYE | raison 1, bascule de transport |
+| `hello.bin` | HELLO | version 1, name `MacBook d'Émile`, UUID `550e8400-e29b-41d4-a716-446655440000` |
+| `device_info.bin` | DEVICE_INFO | 2560 × 1600, 320 dpi, codecs `0x03`, name `Galaxy Tab S9` |
+| `display_config.bin` | DISPLAY_CONFIG | 2560 × 1600, 60 fps, H.264 codec |
+| `video_config.bin` | VIDEO_CONFIG | one SPS and one PPS in Annex B, 16 bytes |
+| `video_frame_key.bin` | VIDEO_FRAME | timestamp 1,234,567,890 µs, flags bit 0 set, 7 bytes of NAL |
+| `video_frame_delta.bin` | VIDEO_FRAME | timestamp 1,234,584,557 µs, flags at 0 |
+| `input_event.bin` | INPUT_EVENT | MOVE, x 0.5, y 0.25, left button, timestamp 42 |
+| `ping.bin` | PING | timestamp `0x0102030405060708` |
+| `pong.bin` | PONG | same timestamp as `ping.bin` |
+| `keyframe_req.bin` | KEYFRAME_REQ | empty payload |
+| `stats.bin` | STATS | 120 received, 3 dropped, 2000 ms window |
+| `bye.bin` | BYE | reason 1, transport switch |
 | `pair_request.bin` | PAIR_REQUEST | code 428913 |
-| `pair_result.bin` | PAIR_RESULT | appairage accepté |
-| `unknown_type.bin` | 0x7F | type inconnu, payload `abc`, doit être sauté sans erreur |
-| `stream_two_messages.bin` | PING + KEYFRAME_REQ | deux messages collés, le décodeur doit sortir les deux |
+| `pair_result.bin` | PAIR_RESULT | pairing accepted |
+| `unknown_type.bin` | 0x7F | unknown type, payload `abc`, must be skipped without error |
+| `stream_two_messages.bin` | PING + KEYFRAME_REQ | two messages in one packet, the decoder must yield both |
 
-Le nom de `hello.bin` contient un caractère accentué, et celui de `device_info.bin` non :
-les deux côtés doivent traiter l'UTF-8 multioctet correctement.
+The name in `hello.bin` carries an accented character and the one in `device_info.bin` does
+not: both sides must handle multibyte UTF-8 correctly.

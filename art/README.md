@@ -1,77 +1,74 @@
-# Identité visuelle
+# Visual identity
 
-Un bus vu de face, strictement symétrique, plat, contours arrondis. Le
-pare-brise est traité comme une dalle d'écran : c'est ce que fait Sidebus,
-recopier l'écran d'un Mac sur une tablette.
+A bus seen head on, strictly symmetrical, flat, with rounded edges. The
+windscreen is treated as a display panel: that is what Sidebus does, put a
+Mac's screen on a tablet.
 
-Dessin original écrit à la main en SVG. Les fichiers n'utilisent que des
-`path`, sans `rect` ni `circle`, pour que la conversion en VectorDrawable
-Android reste directe.
+Original drawing, written by hand in SVG. The files use nothing but `path`
+elements, no `rect` and no `circle`, so that converting them to an Android
+VectorDrawable stays direct.
 
 ## Sources
 
-| Fichier | Rôle |
+| File | Role |
 | --- | --- |
-| `bus-app.svg` | Icône d'application en couleur, carré de 1024. La plaque arrondie fait 824 sur 1024 : la marge exigée par le gabarit d'icône macOS. |
-| `bus-template.svg` | Silhouette monochrome de la barre de menus, au repos. Noir plein sur fond transparent. |
-| `bus-template-actif.svg` | Même silhouette, partage en cours : la dalle est pleine au lieu d'être évidée. |
+| `bus-app.svg` | Colour app icon, on a 1024 square. The rounded plate is 824 of 1024: the margin the macOS icon template asks for. |
+| `bus-template.svg` | Monochrome menu bar silhouette, at rest. Solid black on a transparent background. |
+| `bus-template-active.svg` | Same silhouette, sharing in progress: the panel is filled instead of hollow. |
 
-Les deux gabarits sont simplifiés par rapport à l'icône couleur. À 18 points,
-la girouette de destination, les tiges de rétroviseur et le pare-chocs ne
-tiennent pas : ils deviennent une bouillie grise. Ils ont donc sauté, les
-rétroviseurs sont collés à la caisse, et les phares ont été agrandis pour
-rester visibles.
+Both templates are simpler than the colour icon. At 18 points the destination
+blind, the mirror stalks and the bumper do not survive: they turn into grey
+mush. So they went, the mirrors sit flush against the body, and the headlights
+were enlarged to stay visible.
 
-Palette : plaque bleu nuit `#2A3A7A` vers `#111A3C`, caisse ambre `#FFC43D`,
-dalle `#5793F5`, garnitures `#1B2647`, roues `#5A6796`, phares `#FFF3CE`.
+Palette: night blue plate `#2A3A7A` to `#111A3C`, amber body `#FFC43D`, panel
+`#5793F5`, trim `#1B2647`, wheels `#5A6796`, headlights `#FFF3CE`.
 
-## Régénérer
+## Regenerating
 
 ```sh
 art/build.sh
 ```
 
-Le script demande `rsvg-convert` (`brew install librsvg`) et `iconutil`. Il
-écrit :
+The script needs `rsvg-convert` (`brew install librsvg`) and `iconutil`. It
+writes:
 
-- `mac/Resources/Sidebus.icns`, iconset complet 16 à 512 en 1x et 2x,
-  assemblé par `iconutil` ; le bundle le déclare via `CFBundleIconFile` et
-  `mac/Scripts/bundle.sh` le copie dans `Contents/Resources` ;
-- `mac/Sources/SidebusApp/Resources/MenuBar.pdf` et `MenuBarActif.pdf`. En PDF
-  et non en PNG : `NSImage` charge un PDF en vectoriel, donc le même fichier
-  sert en 1x et en 2x. `MenuBarIcon` les lit via `Bundle.module` et les marque
-  `isTemplate`, ce qui les fait s'inverser en mode sombre.
+- `mac/Resources/Sidebus.icns`, a full iconset from 16 to 512 in 1x and 2x,
+  assembled by `iconutil`; the bundle declares it through `CFBundleIconFile`
+  and `mac/Scripts/bundle.sh` copies it into `Contents/Resources`;
+- `mac/Sources/SidebusApp/Resources/MenuBar.pdf` and `MenuBarActive.pdf`. PDF
+  rather than PNG: `NSImage` loads a PDF as vector art, so one file serves both
+  1x and 2x. `MenuBarIcon` reads them through `Bundle.module` and marks them
+  `isTemplate`, which is what makes them invert in dark mode.
 
 ## Android
 
-Les icônes Android ne sont pas régénérées par le script : ce sont des
-VectorDrawable convertis à la main depuis les mêmes SVG, une fois. Les
-coordonnées restent celles du dessin, dans un repère de 1024, et un `<group>`
-les ramène à l'échelle dans la toile de 108 dp.
+The script does not regenerate the Android icons: those are VectorDrawables
+converted by hand from the same SVGs, once. The coordinates stay those of the
+drawing, on a 1024 grid, and a `<group>` scales them into the 108 dp canvas.
 
-- `android/app/src/main/res/drawable/ic_launcher_foreground.xml` reprend les
-  chemins de `bus-app.svg` sans la plaque de fond ;
-- `.../drawable/ic_launcher_monochrome.xml` reprend `bus-template.svg` pour les
-  icônes thématiques ;
-- `.../values/ic_launcher_background.xml` porte le fond, une couleur plate ;
-- `.../mipmap-anydpi-v26/ic_launcher.xml` et `ic_launcher_round.xml` assemblent
-  le tout. minSdk vaut 30, donc aucun PNG hérité.
+- `android/app/src/main/res/drawable/ic_launcher_foreground.xml` takes the
+  paths of `bus-app.svg` without the background plate;
+- `.../drawable/ic_launcher_monochrome.xml` takes `bus-template.svg` for themed
+  icons;
+- `.../values/ic_launcher_background.xml` carries the background, a flat colour;
+- `.../mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` put it all
+  together. minSdk is 30, so no legacy PNG is needed.
 
-Zone de sécurité : sur une toile de 108 dp, seul le disque central de 66 dp de
-diamètre est garanti visible, soit **33 dp de rayon**. C'est cette valeur qui
-compte, pas les 36 dp du plus grand masque rond possible.
+Safe zone: on a 108 dp canvas, only the central 66 dp disc is guaranteed
+visible, which is **33 dp of radius**. That is the number that counts, not the
+36 dp of the largest possible round mask.
 
-Le dessin est mis à l'échelle pour que son point le plus éloigné du centre
-tombe à 30,5 dp. Cette marge n'est pas du luxe : certains lanceurs, MIUI en
-particulier, agrandissent les icônes tierces par dessus le masque. Une première
-version calée à 33,9 dp, donc pile sur la limite, se faisait trancher les roues
-sur un Xiaomi.
+The drawing is scaled so that its point furthest from the centre lands at
+30.5 dp. That margin is not a luxury: some launchers, MIUI in particular,
+enlarge third party icons on top of the mask. A first version pinned at 33.9 dp,
+right on the limit, had its wheels sliced off on a Xiaomi.
 
-Si le dessin change, recalculer l'échelle et la translation du `<group>` à
-partir du centre de la boîte englobante et du rayon maximal :
+If the drawing changes, recompute the `<group>` scale and translation from the
+centre of the bounding box and the maximum radius:
 
 ```
-scale = 30.5 / rayon_max
+scale = 30.5 / max_radius
 translateX = 54 - centre_x * scale
 translateY = 54 - centre_y * scale
 ```

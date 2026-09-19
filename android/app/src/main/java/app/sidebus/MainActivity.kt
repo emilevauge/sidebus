@@ -34,8 +34,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Écran de rendu. Une `SurfaceView` plein écran, jamais une `TextureView` : celle ci
- * ajoute systématiquement une frame de latence.
+ * The rendering screen. A full screen `SurfaceView`, never a `TextureView`: the latter
+ * always adds a frame of latency.
  */
 class MainActivity : Activity(), SurfaceHolder.Callback {
 
@@ -50,12 +50,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var surfaceReady = false
     @Volatile private var pendingConfig: Message.DisplayConfig? = null
     @Volatile private var parameterSets: ByteArray? = null
-    /** Tant qu'aucune keyframe n'est passée, le décodeur ne peut rien produire. */
+    /** Until a keyframe has gone through, the decoder can produce nothing. */
     @Volatile private var awaitingKeyframe = true
     private val decoderLock = Any()
     private var statsJob: Job? = null
     private var lastKeyframeRequest = 0L
-    /** Nom du Mac annoncé par HELLO, affiché dans la demande d'appairage. */
+    /** Name of the Mac announced in HELLO, shown in the pairing prompt. */
     @Volatile private var peerName = "ce Mac"
     private var pairingDialog: AlertDialog? = null
     private lateinit var touch: TouchSender
@@ -79,8 +79,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ),
         )
 
-        // Écran d'attente, qui sert aussi de rideau au dessus de la vidéo. Voir
-        // `WaitingView` pour les deux pièges de surface qu'il évite.
+        // The waiting screen, which doubles as the curtain over the video. See `WaitingView`
+        // for the two surface traps it avoids.
         curtain = WaitingView(this).apply {
             setOnLongClickListener {
                 resetPairing()
@@ -96,10 +96,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         )
 
         overlay = DebugOverlay(this)
-        // Masqué par défaut : les chiffres sont là pour diagnostiquer, pas pour rester
-        // en travers de l'écran partagé. La vue continue de compter même invisible,
-        // c'est elle qui alimente les messages STATS.
-        overlay.visibility = if (overlayDemande()) View.VISIBLE else View.GONE
+        // Hidden by default: the numbers are there to diagnose, not to sit across the shared
+        // screen. The view keeps counting even while invisible, and it is what feeds the
+        // STATS messages.
+        overlay.visibility = if (overlayRequested()) View.VISIBLE else View.GONE
         root.addView(
             overlay,
             FrameLayout.LayoutParams(
@@ -122,26 +122,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         advertiser = ServiceAdvertiser(this)
 
-        show("Démarrage")
+        show("Starting")
         startServer()
     }
 
     override fun onResume() {
         super.onResume()
-        // Relu à chaque retour au premier plan : le réglage se change en adb sans
-        // relancer l'application.
-        overlay.visibility = if (overlayDemande()) View.VISIBLE else View.GONE
+        // Read again on every return to the foreground: the setting can be changed over adb
+        // without restarting the app.
+        overlay.visibility = if (overlayRequested()) View.VISIBLE else View.GONE
         advertiser.start(TransportServer.DEFAULT_PORT, DeviceDescriptor.deviceInfo(this))
     }
 
     /**
-     * Affichage des compteurs, à la demande :
-     * `adb shell settings put global sidebus_overlay 1`, et 0 pour les cacher.
+     * Counters display, on demand:
+     * `adb shell settings put global sidebus_overlay 1`, and 0 to hide them again.
      *
-     * Un réglage global plutôt qu'une propriété système : il se lit par une API publique,
-     * sans réflexion ni appel à getprop, et il se change à chaud.
+     * A global setting rather than a system property: it reads through a public API, with no
+     * reflection and no call to getprop, and it can be changed live.
      */
-    private fun overlayDemande(): Boolean =
+    private fun overlayRequested(): Boolean =
         Settings.Global.getString(contentResolver, "sidebus_overlay") == "1"
 
     override fun onPause() {
@@ -159,7 +159,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     // MARK: surface
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        Log.i(TAG, "surface créée")
+        Log.i(TAG, "surface created")
         surfaceReady = true
         startDecoderIfReady()
     }
@@ -184,10 +184,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             TransportServer(serverSocketFactory = sslFactory).run { event ->
                 when (event) {
                     is TransportServer.Event.Listening ->
-                        show("En attente d'un Mac", "${localAddress()}:${event.port}", pairingCode)
+                        show("Waiting for a Mac", "${localAddress()}:${event.port}", pairingCode)
 
                     is TransportServer.Event.Connected -> {
-                        show("Connecté", "${event.remote}")
+                        show("Connected", "${event.remote}")
                         startStatsReporting()
                     }
 
@@ -203,22 +203,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             decoder = null
                         }
                         parameterSets = null
-                        // Surtout pas de passage en INVISIBLE : cela détruit la surface,
-                        // qui n'est alors jamais recréée, et le décodeur ne peut plus
-                        // redémarrer à la connexion suivante.
+                        // Never go INVISIBLE: that destroys the surface, which is then never
+                        // recreated, and the decoder cannot restart on the next connection.
                         runOnUiThread {
                             curtain.visibility = View.VISIBLE
                             pairingDialog?.dismiss()
                             pairingDialog = null
                         }
                         show(
-                            "En attente d'un Mac",
+                            "Waiting for a Mac",
                             "${localAddress()}  ·  ${event.reason}",
                             pairingCode,
                         )
                     }
 
-                    is TransportServer.Event.Failed -> show("Erreur", event.error.message)
+                    is TransportServer.Event.Failed -> show("Error", event.error.message)
                 }
             }
         }
@@ -233,9 +232,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         touch.attach(connection)
         when (message) {
             is Message.Hello -> {
-                Log.i(TAG, "HELLO de ${message.name}, protocole ${message.version}")
+                Log.i(TAG, "HELLO from ${message.name}, protocol ${message.version}")
                 peerName = message.name
-                show("Connecté à ${message.name}", "en attente du flux")
+                show("Connected to ${message.name}", "waiting for the stream")
                 withContext(Dispatchers.IO) { connection.send(info) }
             }
 
@@ -249,9 +248,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             is Message.VideoConfig -> {
                 Log.i(TAG, "VIDEO_CONFIG ${message.parameterSets.size} octets")
                 parameterSets = message.parameterSets
-                // Création synchrone : la frame suivante est la keyframe, et c'est la
-                // seule avant longtemps. Un décodeur créé en différé la raterait et
-                // resterait bloqué sur des frames intermédiaires inexploitables.
+                // Created synchronously: the next frame is the keyframe, and it is the only
+                // one for a long while. A decoder created later would miss it and stay
+                // stuck on unusable intermediate frames.
                 startDecoderIfReady()
             }
 
@@ -278,62 +277,62 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
             is Message.PairRequest -> askPairing(message.code, connection)
 
-            is Message.Bye -> Log.i(TAG, "BYE, raison ${message.reason}")
+            is Message.Bye -> Log.i(TAG, "BYE, reason ${message.reason}")
 
             is Message.Unknown ->
-                Log.i(TAG, "message de type inconnu 0x%02X ignoré".format(message.type))
+                Log.i(TAG, "unknown message type 0x%02X ignored".format(message.type))
 
-            else -> Log.d(TAG, "reçu ${message::class.simpleName}")
+            else -> Log.d(TAG, "received ${message::class.simpleName}")
         }
     }
 
     /**
-     * Demande de confirmation d'appairage reçue du Mac.
+     * Pairing confirmation request received from the Mac.
      *
-     * La boîte de dialogue ne bloque **pas** la boucle de lecture : le Mac attend un PONG
-     * chaque seconde et coupe après cinq secondes de silence, donc suspendre la lecture le
-     * temps que l'utilisateur réponde tuerait la connexion avant sa réponse. On affiche, on
-     * rend la main, et la réponse part quand elle vient.
+     * The dialog does **not** block the read loop: the Mac expects a PONG every second and
+     * cuts after five seconds of silence, so suspending reading while the user answers would
+     * kill the connection before the answer came. Show it, hand control back, and the answer
+     * goes out when it arrives.
      */
     private fun askPairing(code: Int, connection: Connection) {
         val received = "%06d".format(code)
         val local = DeviceIdentity.pairingCode()
-        Log.i(TAG, "PAIR_REQUEST, code reçu $received, code local $local")
+        Log.i(TAG, "PAIR_REQUEST, code received $received, local code $local")
 
         runOnUiThread {
             pairingDialog?.dismiss()
 
-            // Les deux codes dérivent du même certificat. S'ils diffèrent, le Mac ne parle
-            // pas à cette tablette : on le dit au lieu de laisser confirmer à l'aveugle.
+            // Both codes derive from the same certificate. If they differ, the Mac is not
+            // talking to this tablet: say so instead of letting the user confirm blind.
             val message = if (received == local) {
-                "Code : $local\n\nVérifiez que le Mac affiche le même code."
+                "Code: $local\n\nCheck that the Mac shows the same code."
             } else {
-                "Attention : le Mac affiche $received, cette tablette $local.\n\n" +
-                    "Les deux codes devraient être identiques. Refusez, sauf si vous savez " +
-                    "exactement pourquoi ils diffèrent."
+                "Careful: the Mac shows $received, this tablet $local.\n\n" +
+                    "Both codes should be identical. Refuse, unless you know exactly " +
+                    "why they differ."
             }
 
-            pairingDialog = AlertDialog.Builder(this, R.style.Theme_Sidebus_Dialogue)
-                .setTitle("Appairer avec $peerName ?")
+            pairingDialog = AlertDialog.Builder(this, R.style.Theme_Sidebus_Dialog)
+                .setTitle("Pair with $peerName?")
                 .setMessage(message)
                 .setCancelable(false)
-                .setPositiveButton("Appairer") { _, _ -> answerPairing(true, connection) }
-                .setNegativeButton("Refuser") { _, _ -> answerPairing(false, connection) }
+                .setPositiveButton("Pair") { _, _ -> answerPairing(true, connection) }
+                .setNegativeButton("Refuse") { _, _ -> answerPairing(false, connection) }
                 .show()
         }
     }
 
     private fun answerPairing(accepted: Boolean, connection: Connection) {
         pairingDialog = null
-        Log.i(TAG, "appairage ${if (accepted) "accepté" else "refusé"}")
+        Log.i(TAG, "pairing ${if (accepted) "accepted" else "refused"}")
         scope.launch(Dispatchers.IO) {
             runCatching { connection.send(Message.PairResult(accepted)) }
         }
     }
 
     /**
-     * Rapporte à intervalle fixe ce que la tablette a réellement affiché. C'est ce que le
-     * Mac utilise pour ajuster son débit, et en dernier recours sa cadence.
+     * Reports at a fixed interval what the tablet actually displayed. That is what the Mac
+     * uses to adjust its bitrate, and as a last resort its frame rate.
      */
     private fun startStatsReporting() {
         if (statsJob != null) return
@@ -350,7 +349,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    /** Au plus une demande par seconde : inutile d'en envoyer une par frame perdue. */
+    /** At most one request per second: no point sending one per lost frame. */
     private fun requestKeyframe(connection: Connection) {
         val now = System.currentTimeMillis()
         if (now - lastKeyframeRequest < 1_000) return
@@ -368,7 +367,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             if (config == null || csd == null || !surfaceReady) {
                 Log.i(
                     TAG,
-                    "décodeur pas prêt : config=${config != null} csd=${csd != null} surface=$surfaceReady",
+                    "decoder not ready: config=${config != null} csd=${csd != null} surface=$surfaceReady",
                 )
                 return
             }
@@ -379,13 +378,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 onFrameRendered = { latency -> overlay.onFrameRendered(latency) },
                 onFrameDropped = { overlay.onFrameDropped() },
             )
-            // Un décodeur qui refuse de se configurer ne doit pas emporter la connexion
-            // avec lui : on reste connecté, écran noir, et on réessaiera au prochain
-            // VIDEO_CONFIG.
+            // A decoder that refuses to configure must not take the connection down with it:
+            // stay connected, screen black, and try again on the next VIDEO_CONFIG.
             try {
                 created.configure(config.width, config.height, csd, config.codec)
             } catch (error: Exception) {
-                Log.e(TAG, "configuration du décodeur impossible", error)
+                Log.e(TAG, "cannot configure the decoder", error)
                 created.shutdown()
                 parameterSets = null
                 return
@@ -400,18 +398,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     /**
-     * Oublie l'identité de la tablette et redémarre l'écran. Le Mac la verra comme un
-     * appareil inconnu et redemandera un code d'appairage.
+     * Forgets the tablet's identity and restarts the screen. The Mac will see it as an
+     * unknown device and ask for a pairing code again.
      */
     private fun resetPairing() {
-        Log.i(TAG, "désappairage demandé")
+        Log.i(TAG, "unpairing requested")
         connection?.close()
         DeviceIdentity.reset(this)
-        Toast.makeText(this, "Appairage réinitialisé", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Pairing reset", Toast.LENGTH_SHORT).show()
         recreate()
     }
 
-    /** Garde le rapport d'aspect du flux, quitte à laisser des bandes noires. */
+    /** Keeps the stream's aspect ratio, black bars and all. */
     private fun fitSurface(width: Int, height: Int) {
         root.post {
             val available = root.width to root.height
@@ -430,10 +428,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun show(etat: String, detail: String? = null, code: String? = null) {
-        runOnUiThread { curtain.montrer(etat, detail, code) }
+        runOnUiThread { curtain.show(etat, detail, code) }
     }
 
-    /** Adresse IPv4, affichée pour le repli manuel de la phase 6. */
+    /** IPv4 address, shown for the manual fallback. */
     private fun localAddress(): String =
         NetworkInterface.getNetworkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback }

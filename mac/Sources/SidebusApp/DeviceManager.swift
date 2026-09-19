@@ -3,37 +3,37 @@ import Observation
 import SidebusCore
 import os
 
-/// Ce qu'une ligne d'appareil affiche, dans le menu comme dans les réglages.
+/// What a device row shows, in the menu as in the settings.
 ///
-/// La ligne porte la session plutôt qu'une copie de son état : c'est elle qui change
-/// pendant la diffusion, et SwiftUI ne suit ce qu'il lit. Une copie figée montrerait le
-/// débit du moment où la liste a été construite.
+/// The row carries the session rather than a copy of its state: the session is what changes
+/// while streaming, and SwiftUI only tracks what it reads. A frozen copy would show the
+/// bitrate of the moment the list was built.
 @MainActor
 struct DeviceEntry: Identifiable {
-    /// Identifiant persistant de la tablette, ou clé de découverte tant qu'il est inconnu.
+    /// Persistent identifier of the tablet, or discovery key while it stays unknown.
     let id: String
     let name: String
     let isPaired: Bool
 
-    /// Transport par lequel l'appareil est visible en ce moment, `nil` s'il est hors ligne.
+    /// Transport the device is visible on right now, `nil` when it is offline.
     let transport: TransportKind?
 
-    /// Session en cours pour cet appareil, appairage ou partage.
+    /// Session in progress for this device, pairing or sharing.
     let session: DeviceSession?
 
-    /// Texte affiché pour un appareil appairé mais hors ligne.
+    /// Text shown for a paired device that is offline.
     let offlineDetail: String?
 
-    /// Vrai pour une adresse saisie à la main : elle s'oublie, elle ne se désappaire pas.
+    /// True for a hand typed address: it gets forgotten, not unpaired.
     let isManual: Bool
 
     var isOnline: Bool { transport != nil }
 
-    /// Vrai dès qu'un partage est demandé pour cet appareil, même avant la première frame.
+    /// True as soon as sharing is asked for, even before the first frame.
     var isSharing: Bool { session?.mode == .sharing }
 
-    /// Connexion, appairage ou préparation du flux : quelque chose est en cours, mais rien
-    /// ne s'affiche encore sur la tablette.
+    /// Connecting, pairing or preparing the stream: something is under way, but nothing
+    /// shows on the tablet yet.
     var isBusy: Bool {
         guard let session else { return false }
         return !session.isStreaming
@@ -41,7 +41,7 @@ struct DeviceEntry: Identifiable {
 
     var detail: String? { session?.detail ?? offlineDetail }
 
-    /// Ce que fait un clic sur la ligne.
+    /// What a click on the row does.
     enum Action: Equatable {
         case pair
         case startSharing
@@ -51,14 +51,14 @@ struct DeviceEntry: Identifiable {
 
     var action: Action {
         guard isOnline else { return .none }
-        // Une session en cours s'interrompt, qu'elle soit en train d'appairer ou de
-        // préparer le flux : sans ça une tablette qui ne répond pas bloque la ligne.
+        // A session in progress stops, whether it is pairing or preparing the stream.
+        // Without that, a tablet that does not answer blocks the row.
         if session != nil { return .stopSharing }
         return isPaired ? .startSharing : .pair
     }
 
-    /// Symbole de la ligne. Il porte l'état à lui seul : c'est ce qui rend le menu lisible
-    /// d'un coup d'œil.
+    /// Symbol of the row. It carries the state on its own, and that is what makes the menu
+    /// readable at a glance.
     var symbol: String {
         guard isOnline else { return "ipad.slash" }
         if isBusy { return "hourglass" }
@@ -70,35 +70,34 @@ struct DeviceEntry: Identifiable {
         switch transport {
         case .usb: return "USB"
         case .wifi: return "Wi-Fi"
-        case nil: return "hors ligne"
+        case nil: return "offline"
         }
     }
 }
 
-/// Découverte des tablettes et conduite des partages.
+/// Tablet discovery, and running the shares.
 ///
-/// En USB : suit les appareils vus par adb, pose le tunnel de port, ouvre le lien.
-/// En Wi-Fi : suit les annonces mDNS et se connecte à l'endpoint publié.
+/// On USB: follows the devices adb sees, sets up the port tunnel, opens the link.
+/// On Wi-Fi: follows the mDNS advertisements and connects to the published endpoint.
 ///
-/// Rien n'est diffusé sans un geste : on découvre, on appaire, puis on lance le partage
-/// appareil par appareil. Seule exception, voulue : un appareil dont le partage était actif
-/// reprend tout seul quand il réapparaît, sans quoi rebrancher un câble demanderait de
-/// rouvrir le menu à chaque fois.
+/// Nothing streams without a gesture: discover, pair, then start sharing device by device.
+/// One exception, deliberate: a device that was being shared to resumes on its own when it
+/// reappears, otherwise plugging a cable back in would mean reopening the menu every time.
 @MainActor
 @Observable
 final class DeviceManager {
 
-    /// Réglage de résolution : 1.0, 0.75 ou 0.5.
+    /// Resolution setting: 1.0, 0.75 or 0.5.
     static let resolutionScaleKey = "resolutionScale"
 
-    private(set) var status = "inactif"
+    private(set) var status = "idle"
     private(set) var entries: [DeviceEntry] = []
 
-    /// Tablettes ajoutées à la main par adresse IP. Le repli qui sauve l'expérience sur
-    /// les réseaux qui bloquent le multicast.
+    /// Tablets added by hand through their IP address. The fallback that saves the day on
+    /// networks blocking multicast.
     private(set) var manualPeers: [Peer] = []
 
-    /// Dernier refus d'appairage à afficher, quelle que soit la session qui l'a produit.
+    /// Last pairing refusal to display, whichever session produced it.
     private(set) var lastRefusal: String?
 
     @ObservationIgnored
@@ -116,15 +115,15 @@ final class DeviceManager {
     @ObservationIgnored
     private var browseTask: Task<Void, Never>?
 
-    /// Appareils dont l'utilisateur veut le partage. Persisté dans l'annuaire, c'est lui
-    /// qui pilote la reprise automatique.
+    /// Devices the user wants shared. Persisted in the directory, and that is what drives
+    /// the automatic resume.
     @ObservationIgnored
     private var sharingIntent: Set<String> = []
 
     @ObservationIgnored
     private let log = Logger(subsystem: "app.sidebus", category: "devices")
 
-    /// Identité du Mac, stable d'un lancement à l'autre.
+    /// The Mac's identity, stable from one launch to the next.
     @ObservationIgnored
     private lazy var macUUID: UUID = {
         let key = "macUUID"
@@ -143,7 +142,7 @@ final class DeviceManager {
         start()
     }
 
-    // MARK: - Réglages
+    // MARK: - Settings
 
     func setResolutionScale(_ scale: Double) {
         UserDefaults.standard.set(scale, forKey: Self.resolutionScaleKey)
@@ -153,47 +152,47 @@ final class DeviceManager {
         UserDefaults.standard.object(forKey: Self.resolutionScaleKey) as? Double ?? 1.0
     }
 
-    /// Appareils appairés, y compris hors ligne, pour la fenêtre de réglages.
+    /// Paired devices, offline ones included, for the settings window.
     ///
-    /// Stocké, pas calculé depuis l'annuaire : une propriété calculée qui lit les
-    /// préférences ne se signale pas à SwiftUI, et la fenêtre gardait à l'écran un appareil
-    /// qu'on venait de désappairer.
+    /// Stored rather than computed from the directory: a computed property reading the
+    /// preferences does not announce itself to SwiftUI, and the window kept showing a
+    /// device that had just been unpaired.
     private(set) var pairedDevices: [PairedDevice] = []
 
-    /// Nombre de partages en cours. Stocké plutôt que calculé : `sessions` n'est pas
-    /// observé, et la barre de menus doit changer d'icône quand il bouge.
+    /// Number of shares in progress. Stored rather than computed: `sessions` is not
+    /// observed, and the menu bar has to change its icon when this moves.
     private(set) var sharingCount = 0
 
-    /// Résumé d'une ligne pour le haut du menu.
+    /// One line summary for the top of the menu.
     var summary: String {
         if sharingCount > 0 {
             return sharingCount == 1
-                ? "1 écran partagé"
-                : "\(sharingCount) écrans partagés"
+                ? "1 screen shared"
+                : "\(sharingCount) screens shared"
         }
         let online = entries.count(where: \.isOnline)
         if online == 0 { return status }
-        return online == 1 ? "1 appareil visible" : "\(online) appareils visibles"
+        return online == 1 ? "1 device visible" : "\(online) devices visible"
     }
 
-    // MARK: - Découverte
+    // MARK: - Discovery
 
     func start() {
         registry.serialToDevice = Self.loadKnownSerials()
-        status = "en attente d'une tablette"
+        status = "waiting for a tablet"
 
-        // Crochet de développement : permet d'exercer la branche Wi-Fi sur une machine où
-        // la tablette n'est visible qu'en USB.
+        // Development hook: exercises the Wi-Fi path on a machine where the tablet only
+        // shows up over USB.
         let usbDisabled = ProcessInfo.processInfo.environment["SIDEBUS_DISABLE_USB"] == "1"
 
         if usbDisabled {
-            log.info("découverte USB désactivée (SIDEBUS_DISABLE_USB)")
-            status = "USB désactivé, Wi-Fi seulement"
+            log.info("USB discovery disabled (SIDEBUS_DISABLE_USB)")
+            status = "USB disabled, Wi-Fi only"
         } else if AdbWatcher.locateAdb() == nil {
-            // Sans adb, le Wi-Fi reste disponible : on le dit et on continue, plutôt que
-            // d'échouer en silence.
-            log.error("adb introuvable, découverte USB indisponible")
-            status = "adb introuvable, Wi-Fi seulement"
+            // Without adb, Wi-Fi still works: say so and carry on, rather than failing in
+            // silence.
+            log.error("adb not found, USB discovery unavailable")
+            status = "adb not found, Wi-Fi only"
         } else if watchTask == nil {
             watchTask = Task { [watcher] in
                 let peers = await watcher.start()
@@ -205,8 +204,7 @@ final class DeviceManager {
             }
         }
 
-        // Crochet de développement : préremplit une adresse manuelle, comme le ferait la
-        // saisie du menu.
+        // Development hook: prefills a manual address, as typing one in the settings would.
         if let seed = ProcessInfo.processInfo.environment["SIDEBUS_MANUAL_PEER"], !seed.isEmpty {
             addManualPeer(address: seed)
         }
@@ -233,14 +231,14 @@ final class DeviceManager {
         sessions.removeAll()
         Task { [watcher, browser] in
             for session in running {
-                await session.stop(bye: .normal, status: "arrêt de Sidebus")
+                await session.stop(bye: .normal, status: "Sidebus shutting down")
             }
             await watcher.stop()
             await browser.stop()
         }
     }
 
-    /// Ajoute une tablette par son adresse, quand l'annonce mDNS ne passe pas.
+    /// Adds a tablet by its address, when the mDNS advertisement does not get through.
     func addManualPeer(address: String) {
         let trimmed = address.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -252,17 +250,17 @@ final class DeviceManager {
         let peer = Peer(id: "manuel-\(host):\(port)", name: host, kind: .wifi, host: host, port: port)
         manualPeers.removeAll { $0.id == peer.id }
         manualPeers.append(peer)
-        log.info("tablette ajoutée à la main : \(host, privacy: .public):\(port)")
+        log.info("tablet added by hand: \(host, privacy: .public):\(port)")
         reconcile()
     }
 
     func removeManualPeer(id: String) {
-        log.info("adresse saisie oubliée : \(id, privacy: .public)")
+        log.info("typed address forgotten: \(id, privacy: .public)")
         manualPeers.removeAll { $0.id == id }
         reconcile()
     }
 
-    /// Identifiant du pair saisi à la main qui se cache derrière une clé d'appareil.
+    /// Identifier of the hand typed peer hiding behind a device key.
     func manualPeerID(forKey key: String) -> String? {
         manualPeers.first { self.key(for: $0) == key }?.id
     }
@@ -283,7 +281,7 @@ final class DeviceManager {
         reconcile()
     }
 
-    // MARK: - Identité des appareils
+    // MARK: - Device identity
 
     private static let knownSerialsKey = "serialToDevice"
 
@@ -297,12 +295,12 @@ final class DeviceManager {
         registry.serialToDevice[serial] = deviceID
         let stored = registry.serialToDevice.mapValues(\.uuidString)
         UserDefaults.standard.set(stored, forKey: Self.knownSerialsKey)
-        log.info("série \(serial, privacy: .public) associée à l'appareil")
+        log.info("serial \(serial, privacy: .public) tied to the device")
     }
 
-    /// Clé stable d'un pair : son identifiant persistant dès qu'on le connaît, sinon une
-    /// clé dérivée du moyen de découverte. Une tablette vue en USB et en Wi-Fi n'a qu'une
-    /// clé, c'est ce qui la fait apparaître une seule fois dans la liste.
+    /// Stable key of a peer: its persistent identifier as soon as we know it, otherwise a
+    /// key derived from the discovery channel. A tablet seen on both USB and Wi-Fi has one
+    /// key, and that is what makes it appear once in the list.
     private func key(for peer: Peer) -> String {
         if let deviceID = peer.deviceID { return deviceID.uuidString }
         if peer.kind == .usb, let learned = registry.serialToDevice[peer.id] {
@@ -311,7 +309,7 @@ final class DeviceManager {
         return "\(peer.kind.rawValue)-\(peer.id)"
     }
 
-    /// Tous les pairs visibles, groupés par appareil, USB d'abord puisqu'il gagne toujours.
+    /// Every visible peer, grouped by device, USB first since it always wins.
     private func visiblePeers() -> [String: [Peer]] {
         var grouped: [String: [Peer]] = [:]
         for peer in registry.resolved() + manualPeers {
@@ -323,12 +321,12 @@ final class DeviceManager {
         return grouped
     }
 
-    /// Meilleur pair pour un appareil : l'USB s'il est là, sinon le Wi-Fi.
+    /// Best peer for a device: USB when present, Wi-Fi otherwise.
     private func bestPeer(for key: String) -> Peer? {
         visiblePeers()[key]?.first
     }
 
-    // MARK: - Actions du menu
+    // MARK: - Menu actions
 
     func perform(_ entry: DeviceEntry) {
         switch entry.action {
@@ -339,11 +337,11 @@ final class DeviceManager {
         }
     }
 
-    /// Ouvre un lien le temps d'appairer, puis raccroche. Le partage reste un geste à part.
+    /// Opens a link long enough to pair, then hangs up. Sharing stays a separate gesture.
     func pair(_ key: String) {
         guard sessions[key] == nil, let peer = bestPeer(for: key) else { return }
         lastRefusal = nil
-        log.info("appairage de \(peer.name, privacy: .public)")
+        log.info("pairing with \(peer.name, privacy: .public)")
         sessions[key] = makeSession(key: key, mode: .pairing, peer: peer)
         sessions[key]?.start()
         refreshEntries()
@@ -363,17 +361,17 @@ final class DeviceManager {
             refreshEntries()
             return
         }
-        log.info("partage arrêté pour \(key, privacy: .public)")
+        log.info("sharing stopped for \(key, privacy: .public)")
         refreshEntries()
         Task {
-            await session.stop(bye: .normal, status: "partage arrêté")
+            await session.stop(bye: .normal, status: "sharing stopped")
             self.refreshEntries()
         }
     }
 
-    /// Oublie un appareil : empreinte du trousseau, entrée d'annuaire, session en cours.
+    /// Forgets a device: keychain fingerprint, directory entry, session in progress.
     func unpair(_ key: String) {
-        log.info("désappairage de \(key, privacy: .public)")
+        log.info("unpairing \(key, privacy: .public)")
         stopSharing(key)
         directory.remove(key)
         refreshEntries()
@@ -384,7 +382,7 @@ final class DeviceManager {
     }
 
     func unpairAll() {
-        log.info("tous les appareils oubliés")
+        log.info("every device forgotten")
         for key in sharingIntent { stopSharing(key) }
         directory.removeAll()
         refreshEntries()
@@ -394,10 +392,10 @@ final class DeviceManager {
         }
     }
 
-    // MARK: - Réconciliation
+    // MARK: - Reconciliation
 
-    /// Décide quoi faire de l'état courant : lancer un partage voulu, suivre une bascule de
-    /// transport, ou constater une disparition.
+    /// Decides what to do with the current state: start a wanted share, follow a transport
+    /// switch, or take note of a disappearance.
     private func reconcile() {
         let visible = visiblePeers()
 
@@ -405,21 +403,21 @@ final class DeviceManager {
             guard let peer = visible[key]?.first else { continue }
 
             guard let session = sessions[key] else {
-                log.info("partage de \(peer.name, privacy: .public) en \(peer.kind.rawValue, privacy: .public)")
+                log.info("sharing to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
                 let session = makeSession(key: key, mode: .sharing, peer: peer)
                 sessions[key] = session
                 session.start()
                 continue
             }
 
-            // Bascule propre vers un meilleur transport : BYE avec le code prévu, fermeture,
-            // puis reconnexion. Pas de migration de socket à chaud, le gain ne vaut pas la
-            // complexité, et une coupure de 200 ms au branchement du câble passe inaperçue.
+            // Clean switch to a better transport: BYE with the proper code, close, then
+            // reconnect. No live socket migration, the gain is not worth the complexity,
+            // and a 200 ms cut when the cable goes in passes unnoticed.
             if session.mode == .sharing, session.peer.kind == .wifi, peer.kind == .usb {
-                log.info("bascule Wi-Fi vers USB pour \(peer.name, privacy: .public)")
+                log.info("switching Wi-Fi to USB for \(peer.name, privacy: .public)")
                 sessions.removeValue(forKey: key)
                 Task {
-                    await session.stop(bye: .transportSwitch, status: "bascule de transport")
+                    await session.stop(bye: .transportSwitch, status: "transport switch")
                     self.reconcile()
                 }
             }
@@ -446,13 +444,13 @@ final class DeviceManager {
         )
         session.systemStoppedCapture = { [weak self] stopped in
             guard let self else { return }
-            log.info("capture coupée par macOS, partage retiré pour \(stopped.key, privacy: .public)")
+            log.info("capture cut by macOS, sharing dropped for \(stopped.key, privacy: .public)")
             self.stopSharing(stopped.key)
         }
         return session
     }
 
-    /// DEVICE_INFO reçu : on connaît enfin l'identifiant persistant de la tablette.
+    /// DEVICE_INFO received: the tablet's persistent identifier is finally known.
     private func identified(
         uuid: UUID,
         device: PeerSession.DeviceDescription,
@@ -463,9 +461,8 @@ final class DeviceManager {
         }
         directory.record(deviceID: uuid.uuidString, name: device.name, transport: peer.kind)
 
-        // La session tournait sous une clé provisoire, tirée du numéro de série adb :
-        // elle prend maintenant celle de l'appareil, sinon la liste montrerait deux lignes
-        // pour la même tablette.
+        // The session was running under a provisional key taken from the adb serial. It now
+        // takes the device's own, otherwise the list would show two rows for one tablet.
         let identifier = uuid.uuidString
         if let (oldKey, session) = sessions.first(
             where: { $0.key != identifier && $0.value.peer.id == peer.id }
@@ -487,16 +484,16 @@ final class DeviceManager {
         }
         if let refusal = session.pairing.lastRefusal {
             lastRefusal = refusal
-            // Un appairage refusé ne doit pas laisser l'intention de partage derrière lui.
+            // A refused pairing must not leave the sharing intent behind.
             sharingIntent.remove(session.key)
         }
         refreshEntries()
     }
 
-    // MARK: - Liste affichée
+    // MARK: - Displayed list
 
-    /// Reconstruit les lignes à partir de ce qui est visible et de ce qui est appairé.
-    /// Les appareils en ligne d'abord, les appairés hors ligne ensuite.
+    /// Rebuilds the rows from what is visible and what is paired. Online devices first, then
+    /// the paired ones that are offline.
     private func refreshEntries() {
         let visible = visiblePeers()
         let paired = Dictionary(uniqueKeysWithValues: directory.all().map { ($0.deviceID, $0) })
@@ -529,7 +526,7 @@ final class DeviceManager {
                     isPaired: true,
                     transport: nil,
                     session: nil,
-                    offlineDetail: "vu en \(Self.describe(device.lastTransport)), \(Self.ago(device.lastSeen))",
+                    offlineDetail: "seen over \(Self.describe(device.lastTransport)), \(Self.ago(device.lastSeen))",
                     isManual: false
                 )
             )
@@ -542,20 +539,20 @@ final class DeviceManager {
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
 
-        if entries.isEmpty { status = "en attente d'une tablette" }
+        if entries.isEmpty { status = "waiting for a tablet" }
     }
 
     private static func describe(_ transport: TransportKind?) -> String {
         switch transport {
         case .usb: return "USB"
         case .wifi: return "Wi-Fi"
-        case nil: return "transport inconnu"
+        case nil: return "unknown transport"
         }
     }
 
     private static func ago(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.locale = Locale(identifier: "en_US")
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
     }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Écriture little endian. Voir `protocol/PROTOCOL.md`, section 3.
+/// Little endian writing. See `protocol/PROTOCOL.md`, section 3.
 struct ByteWriter {
     private(set) var data = Data()
 
@@ -28,8 +28,8 @@ struct ByteWriter {
         data.append(value)
     }
 
-    /// Longueur sur 16 bits puis UTF-8. Tronqué sur une frontière de caractère si la
-    /// chaîne dépasse 255 octets.
+    /// 16 bit length then UTF-8. Truncated on a character boundary when the string
+    /// goes past 255 bytes.
     mutating func string(_ value: String) {
         var utf8 = Array(value.utf8)
         if utf8.count > MessageCodec.maxStringLength {
@@ -43,7 +43,7 @@ struct ByteWriter {
         data.append(contentsOf: utf8)
     }
 
-    /// UUID en 16 octets, ordre RFC 4122, celui de la forme texte.
+    /// UUID as 16 bytes, RFC 4122 order, the one of the text form.
     mutating func uuid(_ value: UUID) {
         let bytes = value.uuid
         data.append(contentsOf: [
@@ -53,7 +53,7 @@ struct ByteWriter {
     }
 }
 
-/// Lecture little endian, bornée.
+/// Little endian reading, bounded.
 struct ByteReader {
     struct OutOfBounds: Error {}
 
@@ -122,7 +122,7 @@ struct ByteReader {
         ))
     }
 
-    /// Tout ce qui reste à lire.
+    /// Everything left to read.
     mutating func rest() -> Data {
         let remaining = data[offset...]
         offset = data.endIndex

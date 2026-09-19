@@ -5,32 +5,32 @@ import XCTest
 
 final class MessageCodecTests: XCTestCase {
 
-    /// `protocol/testvectors/`, situé par rapport à ce fichier source.
+    /// `protocol/testvectors/`, located relative to this source file.
     private static let vectorsDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()  // SidebusCoreTests
         .deletingLastPathComponent()  // Tests
         .deletingLastPathComponent()  // mac
-        .deletingLastPathComponent()  // racine du dépôt
+        .deletingLastPathComponent()  // repository root
         .appendingPathComponent("protocol/testvectors")
 
     private func vector(_ name: String) throws -> Data {
         try Data(contentsOf: Self.vectorsDirectory.appendingPathComponent(name))
     }
 
-    /// Décode le vecteur, compare au message attendu, réencode et compare les octets.
+    /// Decodes the vector, compares with the expected message, re-encodes and compares bytes.
     private func check(_ name: String, _ expected: Message) throws {
         let bytes = try vector(name)
 
         var decoder = MessageDecoder()
         decoder.append(bytes)
-        let decoded = try XCTUnwrap(try decoder.next(), "\(name) : rien décodé")
-        XCTAssertEqual(decoded, expected, "\(name) : champs différents")
+        let decoded = try XCTUnwrap(try decoder.next(), "\(name): nothing decoded")
+        XCTAssertEqual(decoded, expected, "\(name): fields differ")
         XCTAssertNil(try decoder.next(), "\(name) : octets en trop")
 
-        XCTAssertEqual(MessageCodec.encode(expected), bytes, "\(name) : réencodage différent")
+        XCTAssertEqual(MessageCodec.encode(expected), bytes, "\(name): re-encoding differs")
     }
 
-    // MARK: - Vecteurs partagés
+    // MARK: - Shared vectors
 
     func testHello() throws {
         try check(
@@ -121,9 +121,9 @@ final class MessageCodecTests: XCTestCase {
         try check("pair_result.bin", .pairResult(accepted: true))
     }
 
-    /// Le protocole réserve 1 pour l'acceptation : tout le reste est un refus, y compris
-    /// un code que cette version ne connaît pas encore.
-    func testPairResultRefuseToutSauf1() throws {
+    /// The protocol reserves 1 for acceptance: everything else is a refusal, including a
+    /// code this version does not know yet.
+    func testPairResultRefusesAnythingButOne() throws {
         let refus = try MessageCodec.decodePayload(
             type: 0x0D,
             flags: 0,
@@ -132,14 +132,14 @@ final class MessageCodecTests: XCTestCase {
         XCTAssertEqual(refus, .pairResult(accepted: false))
     }
 
-    func testTypeInconnuIgnorable() throws {
+    func testUnknownTypeIsSkippable() throws {
         try check(
             "unknown_type.bin",
             .unknown(type: 0x7F, flags: 0, payload: Data("abc".utf8))
         )
     }
 
-    func testDeuxMessagesDansLeMemePaquet() throws {
+    func testTwoMessagesInOnePacket() throws {
         var decoder = MessageDecoder()
         decoder.append(try vector("stream_two_messages.bin"))
         XCTAssertEqual(try decoder.next(), .ping(timestamp: 0x0102_0304_0506_0708))
@@ -147,22 +147,22 @@ final class MessageCodecTests: XCTestCase {
         XCTAssertNil(try decoder.next())
     }
 
-    // MARK: - Comportement du décodeur en flux
+    // MARK: - Streaming decoder behaviour
 
-    func testMessageLivreOctetParOctet() throws {
+    func testMessageDeliveredByteByByte() throws {
         let bytes = try vector("hello.bin")
         var decoder = MessageDecoder()
 
         for byte in bytes.dropLast() {
             decoder.append(Data([byte]))
-            XCTAssertNil(try decoder.next(), "message rendu avant d'être complet")
+            XCTAssertNil(try decoder.next(), "message yielded before it was complete")
         }
 
         decoder.append(Data([bytes.last!]))
         XCTAssertNotNil(try decoder.next())
     }
 
-    func testMagicInvalideEstFatal() {
+    func testInvalidMagicIsFatal() {
         var decoder = MessageDecoder()
         decoder.append(Data([0x00, 0x07, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00]))
         XCTAssertThrowsError(try decoder.next()) { error in
@@ -170,7 +170,7 @@ final class MessageCodecTests: XCTestCase {
         }
     }
 
-    func testPayloadTropGrand() {
+    func testPayloadTooLarge() {
         var decoder = MessageDecoder()
         // length = 16 Mio, au dessus de la borne de 8 Mio.
         decoder.append(Data([0x5B, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]))
@@ -179,8 +179,8 @@ final class MessageCodecTests: XCTestCase {
         }
     }
 
-    func testPayloadTronqueDansLEntete() {
-        // PING annoncé avec 8 octets de payload, mais 4 seulement fournis.
+    func testPayloadTruncatedAgainstItsHeader() {
+        // PING announced with an 8 byte payload, but only 4 supplied.
         var decoder = MessageDecoder()
         decoder.append(Data([0x5B, 0x07, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 1, 2, 3, 4]))
         XCTAssertThrowsError(try decoder.next()) { error in
@@ -188,7 +188,7 @@ final class MessageCodecTests: XCTestCase {
         }
     }
 
-    func testCoordonneesHorsBornesRamenees() throws {
+    func testOutOfRangeCoordinatesAreClamped() throws {
         let message = Message.inputEvent(kind: .down, x: 1.5, y: -0.2, button: .left, timestamp: 7)
         var decoder = MessageDecoder()
         decoder.append(MessageCodec.encode(message))
@@ -196,8 +196,8 @@ final class MessageCodecTests: XCTestCase {
         XCTAssertEqual(decoded, .inputEvent(kind: .down, x: 1, y: 0, button: .left, timestamp: 7))
     }
 
-    func testNomTropLongTronque() throws {
-        let long = String(repeating: "é", count: 200)  // 400 octets en UTF-8
+    func testOverlongNameIsTruncated() throws {
+        let long = String(repeating: "é", count: 200)  // 400 bytes in UTF-8
         let encoded = MessageCodec.encode(.hello(version: 1, name: long, uuid: UUID()))
         var decoder = MessageDecoder()
         decoder.append(encoded)

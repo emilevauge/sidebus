@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Palette de l'icône, partagée par l'écran d'attente et le dialogue d'appairage. -->
+    <!-- Icon palette, shared by the waiting screen and the pairing dialog. -->
     <color name="dialogue_fond">#1A2447</color>
     <color name="dialogue_texte">#F5F7FF</color>
     <color name="dialogue_texte_secondaire">#A9B8E8</color>

@@ -1,21 +1,21 @@
 import CoreGraphics
 import Foundation
 
-/// Description d'un écran actif, telle qu'affichée dans le sélecteur du menu bar.
+/// Description of an active display, as shown in the settings picker.
 public struct DisplayInfo: Identifiable, Hashable, Sendable {
-    /// Identifiant CoreGraphics. Stable tant que l'écran reste branché, pas au delà.
+    /// CoreGraphics identifier. Stable while the display stays attached, no longer.
     public let id: CGDirectDisplayID
 
-    /// Nom lisible, celui que macOS affiche dans Réglages > Moniteurs.
+    /// Readable name, the one macOS shows under System Settings > Displays.
     public let name: String
 
-    /// Bornes en points, dans l'espace de coordonnées global de macOS.
+    /// Bounds in points, in the global macOS coordinate space.
     public let bounds: CGRect
 
     /// Taille du mode courant, en pixels.
     public let pixelSize: CGSize
 
-    /// Fréquence de rafraîchissement en Hz. `0` si l'écran ne la publie pas.
+    /// Refresh rate in Hz. `0` when the display does not publish it.
     public let refreshRate: Double
 
     public let isMain: Bool
@@ -39,12 +39,12 @@ public struct DisplayInfo: Identifiable, Hashable, Sendable {
         self.isBuiltin = isBuiltin
     }
 
-    /// Facteur d'échelle du mode courant : 2.0 en HiDPI, 1.0 sinon.
+    /// Scale factor of the current mode: 2.0 in HiDPI, 1.0 otherwise.
     public var scale: CGFloat {
         bounds.width > 0 ? pixelSize.width / bounds.width : 1
     }
 
-    /// Libellé du sélecteur, par exemple `DeskPad Display, 1920 × 1080 @2x`.
+    /// Picker label, for example `DeskPad Display, 1920 × 1080 @2x`.
     public var menuLabel: String {
         var label = "\(name), \(Int(pixelSize.width)) × \(Int(pixelSize.height))"
         if scale > 1.5 {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Types de messages du protocole. Voir `protocol/PROTOCOL.md`, section 4.
+/// Protocol message types. See `protocol/PROTOCOL.md`, section 4.
 public enum MessageType: UInt8, Sendable, CaseIterable {
     case hello = 0x01
     case deviceInfo = 0x02
@@ -40,7 +40,7 @@ public enum ByeReason: UInt8, Sendable {
     case error = 0x02
 }
 
-/// Un message du protocole, décodé.
+/// A decoded protocol message.
 public enum Message: Sendable, Equatable {
     case hello(version: UInt16, name: String, uuid: UUID)
     case deviceInfo(
@@ -67,15 +67,15 @@ public enum Message: Sendable, Equatable {
     case stats(received: UInt32, dropped: UInt32, windowMilliseconds: UInt16)
     case bye(reason: ByeReason)
 
-    /// Demande de confirmation d'appairage, envoyée par le Mac après DEVICE_INFO quand il
-    /// ne connaissait pas l'empreinte du certificat. Voir `protocol/PROTOCOL.md` 4.12.
+    /// Pairing confirmation request, sent by the Mac after DEVICE_INFO when it did not
+    /// already know the certificate fingerprint. See `protocol/PROTOCOL.md` 4.12.
     case pairRequest(code: UInt32)
 
-    /// Réponse de la tablette à PAIR_REQUEST.
+    /// The tablet's answer to PAIR_REQUEST.
     case pairResult(accepted: Bool)
 
-    /// Message d'un type que cette version ne connaît pas. Conservé pour pouvoir
-    /// l'ignorer proprement plutôt que de fermer la connexion.
+    /// A message of a type this version does not know. Kept so that it can be skipped
+    /// cleanly rather than closing the connection.
     case unknown(type: UInt8, flags: UInt16, payload: Data)
 
     public var type: UInt8 {

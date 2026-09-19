@@ -1,6 +1,6 @@
 import Foundation
 
-/// Conduit une connexion : handshake, puis PING/PONG jusqu'à la fermeture.
+/// Drives one connection: handshake, then PING/PONG until it closes.
 ///
 /// C'est le Mac qui envoie HELLO, puisque c'est lui qui se connecte. Voir
 /// `protocol/PROTOCOL.md`, section 6.
@@ -15,7 +15,7 @@ public actor PeerSession {
 
     public struct DeviceDescription: Sendable, Hashable {
         public let name: String
-        /// Identifiant persistant de l'appareil, clé de l'arbitrage entre transports.
+        /// Persistent device identifier, the key to arbitrating between transports.
         public let uuid: UUID
         public let width: UInt16
         public let height: UInt16
@@ -25,7 +25,7 @@ public actor PeerSession {
         public var supportsHEVC: Bool { codecs & Codec.hevc.rawValue != 0 }
     }
 
-    /// Intervalle entre deux PING, et délai au bout duquel on considère le pair perdu.
+    /// Interval between two PINGs, and the delay after which the peer counts as lost.
     public static let pingInterval = Duration.seconds(1)
     public static let pingTimeout = Duration.seconds(5)
 
@@ -59,12 +59,12 @@ public actor PeerSession {
         return stream
     }
 
-    /// Envoie un message sur le lien de la session.
+    /// Sends a message on the session's link.
     public func send(_ message: Message) async throws {
         try await transport.send(message)
     }
 
-    public func stop(reason: String = "arrêt demandé") async {
+    public func stop(reason: String = "stop requested") async {
         pingTask?.cancel()
         readTask?.cancel()
         pingTask = nil
@@ -101,7 +101,7 @@ public actor PeerSession {
                 try? await transport.send(.pong(timestamp: timestamp))
 
             case let .bye(reason):
-                await stop(reason: "BYE reçu, raison \(reason.rawValue)")
+                await stop(reason: "BYE received, reason \(reason.rawValue)")
                 return
 
             default:
@@ -109,8 +109,8 @@ public actor PeerSession {
             }
         }
 
-        // Le flux se termine quand le lien tombe.
-        await stop(reason: "lien fermé")
+        // The stream ends when the link falls.
+        await stop(reason: "link closed")
     }
 
     private func pingLoop() async {
@@ -120,21 +120,20 @@ public actor PeerSession {
 
             let silence = Self.uptimeMicroseconds() &- lastPongUptime
             if silence > UInt64(Self.pingTimeout.components.seconds) * 1_000_000 {
-                await stop(reason: "pair muet depuis 5 s")
+                await stop(reason: "peer silent for 5 s")
                 return
             }
 
             do {
                 try await transport.send(.ping(timestamp: Self.uptimeMicroseconds()))
             } catch {
-                await stop(reason: "envoi impossible : \(error)")
+                await stop(reason: "cannot send: \(error)")
                 return
             }
         }
     }
 
-    /// Horloge monotone, en microsecondes. Ne recule pas et ignore les changements
-    /// d'heure système.
+    /// Monotonic clock, in microseconds. Never goes back and ignores system time changes.
     public static func uptimeMicroseconds() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds / 1000
     }

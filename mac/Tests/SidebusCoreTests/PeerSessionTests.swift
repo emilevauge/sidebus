@@ -18,8 +18,8 @@ private final class OnceFlag: @unchecked Sendable {
     }
 }
 
-/// Fausse tablette : écoute en local, répond DEVICE_INFO au HELLO et PONG au PING.
-/// Même rôle que l'application Android, réduit au strict nécessaire.
+/// A fake tablet: listens locally, answers DEVICE_INFO to HELLO and PONG to PING. Same
+/// role as the Android app, cut down to the strict minimum.
 private final class FakeTablet: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "test.tablette")
@@ -115,7 +115,7 @@ private final class FakeTablet: @unchecked Sendable {
 
 final class PeerSessionTests: XCTestCase {
 
-    func testHandshakePuisPing() async throws {
+    func testHandshakeThenPing() async throws {
         let tablet = try FakeTablet()
         let port = try await tablet.start()
         defer { tablet.stop() }
@@ -155,13 +155,13 @@ final class PeerSessionTests: XCTestCase {
 
         // Le Mac est bien celui qui ouvre le dialogue.
         guard case let .hello(version, name, _)? = tablet.receivedHello else {
-            return XCTFail("HELLO non reçu par la tablette")
+            return XCTFail("HELLO not received by the tablet")
         }
         XCTAssertEqual(version, Sidebus.protocolVersion)
         XCTAssertEqual(name, "Mac de test")
     }
 
-    func testAnalyseDeLaSortieTrackDevices() {
+    func testParsesTrackDevicesOutput() {
         let devices = AdbWatcher.parseDevices(
             "R5CT80ABCDE\tdevice\nemulator-5554\tdevice\n0123456789\tunauthorized\n"
         )

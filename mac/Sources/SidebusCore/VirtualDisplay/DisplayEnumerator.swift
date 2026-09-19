@@ -2,17 +2,17 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// Liste les écrans actifs vus par macOS, physiques ou virtuels.
+/// Lists the active displays macOS sees, physical or virtual.
 ///
-/// En phase 1 l'écran virtuel vient de DeskPad, lancé à côté. Pour Sidebus c'est un
-/// écran comme un autre : rien ici ne distingue un écran virtuel d'un moniteur branché.
+/// In phase 1 the virtual display came from DeskPad, run alongside. To Sidebus it is a
+/// display like any other: nothing here tells a virtual one from an attached monitor.
 public enum DisplayEnumerator {
 
-    /// Identifiants des écrans actifs. Pur CoreGraphics, appelable depuis n'importe quel
+    /// Identifiers of the active displays. Pure CoreGraphics, callable from any
     /// contexte.
     ///
-    /// « Actif » au sens de CoreGraphics veut dire connecté **et éveillé** : quand
-    /// l'écran du Mac dort, la liste est vide. Ce n'est pas une erreur.
+    /// "Active" in the CoreGraphics sense means attached **and awake**: when the Mac's
+    /// screen sleeps the list is empty. That is not an error.
     public static func activeDisplayIDs() throws -> [CGDirectDisplayID] {
         var count: UInt32 = 0
         var status = CGGetActiveDisplayList(0, nil, &count)
@@ -26,20 +26,20 @@ public enum DisplayEnumerator {
         return Array(ids.prefix(Int(count)))
     }
 
-    /// Taille du mode courant d'un écran, en pixels.
+    /// Size of a display's current mode, in pixels.
     public static func pixelSize(of id: CGDirectDisplayID) -> CGSize {
         guard let mode = CGDisplayCopyDisplayMode(id) else { return CGDisplayBounds(id).size }
         return CGSize(width: mode.pixelWidth, height: mode.pixelHeight)
     }
 
-    /// `true` si l'écran est toujours actif.
+    /// `true` when the display is still active.
     public static func isActive(_ id: CGDirectDisplayID) -> Bool {
         ((try? activeDisplayIDs()) ?? []).contains(id)
     }
 
-    /// Écrans actifs avec leurs noms et leurs modes.
+    /// Active displays with their names and modes.
     ///
-    /// Isolé sur le main actor parce que le nom lisible vient de `NSScreen`, seule API
+    /// Isolated on the main actor because the readable name comes from `NSScreen`, the only
     /// publique qui le donne. Le reste du pipeline ne manipule qu'un `CGDirectDisplayID`.
     @MainActor
     public static func activeDisplays() throws -> [DisplayInfo] {
@@ -51,7 +51,7 @@ public enum DisplayEnumerator {
                 ?? bounds.size
             return DisplayInfo(
                 id: id,
-                name: names[id] ?? "Écran \(id)",
+                name: names[id] ?? "Display \(id)",
                 bounds: bounds,
                 pixelSize: pixelSize,
                 refreshRate: mode?.refreshRate ?? 0,

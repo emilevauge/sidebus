@@ -1,29 +1,28 @@
 import AppKit
 
-/// Les deux gabarits de la barre de menus, chargés une fois depuis le bundle
-/// de ressources du module.
+/// The two menu bar templates, loaded once from the module's resource bundle.
 ///
-/// Ce sont des PDF vectoriels marqués `isTemplate` : macOS les redessine en
-/// noir ou en blanc selon le thème et selon la couleur de la barre de menus,
-/// et les rend nets à toutes les échelles d'ecran.
+/// They are vector PDFs marked `isTemplate`: macOS redraws them in black or white
+/// depending on the theme and on the menu bar's colour, and keeps them crisp at every
+/// screen scale.
 enum MenuBarIcon {
-    /// Au repos : la dalle du pare-brise est évidée.
-    static let repos = charger("MenuBar")
-    /// Partage en cours : la dalle est pleine, la différence se voit à 18 points.
-    static let actif = charger("MenuBarActif")
+    /// At rest: the windscreen panel is hollow.
+    static let atRest = load("MenuBar")
+    /// Sharing in progress: the panel is filled, and the difference reads at 18 points.
+    static let active = load("MenuBarActive")
 
-    static func pour(partageEnCours: Bool) -> NSImage {
-        partageEnCours ? actif : repos
+    static func forSharing(_ isSharing: Bool) -> NSImage {
+        isSharing ? active : atRest
     }
 
-    private static func charger(_ nom: String) -> NSImage {
+    private static func load(_ name: String) -> NSImage {
         let image: NSImage
-        if let url = Bundle.module.url(forResource: nom, withExtension: "pdf"),
+        if let url = Bundle.module.url(forResource: name, withExtension: "pdf"),
            let pdf = NSImage(contentsOf: url) {
             image = pdf
         } else {
-            // Repli sur un symbole système : mieux vaut une icône approchante
-            // qu'une barre de menus vide si la ressource manque.
+            // Fall back to a system symbol: an approximate icon beats an empty menu bar when
+            // the resource is missing.
             image = NSImage(systemSymbolName: "display", accessibilityDescription: "Sidebus")
                 ?? NSImage()
         }

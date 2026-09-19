@@ -8,7 +8,7 @@ class PairingCodeTest {
 
     @Test
     fun codeDeriveDesQuatrePremiersOctets() {
-        // 0x00 0x0F 0x42 0x40 = 1 000 000 -> 000000 après le modulo.
+        // 0x00 0x0F 0x42 0x40 = 1,000,000 -> 000000 after the modulo.
         assertEquals("000000", DeviceIdentity.pairingCode(byteArrayOf(0x00, 0x0F, 0x42, 0x40, -1)))
         // 0x00 0x00 0x30 0x39 = 12 345.
         assertEquals("012345", DeviceIdentity.pairingCode(byteArrayOf(0x00, 0x00, 0x30, 0x39)))
@@ -24,7 +24,7 @@ class PairingCodeTest {
         }
     }
 
-    /** Même vecteur que le test Swift `testVecteurPartageAvecAndroid`. */
+    /** Same vector as the Swift test `testVectorSharedWithAndroid`. */
     @Test
     fun pairingCodeIdentiqueAuMac() {
         val fingerprint = ByteArray(32) { it.toByte() }

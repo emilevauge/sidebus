@@ -1,37 +1,35 @@
-# Code tiers
+# Third party code
 
-Recense tout code repris d'un projet externe, avec sa licence, conformément à la section 5
-de `PLAN.md`. Chaque fichier concerné porte aussi l'avis de copyright d'origine en tête.
+Lists every piece of code taken from an outside project, with its licence. Each affected
+file also carries the original copyright notice at the top.
 
-## Code repris
+## Code taken
 
-### DeskPad, licence MIT
+### DeskPad, MIT licence
 
 `https://github.com/Stengo/DeskPad`, copyright (c) 2022 Stengo.
 
-`Sources/CGVirtualDisplayBridge/include/CGVirtualDisplayBridge.h` reprend les déclarations
-des classes privées de CoreGraphics qui créent un écran virtuel. L'avis de copyright et le
-texte de licence MIT figurent en tête du fichier.
+`Sources/CGVirtualDisplayBridge/include/CGVirtualDisplayBridge.h` takes the declarations of
+the private CoreGraphics classes that create a virtual display. The copyright notice and
+the MIT licence text sit at the top of that file.
 
-DeskPad a aussi servi de harnais de développement des phases 1 à 6, lancé tel quel sans
-modification. Le simple fait de lancer une application n'impose rien ; seule la reprise de
-code ci dessus est concernée.
+DeskPad also served as the development harness for phases 1 to 6, run as is and unmodified.
+Merely running an application imposes nothing; only the code above is concerned.
 
-## Code non repris
+## Code not taken
 
-### scrcpy, licence Apache 2.0
+### scrcpy, Apache 2.0 licence
 
 `https://github.com/Genymobile/scrcpy`
 
-La plomberie adb de Sidebus (`AdbWatcher`) parle directement au serveur adb sur le port
-5037 avec le service `host:track-devices`. Elle a été écrite à partir du protocole adb, pas
-copiée depuis scrcpy. Les choix de latence de scrcpy ont en revanche inspiré ceux du plan :
-pas de B frames, aucune file d'attente au rendu, `SurfaceView` et jamais `TextureView`,
-`TCP_NODELAY`.
+Sidebus talks to the adb server directly on port 5037 with the `host:track-devices` service
+(`AdbWatcher`). That was written from the adb protocol, not copied from scrcpy. Its latency
+choices did inspire ours though: no B frames, no queue at render time, `SurfaceView` and
+never `TextureView`, `TCP_NODELAY`.
 
-Le binaire `adb` n'est pas redistribué : Sidebus utilise celui du système.
+The `adb` binary is not redistributed: Sidebus uses the one on the system.
 
-### Moonlight et Sunshine, licence GPLv3
+### Moonlight and Sunshine, GPLv3 licence
 
-Aucun code repris, aucun fichier source consulté. Copyleft viral : intégrer la moindre
-portion obligerait à publier Sidebus sous GPLv3.
+No code taken, no source file read. Viral copyleft: pulling in the smallest portion would
+force Sidebus to ship under GPLv3.

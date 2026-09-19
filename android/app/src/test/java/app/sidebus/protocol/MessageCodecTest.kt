@@ -11,7 +11,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * Mêmes vecteurs que les tests Swift, mêmes attentes. Voir
+ * Same vectors as the Swift tests, same expectations. See
  * `protocol/testvectors/README.md`.
  */
 class MessageCodecTest {
@@ -20,18 +20,18 @@ class MessageCodecTest {
 
     private fun vector(name: String): ByteArray = File(vectors, name).readBytes()
 
-    /** Décode le vecteur, compare au message attendu, réencode et compare les octets. */
+    /** Decodes the vector, compares with the expected message, re-encodes and compares bytes. */
     private fun check(name: String, expected: Message) {
         val bytes = vector(name)
 
         val decoder = MessageDecoder()
         decoder.append(bytes)
         val decoded = decoder.next()
-        assertNotNull("$name : rien décodé", decoded)
-        assertEquals("$name : champs différents", expected, decoded)
+        assertNotNull("$name: nothing decoded", decoded)
+        assertEquals("$name: fields differ", expected, decoded)
         assertNull("$name : octets en trop", decoder.next())
 
-        assertArrayEquals("$name : réencodage différent", bytes, MessageCodec.encode(expected))
+        assertArrayEquals("$name: re-encoding differs", bytes, MessageCodec.encode(expected))
     }
 
     @Test
@@ -138,8 +138,8 @@ class MessageCodecTest {
     }
 
     /**
-     * Le protocole réserve 1 pour l'acceptation : tout le reste est un refus, y compris un
-     * code que cette version ne connaît pas encore.
+     * The protocol reserves 1 for acceptance: everything else is a refusal, including a code
+     * this version does not know yet.
      */
     @Test
     fun pairResultRefuseToutSauf1() {
@@ -168,14 +168,14 @@ class MessageCodecTest {
 
         for (index in 0 until bytes.size - 1) {
             decoder.append(byteArrayOf(bytes[index]))
-            assertNull("message rendu avant d'être complet", decoder.next())
+            assertNull("message yielded before it was complete", decoder.next())
         }
 
         decoder.append(byteArrayOf(bytes[bytes.size - 1]))
         assertNotNull(decoder.next())
     }
 
-    /** Le tampon à index doit survivre à une frame plus grosse que sa capacité initiale. */
+    /** The index based buffer must survive a frame larger than its initial capacity. */
     @Test
     fun grosseFrameEnPlusieursMorceaux() {
         val payload = ByteArray(400_000) { (it % 251).toByte() }
@@ -189,7 +189,7 @@ class MessageCodecTest {
             decoder.append(encoded.copyOfRange(offset, offset + count), count)
             offset += count
             if (offset < encoded.size) {
-                assertNull("message rendu avant d'être complet", decoder.next())
+                assertNull("message yielded before it was complete", decoder.next())
             }
         }
 
@@ -200,7 +200,7 @@ class MessageCodecTest {
         assertNull(decoder.next())
     }
 
-    /** Plusieurs messages d'affilée, pour vérifier le compactage du tampon. */
+    /** Several messages in a row, to check the buffer compaction. */
     @Test
     fun centMessagesDeSuite() {
         val decoder = MessageDecoder(initialCapacity = 1024)
@@ -217,7 +217,7 @@ class MessageCodecTest {
         decoder.append(byteArrayOf(0x00, 0x07, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00))
         try {
             decoder.next()
-            fail("une exception était attendue")
+            fail("an exception was expected")
         } catch (error: ProtocolException) {
             assertTrue(error.message!!.contains("magique"))
         }
@@ -230,7 +230,7 @@ class MessageCodecTest {
         decoder.append(byteArrayOf(0x5B, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
         try {
             decoder.next()
-            fail("une exception était attendue")
+            fail("an exception was expected")
         } catch (error: ProtocolException) {
             assertTrue(error.message!!.contains("borne"))
         }
@@ -242,9 +242,9 @@ class MessageCodecTest {
         decoder.append(byteArrayOf(0x5B, 0x07, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 1, 2, 3, 4))
         try {
             decoder.next()
-            fail("une exception était attendue")
+            fail("an exception was expected")
         } catch (error: ProtocolException) {
-            assertTrue(error.message!!.contains("tronqué"))
+            assertTrue(error.message!!.contains("truncated"))
         }
     }
 
@@ -263,7 +263,7 @@ class MessageCodecTest {
 
     @Test
     fun nomTropLongTronque() {
-        val long = "é".repeat(200) // 400 octets en UTF-8
+        val long = "é".repeat(200) // 400 bytes in UTF-8
         val encoded = MessageCodec.encode(Message.Hello(1, long, UUID.randomUUID()))
         val decoder = MessageDecoder()
         decoder.append(encoded)

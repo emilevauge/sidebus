@@ -9,18 +9,18 @@ let package = Package(
         .library(name: "SidebusCore", targets: ["SidebusCore"]),
     ],
     targets: [
-        // Déclarations des classes privées de CoreGraphics pour l'écran virtuel.
+        // Declarations of the private CoreGraphics classes for the virtual display.
         .target(
             name: "CGVirtualDisplayBridge",
             linkerSettings: [.linkedFramework("CoreGraphics")]
         ),
-        // Toute la logique, testable, sans UI.
+        // All the logic, testable, with no UI.
         .target(name: "SidebusCore", dependencies: ["CGVirtualDisplayBridge"]),
-        // Application menu bar.
+        // Menu bar application.
         .executableTarget(
             name: "SidebusApp",
             dependencies: ["SidebusCore"],
-            // Les gabarits PDF de la barre de menus, lus via Bundle.module.
+            // The menu bar PDF templates, read through Bundle.module.
             resources: [.process("Resources")]
         ),
         .testTarget(name: "SidebusCoreTests", dependencies: ["SidebusCore"]),

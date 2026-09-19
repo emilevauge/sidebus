@@ -1,19 +1,19 @@
 import CoreGraphics
 import Foundation
 
-/// Source de l'écran que Sidebus capture.
+/// Source of the display Sidebus captures.
 ///
-/// Tout le reste du code passe par cette abstraction et ne sait jamais d'où vient
-/// l'écran. Deux implémentations :
+/// The rest of the code goes through this abstraction and never learns where the display
+/// came from. Two implementations:
 ///
-/// - `ExistingDisplayProvider` : cible un écran déjà présent, physique ou créé par
-///   DeskPad. Utilisée en phase 1, conservée ensuite comme mode dégradé si l'API privée
+/// - `ExistingDisplayProvider`: targets a display that already exists, physical or made
+///   by DeskPad. Used in phase 1, kept afterwards as the fallback when the private API
 ///   `CGVirtualDisplay` casse sur une version de macOS.
-/// - `CGVirtualDisplayProvider` : crée l'écran lui même, phase 7.
+/// - `CGVirtualDisplayProvider`: creates the display itself, phase 7.
 public protocol VirtualDisplayProvider: Sendable {
-    /// Rend un écran disponible et renvoie son identifiant.
+    /// Makes a display available and returns its identifier.
     func acquire() async throws -> CGDirectDisplayID
 
-    /// Libère l'écran. Sans effet si rien n'a été acquis.
+    /// Releases the display. A no-op when nothing was acquired.
     func release() async
 }

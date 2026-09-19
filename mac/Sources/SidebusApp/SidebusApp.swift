@@ -10,26 +10,26 @@ struct SidebusApp: App {
     @State private var permissions = PermissionsModel()
 
     var body: some Scene {
-        Window("Réglages Sidebus", id: "settings") {
+        Window("Sidebus Settings", id: "settings") {
             SettingsWindow(devices: devices, displays: displays, permissions: permissions)
         }
         .windowResizability(.contentSize)
 
-        // Label personnalisé : MenuBarExtra impose alors la forme
-        // « MenuBarExtra { contenu } label: { ... } ».
+        // Custom label: MenuBarExtra then requires the
+        // `MenuBarExtra { content } label: { ... }` shape.
         MenuBarExtra {
             MenuContent(devices: devices, permissions: permissions)
         } label: {
-            // L'icône dit d'un coup d'œil si quelque chose est diffusé.
-            Image(nsImage: MenuBarIcon.pour(partageEnCours: devices.sharingCount > 0))
+            // The icon says at a glance whether anything is streaming.
+            Image(nsImage: MenuBarIcon.forSharing(devices.sharingCount > 0))
         }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Pas d'icône dans le Dock, l'application ne vit que dans la barre de menus.
-        // Le bundle porte aussi LSUIElement, ceci couvre le cas de `swift run`.
+        // No Dock icon, the app lives in the menu bar alone. The bundle also carries
+        // LSUIElement, this covers the `swift run` case.
         NSApp.setActivationPolicy(.accessory)
     }
 }

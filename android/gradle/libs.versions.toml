@@ -2,5 +2,5 @@
 agp = "9.3.1"
 
 [plugins]
-# Kotlin est intégré à AGP depuis la 9.0, pas de plugin Kotlin séparé.
+# Kotlin ships inside AGP from 9.0 on, so there is no separate Kotlin plugin.
 android-application = { id = "com.android.application", version.ref = "agp" }

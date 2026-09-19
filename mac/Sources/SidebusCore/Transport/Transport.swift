@@ -14,38 +14,38 @@ public enum TransportError: Error, CustomStringConvertible, Sendable {
 
     public var description: String {
         switch self {
-        case let .connectionFailed(reason): return "connexion impossible : \(reason)"
-        case .closed: return "connexion fermée"
-        case let .handshakeFailed(reason): return "handshake échoué : \(reason)"
-        case .timedOut: return "délai dépassé"
+        case let .connectionFailed(reason): return "cannot connect: \(reason)"
+        case .closed: return "connection closed"
+        case let .handshakeFailed(reason): return "handshake failed: \(reason)"
+        case .timedOut: return "timed out"
         }
     }
 }
 
-/// Un lien établi avec la tablette. Aucun code métier ne doit savoir s'il tourne en USB
-/// ou en Wi-Fi : c'est toute la raison d'être de cette abstraction.
+/// An established link to the tablet. No business code should know whether it runs over
+/// USB or Wi-Fi: that is the whole point of this abstraction.
 public protocol Transport: Sendable {
     var kind: TransportKind { get }
 
-    /// Messages reçus, dans l'ordre. Le flux se termine à la fermeture du lien.
+    /// Messages received, in order. The stream ends when the link closes.
     var messages: AsyncStream<Message> { get }
 
     func send(_ message: Message) async throws
     func close() async
 }
 
-/// Une tablette repérée, par un moyen ou un autre.
+/// A tablet spotted, by one means or another.
 public struct Peer: Sendable, Hashable, Identifiable {
-    /// Identifiant du moyen de découverte : numéro de série adb en USB, nom du service en
-    /// Wi-Fi. Deux transports vers la même tablette ont donc deux `id` différents, c'est
-    /// `deviceID` qui les réunit.
+    /// Identifier of the discovery channel: adb serial on USB, service name on Wi-Fi. Two
+    /// transports to the same tablet therefore carry two different `id` values, and
+    /// `deviceID` is what brings them together.
     public let id: String
     public let name: String
     public let kind: TransportKind
     public let endpoint: NWEndpoint
 
-    /// Identifiant persistant de la tablette, quand il est connu avant de se connecter.
-    /// Il vient du TXT `id` en Wi-Fi. En USB il n'arrive qu'avec DEVICE_INFO.
+    /// Persistent identifier of the tablet, when known before connecting. It comes from
+    /// the `id` TXT record on Wi-Fi. On USB it only arrives with DEVICE_INFO.
     public let deviceID: UUID?
 
     public init(
@@ -80,7 +80,7 @@ public struct Peer: Sendable, Hashable, Identifiable {
     }
 }
 
-/// Source de tablettes. `AdbWatcher` en phase 3, `BonjourBrowser` en phase 6.
+/// A source of tablets. `AdbWatcher` in phase 3, `BonjourBrowser` in phase 6.
 public protocol PeerDiscovery: Sendable {
     func start() async -> AsyncStream<[Peer]>
     func stop() async

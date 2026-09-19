@@ -1,24 +1,23 @@
 import Foundation
 
-/// Un appareil appairé, tel que le menu et les réglages l'affichent.
+/// A paired device, as the menu and the settings show it.
 ///
-/// L'empreinte du certificat vit dans `PairingStore`, pas ici : ce sont deux choses de
-/// nature différente. L'empreinte est une donnée d'intégrité, qui décide d'accepter ou de
-/// refuser un lien. Ce qui suit n'est que de l'affichage et du confort, et se perd sans
-/// conséquence.
+/// The certificate fingerprint lives in `PairingStore`, not here: the two are different in
+/// nature. The fingerprint is integrity data, and it decides whether a link is accepted or
+/// refused. What follows is display and convenience, and losing it costs nothing.
 public struct PairedDevice: Codable, Sendable, Hashable, Identifiable {
     public var id: String { deviceID }
 
-    /// Identifiant persistant de la tablette, en forme texte. C'est la clé de tout.
+    /// Persistent identifier of the tablet, in text form. It is the key to everything.
     public let deviceID: String
     public var name: String
 
-    /// Dernier transport par lequel on l'a vue, pour l'afficher hors ligne.
+    /// Last transport it was seen on, so it can be shown while offline.
     public var lastTransport: TransportKind?
     public var lastSeen: Date
 
-    /// Vrai si le partage vers cet appareil doit reprendre tout seul quand il réapparaît.
-    /// Mis à vrai en démarrant le partage, à faux en l'arrêtant.
+    /// True when sharing to this device should resume on its own once it reappears. Set
+    /// when sharing starts, cleared when it stops.
     public var resumesSharing: Bool
 
     public init(
@@ -38,11 +37,11 @@ public struct PairedDevice: Codable, Sendable, Hashable, Identifiable {
 
 extension TransportKind: Codable {}
 
-/// Les appareils appairés, rangés par identifiant.
+/// The paired devices, keyed by identifier.
 ///
-/// Stocké dans les préférences, en JSON. Rien ici n'est secret, et perdre le fichier ne
-/// casse pas l'appairage : les empreintes restent dans le trousseau, seuls les noms et la
-/// reprise automatique disparaissent.
+/// Stored in the preferences, as JSON. Nothing here is secret, and losing the file does not
+/// break pairing: the fingerprints stay in the keychain, only the names and the automatic
+/// resume disappear.
 public struct DeviceDirectory: @unchecked Sendable {
     public static let shared = DeviceDirectory(defaults: .standard)
 
@@ -54,7 +53,7 @@ public struct DeviceDirectory: @unchecked Sendable {
         self.defaults = defaults
     }
 
-    /// Les appareils, du plus récemment vu au plus ancien.
+    /// The devices, most recently seen first.
     public func all() -> [PairedDevice] {
         load().values.sorted { $0.lastSeen > $1.lastSeen }
     }
@@ -67,7 +66,7 @@ public struct DeviceDirectory: @unchecked Sendable {
         load()[deviceID] != nil
     }
 
-    /// Ajoute l'appareil, ou met à jour ce qu'on sait de lui sans écraser le reste.
+    /// Adds the device, or updates what is known about it without erasing the rest.
     public func record(deviceID: String, name: String, transport: TransportKind?) {
         var entries = load()
         var entry = entries[deviceID] ?? PairedDevice(deviceID: deviceID, name: name)
@@ -86,7 +85,7 @@ public struct DeviceDirectory: @unchecked Sendable {
         save(entries)
     }
 
-    /// Identifiants dont le partage doit reprendre à la réapparition.
+    /// Identifiers whose sharing should resume when they reappear.
     public func resuming() -> Set<String> {
         Set(load().values.filter(\.resumesSharing).map(\.deviceID))
     }

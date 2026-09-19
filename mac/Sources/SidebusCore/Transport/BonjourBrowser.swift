@@ -2,14 +2,14 @@ import Foundation
 import Network
 import os
 
-/// Découverte Wi-Fi : la tablette s'annonce, le Mac la trouve.
+/// Wi-Fi discovery: the tablet advertises itself, the Mac finds it.
 ///
-/// Se connecter à un résultat se fait directement avec son `NWEndpoint`, sans résoudre
-/// l'adresse à la main : `NWConnection` s'en charge, y compris quand l'adresse change.
+/// Connecting to a result goes straight through its `NWEndpoint`, with no address resolved
+/// by hand: `NWConnection` handles that, including when the address changes.
 ///
-/// Piège à connaître : depuis macOS 15, sans `NSLocalNetworkUsageDescription` ni
-/// `NSBonjourServices` dans l'Info.plist, et sans signature stable, le navigateur ne
-/// renvoie jamais rien **et ne produit aucune erreur**.
+/// A trap worth knowing: since macOS 15, without `NSLocalNetworkUsageDescription` and
+/// `NSBonjourServices` in the Info.plist, and without a stable signature, the browser
+/// returns nothing at all **and raises no error**.
 public actor BonjourBrowser: PeerDiscovery {
     private var browser: NWBrowser?
     private var continuation: AsyncStream<[Peer]>.Continuation?
@@ -42,7 +42,7 @@ public actor BonjourBrowser: PeerDiscovery {
         browser.stateUpdateHandler = { state in
             switch state {
             case let .failed(error):
-                browserLog.error("navigateur en échec : \(String(describing: error), privacy: .public)")
+                browserLog.error("browser failed: \(String(describing: error), privacy: .public)")
                 continuation.finish()
             case .cancelled:
                 continuation.finish()
@@ -62,8 +62,8 @@ public actor BonjourBrowser: PeerDiscovery {
         continuation = nil
     }
 
-    /// Construit une tablette à partir d'un résultat et de ses enregistrements TXT.
-    /// Voir `protocol/PROTOCOL.md` section 8 pour les clés.
+    /// Builds a tablet from a result and its TXT records. See `protocol/PROTOCOL.md`
+    /// section 8 for the keys.
     static func peer(from result: NWBrowser.Result) -> Peer? {
         guard case let .service(name, _, _, _) = result.endpoint else { return nil }
 

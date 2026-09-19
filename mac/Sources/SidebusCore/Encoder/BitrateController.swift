@@ -1,10 +1,10 @@
 import Foundation
 
-/// Ajuste le débit d'encodage d'après ce que la tablette rapporte.
+/// Adjusts the encoding bitrate from what the tablet reports.
 ///
-/// Le signal utile est le taux de frames droppées : une tablette qui n'affiche pas tout ce
-/// qu'elle reçoit est saturée, par le réseau ou par son décodeur. On baisse vite et on
-/// remonte lentement, parce qu'une remontée trop rapide replonge aussitôt.
+/// The useful signal is the dropped frame rate: a tablet that does not display everything
+/// it receives is saturated, by the network or by its decoder. Cut fast and climb back
+/// slowly, because climbing too fast dives straight back down.
 public struct BitrateController: Sendable {
 
     public struct Profile: Sendable {
@@ -26,7 +26,7 @@ public struct BitrateController: Sendable {
     public let profile: Profile
     public private(set) var bitrate: Int
 
-    /// Fenêtres consécutives sans droppe, avant de retenter plus haut.
+    /// Consecutive windows with no drop, before trying higher again.
     private var calmWindows = 0
 
     public init(profile: Profile) {
@@ -34,7 +34,7 @@ public struct BitrateController: Sendable {
         self.bitrate = profile.start
     }
 
-    /// Nouvelle mesure reçue de la tablette. Renvoie le débit à appliquer s'il change.
+    /// A fresh measurement from the tablet. Returns the bitrate to apply when it changes.
     @discardableResult
     public mutating func apply(received: UInt32, dropped: UInt32) -> Int? {
         let total = received + dropped
@@ -52,7 +52,7 @@ public struct BitrateController: Sendable {
             bitrate = max(profile.minimum, Int(Double(bitrate) * 0.85))
         } else {
             calmWindows += 1
-            // Trois fenêtres calmes, soit six secondes, avant de remonter de 10 %.
+            // Three quiet windows, six seconds, before climbing back by 10 %.
             if calmWindows >= 3 {
                 calmWindows = 0
                 bitrate = min(profile.maximum, Int(Double(bitrate) * 1.1))
@@ -62,8 +62,8 @@ public struct BitrateController: Sendable {
         return bitrate == previous ? nil : bitrate
     }
 
-    /// Cadence conseillée quand la tablette n'arrive pas à suivre même à débit plancher.
-    /// C'est le signe d'un décodeur saturé ou d'un throttling thermique, pas du réseau.
+    /// Suggested frame rate when the tablet cannot keep up even at the floor bitrate. That
+    /// points at a saturated decoder or thermal throttling, not at the network.
     public func suggestedFrameRate(current: Int, received: UInt32, dropped: UInt32) -> Int? {
         let total = received + dropped
         guard total > 0 else { return nil }

@@ -3,8 +3,8 @@ import Foundation
 import Network
 import os
 
-/// Client TCP au dessus de `NWConnection`. Le Mac se connecte toujours, en USB comme en
-/// Wi-Fi : seule l'adresse change.
+/// TCP client on top of `NWConnection`. The Mac always connects, on USB as on Wi-Fi: only
+/// the address changes.
 public actor TransportClient: Transport {
     public nonisolated let kind: TransportKind
     public nonisolated let messages: AsyncStream<Message>
@@ -16,9 +16,9 @@ public actor TransportClient: Transport {
     private var isClosed = false
 
     /// - Parameters:
-    ///   - validator: décide d'accepter le certificat de la tablette. `nil` désactive TLS,
-    ///     ce qui ne sert qu'aux tests.
-    ///   - expectedDeviceID: identifiant attendu, connu d'avance en Wi-Fi seulement.
+    ///   - validator: decides whether to accept the tablet's certificate. `nil` disables
+    ///     TLS, which only serves the tests.
+    ///   - expectedDeviceID: expected identifier, known in advance on Wi-Fi only.
     public init(
         host: String,
         port: UInt16,
@@ -46,7 +46,7 @@ public actor TransportClient: Transport {
         self.kind = kind
 
         let tcp = NWProtocolTCP.Options()
-        // Nagle retarderait les petits messages, donc les entrées et les PING.
+        // Nagle would delay small messages, so input events and PINGs.
         tcp.noDelay = true
         tcp.connectionTimeout = 5
 
@@ -58,12 +58,12 @@ public actor TransportClient: Transport {
                 .TLSv13
             )
             let verify: sec_protocol_verify_t = { _, trust, complete in
-                tlsLog.debug("vérification du certificat demandée")
-                // `complete` est une closure C que Swift ne sait pas déclarer sûre entre
-                // tâches. Elle n'est appelée qu'une fois, depuis la tâche ci dessous.
+                tlsLog.debug("certificate verification requested")
+                // `complete` is a C closure Swift cannot declare safe across tasks. It is
+                // called exactly once, from the task below.
                 let completion = VerifyCompletion(complete)
                 guard let fingerprint = leafFingerprint(of: trust) else {
-                    tlsLog.error("aucun certificat exploitable dans la chaîne présentée")
+                    tlsLog.error("no usable certificate in the presented chain")
                     completion.call(false)
                     return
                 }
@@ -72,7 +72,7 @@ public actor TransportClient: Transport {
                         fingerprint: fingerprint,
                         expectedDeviceID: expectedDeviceID
                     )
-                    tlsLog.debug("certificat \(accepted ? "accepté" : "refusé", privacy: .public)")
+                    tlsLog.debug("certificate \(accepted ? "accepted" : "refused", privacy: .public)")
                     completion.call(accepted)
                 }
             }
@@ -91,11 +91,11 @@ public actor TransportClient: Transport {
         (messages, continuation) = AsyncStream<Message>.makeStream(bufferingPolicy: .unbounded)
     }
 
-    /// Ouvre la connexion et rend la main quand le socket est prêt.
+    /// Opens the connection and returns once the socket is ready.
     ///
-    /// Annulable : sans cela, une adresse qui ne répond jamais, cas d'un réseau qui isole
-    /// ses clients, laisse la tâche suspendue pour toujours et bloque même le groupe de
-    /// tâches censé lui imposer un délai.
+    /// Cancellable: without that, an address that never answers, the case of a network
+    /// isolating its clients, leaves the task suspended forever and blocks even the task
+    /// group meant to impose a deadline on it.
     public func connect() async throws {
         let handle = ConnectionHandle(connection)
 
@@ -107,7 +107,7 @@ public actor TransportClient: Transport {
                 case .ready:
                     if hasResumed.claim() { resume.resume() }
                 case let .failed(error):
-                    tlsLog.error("connexion en échec : \(String(describing: error), privacy: .public)")
+                    tlsLog.error("connection failed: \(String(describing: error), privacy: .public)")
                     if hasResumed.claim() { resume.resume(throwing: TransportError.connectionFailed("\(error)")) }
                 case .cancelled:
                     if hasResumed.claim() { resume.resume(throwing: TransportError.closed) }
@@ -159,7 +159,7 @@ public actor TransportClient: Transport {
                     continuation.yield(message)
                 }
             } catch {
-                tlsLog.debug("boucle de réception arrêtée : \(String(describing: error), privacy: .public)")
+                tlsLog.debug("receive loop stopped: \(String(describing: error), privacy: .public)")
                 await close()
                 return
             }
@@ -182,7 +182,7 @@ public actor TransportClient: Transport {
     }
 }
 
-/// SHA-256 du certificat feuille présenté, au format DER.
+/// SHA-256 of the presented leaf certificate, in DER form.
 func leafFingerprint(of trust: sec_trust_t) -> Data? {
     let secTrust = sec_trust_copy_ref(trust).takeRetainedValue()
     guard let chain = SecTrustCopyCertificateChain(secTrust) as? [SecCertificate],
@@ -191,7 +191,7 @@ func leafFingerprint(of trust: sec_trust_t) -> Data? {
     return PairingCode.fingerprint(ofDER: SecCertificateCopyData(leaf) as Data)
 }
 
-/// Permet d'annuler la connexion depuis un contexte non isolé.
+/// Lets the connection be cancelled from a non isolated context.
 private final class ConnectionHandle: @unchecked Sendable {
     private let connection: NWConnection
 
@@ -204,8 +204,8 @@ private final class ConnectionHandle: @unchecked Sendable {
     }
 }
 
-/// Emballe la closure de fin de vérification, que Swift 6 refuse de laisser traverser
-/// une frontière de tâche.
+/// Wraps the verification completion closure, which Swift 6 refuses to let cross a task
+/// boundary.
 private final class VerifyCompletion: @unchecked Sendable {
     private let complete: sec_protocol_verify_complete_t
 
@@ -220,11 +220,11 @@ private final class VerifyCompletion: @unchecked Sendable {
 
 let tlsLog = Logger(subsystem: "app.sidebus", category: "tls")
 
-/// File dédiée à la vérification du certificat, pour ne pas bloquer celle du transport.
+/// A queue of its own for certificate verification, so the transport queue stays free.
 private let verifyQueue = DispatchQueue(label: "app.sidebus.tls-verify")
 
-/// Garde qu'une continuation n'est reprise qu'une fois, les états de `NWConnection`
-/// pouvant se succéder.
+/// Guards that a continuation is resumed only once, since `NWConnection` states can
+/// follow one another.
 private final class Resumed: @unchecked Sendable {
     private let lock = NSLock()
     private var claimed = false

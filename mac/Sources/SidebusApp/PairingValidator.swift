@@ -4,33 +4,31 @@ import Observation
 import SidebusCore
 import os
 
-/// Applique le modèle `known_hosts` : une empreinte connue passe, une empreinte inconnue
-/// demande confirmation à l'utilisateur, une empreinte qui change pour un appareil connu
-/// est refusée.
+/// Applies the `known_hosts` model: a known fingerprint passes, an unknown one asks the
+/// user, and one that changes for a known device is refused.
 ///
-/// L'appairage se fait en deux temps, et cette classe ne couvre que le premier. Elle
-/// obtient l'accord de l'utilisateur du Mac pendant le handshake TLS, puisque c'est là
-/// qu'apparaît l'empreinte, mais elle **n'enregistre rien**. L'enregistrement attend le
-/// PAIR_RESULT de la tablette, donc l'accord de l'autre côté : c'est `DeviceSession` qui
-/// appelle alors `commitPending`. Un appairage refusé d'un côté ne laisse ainsi aucune
-/// trace de l'autre.
+/// Pairing happens in two steps, and this class only covers the first. It gets the Mac
+/// user's agreement during the TLS handshake, since that is where the fingerprint appears,
+/// but it **records nothing**. Recording waits for the tablet's PAIR_RESULT, so for the
+/// other side's agreement: `DeviceSession` then calls `commitPending`. A pairing refused on
+/// one side therefore leaves no trace on the other.
 ///
-/// Une instance par session : l'empreinte en attente appartient à une connexion précise, et
-/// deux tablettes peuvent s'appairer en même temps.
+/// One instance per session: the pending fingerprint belongs to one precise connection,
+/// and two tablets can pair at the same time.
 @MainActor
 @Observable
 final class PairingValidator: CertificateValidator {
 
-    /// Empreinte acceptée côté Mac, en attente de la confirmation de la tablette.
+    /// Fingerprint accepted on the Mac side, waiting for the tablet's confirmation.
     private(set) var pendingFingerprint: Data?
     private(set) var lastRefusal: String?
 
-    /// Empreinte de la connexion en cours, déjà appairée ou non.
+    /// Fingerprint of the current connection, already paired or not.
     private(set) var acceptedFingerprint: Data?
 
-    /// Vrai pendant qu'un dialogue attend une réponse humaine. Le délai de connexion se
-    /// met en pause tant que c'est vrai : le temps de lecture d'un code ne dit rien de la
-    /// joignabilité de la tablette.
+    /// True while a dialog waits for a human answer. The connection deadline pauses as long
+    /// as this holds: the time spent reading a code says nothing about whether the tablet
+    /// is reachable.
     private(set) var isAskingUser = false
 
     @ObservationIgnored
@@ -38,16 +36,16 @@ final class PairingValidator: CertificateValidator {
 
     nonisolated init() {}
 
-    /// Vrai quand la tablette doit encore confirmer, par PAIR_REQUEST puis PAIR_RESULT.
+    /// True while the tablet still has to confirm, through PAIR_REQUEST then PAIR_RESULT.
     var awaitsRemoteConfirmation: Bool { pendingFingerprint != nil }
 
-    /// Code à montrer aux deux bouts, dérivé de l'empreinte.
+    /// Code to show at both ends, derived from the fingerprint.
     var pendingCode: UInt32? {
         pendingFingerprint.map(PairingCode.value(for:))
     }
 
-    /// Les accès au stockage se font hors du main actor : un dialogue système ouvert par
-    /// le trousseau bloquerait sinon toute l'application au milieu du handshake.
+    /// Storage access happens off the main actor: a system dialog opened by the keychain
+    /// would otherwise freeze the whole app in the middle of the handshake.
     private func storeAccess<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
         await Task.detached(priority: .userInitiated) { work() }.value
     }
@@ -57,9 +55,9 @@ final class PairingValidator: CertificateValidator {
             let known = await storeAccess({ PairingStore.shared.fingerprint(forDeviceID: expectedDeviceID) }) {
             guard known == fingerprint else {
                 lastRefusal = """
-                    L'empreinte de « \(expectedDeviceID) » a changé. Connexion refusée.
+                    The fingerprint of "\(expectedDeviceID)" has changed. Connection refused.
                     """
-                log.error("empreinte différente pour \(expectedDeviceID, privacy: .public), refus")
+                log.error("different fingerprint for \(expectedDeviceID, privacy: .public), refused")
                 isAskingUser = true
                 await showMismatch(deviceID: expectedDeviceID)
                 isAskingUser = false
@@ -69,8 +67,8 @@ final class PairingValidator: CertificateValidator {
             return true
         }
 
-        // En USB, l'identifiant n'arrive qu'après le handshake : on reconnaît l'appareil
-        // à son empreinte seule.
+        // On USB the identifier only arrives after the handshake, so the device is known by
+        // its fingerprint alone.
         if expectedDeviceID == nil, await storeAccess({ PairingStore.shared.isKnown(fingerprint) }) {
             acceptedFingerprint = fingerprint
             return true
@@ -80,55 +78,55 @@ final class PairingValidator: CertificateValidator {
         let accepted = await confirmPairing(code: PairingCode.code(for: fingerprint))
         isAskingUser = false
         guard accepted else {
-            lastRefusal = "appairage refusé sur le Mac"
+            lastRefusal = "pairing refused on the Mac"
             return false
         }
 
-        // Rien n'est écrit ici : la tablette doit confirmer à son tour.
+        // Nothing is written here: the tablet has to confirm in turn.
         pendingFingerprint = fingerprint
         acceptedFingerprint = fingerprint
         lastRefusal = nil
         return true
     }
 
-    /// Enregistre l'empreinte, une fois les deux côtés d'accord.
+    /// Records the fingerprint, once both sides agree.
     func commitPending(deviceID: UUID) throws {
         guard let fingerprint = pendingFingerprint else { return }
         try PairingStore.shared.save(fingerprint, forDeviceID: deviceID.uuidString)
         pendingFingerprint = nil
-        log.info("appareil appairé sous \(deviceID.uuidString, privacy: .public)")
+        log.info("device paired under \(deviceID.uuidString, privacy: .public)")
     }
 
-    /// Abandonne l'appairage en cours : la tablette a refusé, ou n'a pas répondu.
+    /// Drops the pairing under way: the tablet refused, or never answered.
     func discardPending(reason: String) {
         guard pendingFingerprint != nil else { return }
         pendingFingerprint = nil
         lastRefusal = reason
-        log.info("appairage abandonné : \(reason, privacy: .public)")
+        log.info("pairing dropped: \(reason, privacy: .public)")
     }
 
     private func confirmPairing(code: String) async -> Bool {
-        // Crochet de développement, pour valider la chaîne sans intervention humaine.
+        // Development hook, to exercise the chain without a human.
         if ProcessInfo.processInfo.environment["SIDEBUS_AUTO_PAIR"] == "1" {
-            log.info("appairage automatique (SIDEBUS_AUTO_PAIR), code \(code, privacy: .public)")
+            log.info("automatic pairing (SIDEBUS_AUTO_PAIR), code \(code, privacy: .public)")
             return true
         }
 
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "Appairer cette tablette ?"
+        alert.messageText = "Pair with this tablet?"
         alert.informativeText = """
-            Code affiché sur la tablette : \(code)
+            Code shown on the tablet: \(code)
 
-            Vérifiez que les deux codes sont identiques avant de confirmer. S'ils diffèrent, \
-            quelqu'un d'autre se fait passer pour votre tablette.
+            Check that both codes match before confirming. If they differ, somebody else is \
+            impersonating your tablet.
 
-            La tablette demandera ensuite sa propre confirmation.
+            The tablet will then ask for its own confirmation.
             """
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Appairer")
-        alert.addButton(withTitle: "Refuser")
+        alert.addButton(withTitle: "Pair")
+        alert.addButton(withTitle: "Refuse")
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -136,17 +134,16 @@ final class PairingValidator: CertificateValidator {
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
-        alert.messageText = "Cette tablette ne présente plus le même certificat"
+        alert.messageText = "This tablet no longer presents the same certificate"
         alert.informativeText = """
-            L'appareil « \(deviceID) » était appairé avec un autre certificat. La connexion \
-            est refusée.
+            Device "\(deviceID)" was paired with a different certificate. The connection is \
+            refused.
 
-            Soit l'application a été réinstallée sur la tablette, soit quelqu'un se fait \
-            passer pour elle. Pour réappairer volontairement, désappairez l'appareil dans \
-            les réglages de Sidebus.
+            Either the app was reinstalled on the tablet, or somebody is impersonating it. To \
+            pair again on purpose, unpair the device in the Sidebus settings.
             """
         alert.alertStyle = .critical
-        alert.addButton(withTitle: "Fermer")
+        alert.addButton(withTitle: "Close")
         alert.runModal()
     }
 }

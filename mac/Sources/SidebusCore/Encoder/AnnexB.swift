@@ -1,12 +1,11 @@
 import CoreMedia
 import Foundation
 
-/// Conversion du format de sortie de VideoToolbox vers Annex B.
+/// Conversion from VideoToolbox's output format to Annex B.
 ///
-/// VideoToolbox produit des NAL units préfixées par leur longueur (format AVCC). Le fil
-/// Sidebus et `MediaCodec` attendent de l'Annex B, c'est à dire des NAL units séparées par
-/// le code de départ `00 00 00 01`. Voir `protocol/PROTOCOL.md`, messages VIDEO_CONFIG et
-/// VIDEO_FRAME.
+/// VideoToolbox emits NAL units prefixed with their length (AVCC format). The Sidebus wire
+/// and `MediaCodec` expect Annex B, that is NAL units separated by the `00 00 00 01` start
+/// code. See `protocol/PROTOCOL.md`, messages VIDEO_CONFIG and VIDEO_FRAME.
 public enum AnnexB {
     public static let startCode = Data([0x00, 0x00, 0x00, 0x01])
 
@@ -17,17 +16,17 @@ public enum AnnexB {
         public var description: String {
             switch self {
             case let .invalidLengthSize(size):
-                return "taille de préfixe de NAL invalide : \(size)"
+                return "invalid NAL length prefix size: \(size)"
             case let .truncated(offset):
-                return "flux AVCC tronqué à l'offset \(offset)"
+                return "truncated AVCC stream at offset \(offset)"
             }
         }
     }
 
     /// Convertit un buffer AVCC en Annex B.
     ///
-    /// - Parameter nalLengthSize: taille du préfixe de longueur, 1 à 4 octets,
-    ///   annoncée par la description de format. Vaut 4 en pratique.
+    /// - Parameter nalLengthSize: size of the length prefix, 1 to 4 bytes, announced by
+    ///   the format description. In practice it is 4.
     public static func fromLengthPrefixed(_ avcc: Data, nalLengthSize: Int) throws -> Data {
         guard (1...4).contains(nalLengthSize) else {
             throw Error.invalidLengthSize(nalLengthSize)
@@ -42,7 +41,7 @@ public enum AnnexB {
                 throw Error.truncated(offset: avcc.distance(from: avcc.startIndex, to: offset))
             }
 
-            // Le préfixe de longueur est en big endian, contrairement au reste du protocole.
+            // The length prefix is big endian, unlike the rest of the protocol.
             var length = 0
             for index in 0..<nalLengthSize {
                 length = (length << 8) | Int(avcc[avcc.index(offset, offsetBy: index)])
@@ -63,11 +62,11 @@ public enum AnnexB {
 
     /// Convertit un buffer AVCC en Annex B **sur place**, sans allouer.
     ///
-    /// Le préfixe de longueur fait quatre octets, le code de départ aussi : il suffit donc
-    /// de réécrire les quatre octets de longueur par `00 00 00 01`. Ça supprime une copie
-    /// complète de chaque frame encodée.
+    /// The length prefix is four bytes and so is the start code, so rewriting those four
+    /// length bytes as `00 00 00 01` is enough. That removes a full copy of every encoded
+    /// frame.
     ///
-    /// Les tailles de préfixe autres que quatre, jamais vues en sortie de VideoToolbox,
+    /// Prefix sizes other than four, never seen out of VideoToolbox,
     /// retombent sur la conversion avec allocation.
     public static func convertInPlace(_ data: inout Data, nalLengthSize: Int) throws {
         guard nalLengthSize == 4 else {
@@ -101,8 +100,8 @@ public enum AnnexB {
         }
     }
 
-    /// Jeux de paramètres d'une description de format, concaténés en Annex B :
-    /// SPS et PPS en H.264, VPS, SPS et PPS en HEVC.
+    /// Parameter sets of a format description, concatenated in Annex B: SPS and PPS for
+    /// H.264, VPS, SPS and PPS for HEVC.
     public static func parameterSets(from formatDescription: CMFormatDescription) -> Data? {
         let isHEVC = formatDescription.mediaSubType == .hevc
         guard isHEVC || formatDescription.mediaSubType == .h264 else { return nil }
@@ -156,7 +155,7 @@ public enum AnnexB {
         return output
     }
 
-    /// Taille du préfixe de longueur annoncée par la description de format.
+    /// Length prefix size announced by the format description.
     public static func nalLengthSize(of formatDescription: CMFormatDescription) -> Int {
         var nalLength: Int32 = 4
         switch formatDescription.mediaSubType {

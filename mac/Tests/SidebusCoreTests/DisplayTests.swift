@@ -5,38 +5,38 @@ import XCTest
 
 final class DisplayTests: XCTestCase {
 
-    /// `CGGetActiveDisplayList` ne liste que les écrans éveillés : sur une machine dont
-    /// l'écran dort, il n'y en a aucun. Les tests qui en ont besoin se sautent alors,
-    /// plutôt que d'échouer pour une raison sans rapport avec le code.
+    /// `CGGetActiveDisplayList` only lists awake displays: on a machine whose screen sleeps
+    /// there are none. Tests that need one skip instead of failing for a reason unrelated
+    /// to the code.
     private func requireAwakeDisplay() throws -> CGDirectDisplayID {
         let ids = try DisplayEnumerator.activeDisplayIDs()
-        try XCTSkipIf(ids.isEmpty, "aucun écran éveillé")
+        try XCTSkipIf(ids.isEmpty, "no awake display")
         return ids[0]
     }
 
-    func testAuMoinsUnEcranActif() throws {
+    func testAtLeastOneActiveDisplay() throws {
         let id = try requireAwakeDisplay()
         XCTAssertTrue(DisplayEnumerator.isActive(id))
     }
 
-    func testEcranInexistantInactif() {
+    func testMissingDisplayIsInactive() {
         XCTAssertFalse(DisplayEnumerator.isActive(CGDirectDisplayID.max))
     }
 
     @MainActor
-    func testEnumerationComplete() throws {
+    func testFullEnumeration() throws {
         _ = try requireAwakeDisplay()
         let displays = try DisplayEnumerator.activeDisplays()
         XCTAssertEqual(displays.filter(\.isMain).count, 1)
 
-        // Sert de diagnostic pour la validation de la phase 1 : l'écran de DeskPad
-        // doit apparaître ici quand DeskPad tourne.
+        // Diagnostics for the phase 1 validation: DeskPad's display should show up here
+        // while DeskPad runs.
         for display in displays {
-            print("écran \(display.id) : \(display.menuLabel)")
+            print("display \(display.id): \(display.menuLabel)")
         }
     }
 
-    func testProviderRendLIdentifiantVise() async throws {
+    func testProviderReturnsTheTargetedIdentifier() async throws {
         let id = try requireAwakeDisplay()
         let provider = ExistingDisplayProvider(targetID: id)
         let acquired = try await provider.acquire()
@@ -44,21 +44,21 @@ final class DisplayTests: XCTestCase {
         await provider.release()
     }
 
-    func testProviderRefuseUnEcranAbsent() async {
+    func testProviderRefusesAMissingDisplay() async {
         let provider = ExistingDisplayProvider(targetID: .max)
         do {
             _ = try await provider.acquire()
-            XCTFail("acquire() aurait dû échouer")
+            XCTFail("acquire() should have failed")
         } catch let error as DisplayError {
             guard case .displayUnavailable = error else {
-                return XCTFail("erreur inattendue : \(error)")
+                return XCTFail("unexpected error: \(error)")
             }
         } catch {
-            XCTFail("erreur inattendue : \(error)")
+            XCTFail("unexpected error: \(error)")
         }
     }
 
-    func testEchelleEtLibelle() {
+    func testScaleAndLabel() {
         let hidpi = DisplayInfo(
             id: 1,
             name: "DeskPad Display",
@@ -87,7 +87,7 @@ final class DisplayTests: XCTestCase {
 
 final class StreamSizeTests: XCTestCase {
 
-    func testEcranPlusGrandQueLaTablette() {
+    func testDisplayLargerThanTheTablet() {
         // DeskPad en 2880x1800 vers une dalle 2400x1080 : c'est la hauteur qui contraint.
         let size = CaptureSession.streamSize(
             display: CGSize(width: 2880, height: 1800),
@@ -96,8 +96,8 @@ final class StreamSizeTests: XCTestCase {
         XCTAssertEqual(size, CGSize(width: 1728, height: 1080))
     }
 
-    func testPasDAgrandissement() {
-        // Une tablette plus grande que l'écran capturé ne fait pas monter la résolution.
+    func testNoUpscaling() {
+        // A tablet larger than the captured display does not push the resolution up.
         let size = CaptureSession.streamSize(
             display: CGSize(width: 1440, height: 900),
             device: CGSize(width: 2560, height: 1600)
@@ -105,7 +105,7 @@ final class StreamSizeTests: XCTestCase {
         XCTAssertEqual(size, CGSize(width: 1440, height: 900))
     }
 
-    func testDimensionsPaires() {
+    func testEvenDimensions() {
         let size = CaptureSession.streamSize(
             display: CGSize(width: 1367, height: 769),
             device: CGSize(width: 1000, height: 1000)

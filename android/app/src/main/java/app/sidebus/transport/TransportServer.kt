@@ -15,7 +15,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-/** Une connexion établie. L'écriture est sérialisée, la lecture appartient au serveur. */
+/** An established connection. Writing is serialised, reading belongs to the server. */
 class Connection(private val socket: Socket) {
     private val output: OutputStream = socket.getOutputStream()
     private val writeLock = Any()
@@ -35,18 +35,16 @@ class Connection(private val socket: Socket) {
 }
 
 /**
- * La tablette écoute, le Mac se connecte. Vrai en USB comme en Wi-Fi, voir PLAN.md
- * section 2.
+ * The tablet listens, the Mac connects. True on USB as on Wi-Fi, see
+ * `protocol/PROTOCOL.md` section 1.
  *
- * Une seule connexion à la fois : un deuxième client attend que le premier parte.
- * En clair pour l'instant, TLS arrive en phase 6.
+ * One connection at a time: a second client waits for the first to leave.
  */
 class TransportServer(
     private val port: Int = DEFAULT_PORT,
     /**
-     * Fabrique de sockets. En TLS, le chiffrement est actif dans les deux transports :
-     * un seul chemin de code à maintenir et à tester, et le surcoût de TLS 1.3 est
-     * négligeable devant l'encodage vidéo.
+     * Socket factory. Encryption is on in both transports: one code path to maintain and to
+     * test, and the cost of TLS 1.3 is negligible next to video encoding.
      */
     private val serverSocketFactory: SSLServerSocketFactory? = null,
 ) {
@@ -75,11 +73,10 @@ class TransportServer(
                 }
 
                 socket.tcpNoDelay = true
-                // Le handshake a son propre délai, bien plus long. Le Mac affiche le code
-                // d'appairage pendant la vérification du certificat, donc au milieu du
-                // handshake, et attend une réponse humaine. Avec le délai de lecture
-                // ordinaire, la connexion mourait avant que l'utilisateur ait eu le temps
-                // de comparer les deux codes.
+                // The handshake has a deadline of its own, far longer. The Mac shows the pairing
+                // code while verifying the certificate, so in the middle of the handshake,
+                // and waits for a human answer. With the ordinary read timeout, the
+                // connection died before the user had time to compare the two codes.
                 socket.soTimeout = HANDSHAKE_TIMEOUT_MS
                 if (socket is javax.net.ssl.SSLSocket) {
                     try {
@@ -89,29 +86,29 @@ class TransportServer(
                             "handshake TLS : ${socket.session.protocol} ${socket.session.cipherSuite}",
                         )
                     } catch (error: Exception) {
-                        Log.e(TAG, "handshake TLS échoué", error)
+                        Log.e(TAG, "TLS handshake failed", error)
                         var cause: Throwable? = error.cause
                         while (cause != null) {
-                            Log.e(TAG, "  cause : $cause")
+                            Log.e(TAG, "  cause: $cause")
                             cause = cause.cause
                         }
                         runCatching { socket.close() }
                         continue
                     }
                 }
-                // Handshake passé : on revient au délai ordinaire. Sans lui, un Mac qui
-                // disparaît sans fermer proprement, coupure Wi-Fi ou veille, laisse la
-                // boucle bloquée pour toujours, et le serveur n'accepte plus personne
-                // puisqu'il ne tient qu'une connexion à la fois.
+                // Handshake through: back to the ordinary timeout. Without it a Mac that vanishes
+                // without closing cleanly, a Wi-Fi cut or a sleep, leaves the loop blocked
+                // forever, and the server accepts nobody since it holds one connection at a
+                // time.
                 socket.soTimeout = READ_TIMEOUT_MS
                 val connection = Connection(socket)
                 onEvent(Event.Connected(connection.remote))
 
                 val reason = try {
                     readLoop(socket, connection, onEvent)
-                    "fermée par le pair"
+                    "closed by the peer"
                 } catch (timeout: java.net.SocketTimeoutException) {
-                    "silence de plus de ${READ_TIMEOUT_MS / 1000} s"
+                    "silent for more than ${READ_TIMEOUT_MS / 1000} s"
                 } catch (error: Exception) {
                     Log.w(TAG, "connexion interrompue", error)
                     error.message ?: error.javaClass.simpleName
@@ -127,8 +124,8 @@ class TransportServer(
         val factory = serverSocketFactory ?: return ServerSocket()
         return (factory.createServerSocket() as SSLServerSocket).apply {
             enabledProtocols = arrayOf("TLSv1.3")
-            // Le Mac ne présente pas de certificat : l'authentification est à sens unique,
-            // c'est son épinglage qui authentifie la tablette.
+            // The Mac presents no certificate: authentication goes one way, and its pinning is
+            // what authenticates the tablet.
             needClientAuth = false
             wantClientAuth = false
         }
@@ -143,7 +140,7 @@ class TransportServer(
         val decoder = MessageDecoder()
 
         while (currentCoroutineContext().isActive) {
-            // Lecture directe dans le tampon du décodeur : pas de tableau intermédiaire.
+            // Read straight into the decoder's buffer: no intermediate array.
             val read = decoder.readFrom(input)
             if (read < 0) return
             if (read == 0) continue
@@ -164,8 +161,8 @@ class TransportServer(
          */
         private const val READ_TIMEOUT_MS = 10_000
 
-        /// Le temps d'aller chercher la tablette dans l'autre pièce et de comparer les
-        /// codes, des deux côtés. Aligné sur le délai de PAIR_RESULT du protocole.
+        /** Time enough to fetch the tablet from the other room and compare the codes, on
+         * both sides. Aligned on the protocol's PAIR_RESULT deadline. */
         private const val HANDSHAKE_TIMEOUT_MS = 130_000
 
         private const val TAG = "Sidebus"

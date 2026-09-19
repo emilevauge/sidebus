@@ -15,7 +15,7 @@ final class PeerRegistryTests: XCTestCase {
         Peer(id: name, name: name, kind: .wifi, host: "192.168.1.20", port: 27183, deviceID: deviceID)
     }
 
-    func testTabletteVueSurLesDeuxTransportsNApparaitQuUneFois() {
+    func testTabletSeenOnBothTransportsAppearsOnce() {
         let registry = PeerRegistry(
             usbPeers: [usb("R5CT80ABCDE")],
             wifiPeers: [wifi("Galaxy Tab S9", deviceID: deviceID)],
@@ -27,8 +27,8 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertEqual(resolved.first?.kind, .usb)
     }
 
-    func testSansCorrespondanceConnueLesDeuxRestent() {
-        // Tablette jamais connectée en USB : impossible de savoir que c'est la même.
+    func testWithNoKnownMappingBothRemain() {
+        // A tablet never connected over USB: no way to know it is the same one.
         let registry = PeerRegistry(
             usbPeers: [usb("R5CT80ABCDE")],
             wifiPeers: [wifi("Galaxy Tab S9", deviceID: deviceID)]
@@ -36,7 +36,7 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertEqual(registry.resolved().count, 2)
     }
 
-    func testTabletteWifiDifferenteEstConservee() {
+    func testADifferentWifiTabletIsKept() {
         let autre = UUID()
         let registry = PeerRegistry(
             usbPeers: [usb("R5CT80ABCDE")],
@@ -47,7 +47,7 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertEqual(registry.preferred()?.kind, .usb)
     }
 
-    func testLUsbEstPrefereMemeDecouvertApres() {
+    func testUsbWinsEvenWhenDiscoveredLater() {
         let registry = PeerRegistry(
             usbPeers: [usb("R5CT80ABCDE")],
             wifiPeers: [wifi("Galaxy Tab S9", deviceID: deviceID)]
@@ -55,7 +55,7 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertEqual(registry.preferred()?.kind, .usb)
     }
 
-    func testBasculeSeulementDuWifiVersLUsb() {
+    func testSwitchesOnlyFromWifiToUsb() {
         let registry = PeerRegistry()
         let wifiPeer = wifi("Galaxy Tab S9", deviceID: deviceID)
         let usbPeer = usb("R5CT80ABCDE")
@@ -67,13 +67,13 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertFalse(registry.shouldSwitch(from: wifiPeer, to: nil))
     }
 
-    func testAucuneTablette() {
+    func testNoTablet() {
         XCTAssertTrue(PeerRegistry().resolved().isEmpty)
         XCTAssertNil(PeerRegistry().preferred())
     }
 }
 
-/// L'arrêt du partage doit tenir : sans ça, la découverte reprend la tablette aussitôt.
+/// Stopping the share must stick: without that, discovery picks the tablet up at once.
 final class SharingStateTests: XCTestCase {
 
     private let key = "sharingEnabled.test"
@@ -83,13 +83,13 @@ final class SharingStateTests: XCTestCase {
         super.tearDown()
     }
 
-    func testEtatParDefautEstActif() {
+    func testDefaultStateIsActive() {
         UserDefaults.standard.removeObject(forKey: key)
         let stored = UserDefaults.standard.object(forKey: key) as? Bool ?? true
         XCTAssertTrue(stored)
     }
 
-    func testEtatPersiste() {
+    func testStatePersists() {
         UserDefaults.standard.set(false, forKey: key)
         XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Bool, false)
     }

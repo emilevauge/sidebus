@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Variante monochrome de l'icône adaptative, reprise de art/bus-template.svg.
-     Le système la recolorise pour les icones thematiques. Une seule forme :
+<!-- Monochrome variant of the adaptive icon, taken from art/bus-template.svg.
+     The system recolours it for themed icons. One shape only:
      les trous tournent en sens inverse, nonZero suffit donc a les percer. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

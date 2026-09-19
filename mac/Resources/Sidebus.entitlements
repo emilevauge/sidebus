@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  Sidebus n'est pas sandboxé : CGVirtualDisplay est une API privée, donc la
-	  distribution passe hors App Store de toute façon.
+	  Sidebus is not sandboxed: CGVirtualDisplay is a private API, so distribution happens
+	  outside the App Store anyway.
 
-	  L'injection d'événements et la capture d'écran ne s'obtiennent pas par entitlement
-	  mais par autorisation TCC, accordée par l'utilisateur.
+	  Event injection and screen capture are not granted by entitlement but by TCC
+	  permission, given by the user.
 	-->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
-	<!-- Runtime renforcé : exigé pour la notarisation. -->
+	<!-- Hardened runtime: required for notarization. -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<false/>
 </dict>

@@ -1,76 +1,76 @@
 # Sidebus
 
-Sidebus transforme une tablette Android en écran secondaire pour un Mac.
+Sidebus turns an Android tablet into a second display for a Mac.
 
-Le Mac déclare un écran virtuel, capture son framebuffer, l'encode en H.264/HEVC et le
-transmet à la tablette, qui le décode et l'affiche. Les touchers de la tablette remontent
-vers le Mac et sont injectés comme des événements souris. Deux transports : USB via un
-tunnel adb, et Wi-Fi avec découverte mDNS.
+The Mac declares a virtual display, captures its framebuffer, encodes it as H.264 or HEVC
+and sends it to the tablet, which decodes and shows it. Touches on the tablet travel back
+and are injected as mouse events. Two transports: USB through an adb tunnel, and Wi-Fi with
+mDNS discovery.
 
-- `PLAN.md` : le plan de développement, à lire avant d'écrire du code.
-- `protocol/PROTOCOL.md` : le format sur le fil, source de vérité partagée entre les deux côtés.
+`protocol/PROTOCOL.md` describes the wire format. It is the shared source of truth for both
+sides.
 
-État : **phases 0 à 9 faites**. Sidebus crée un écran virtuel aux dimensions de la
-tablette, le capture, l'encode en H.264 ou HEVC matériel, le transmet en TLS 1.3 sur USB ou
-Wi-Fi, et l'affiche sur la tablette dont les touchers reviennent en événements souris. Le
-débit et la cadence s'ajustent à ce que la tablette rapporte.
+Phases 0 to 9 are done. Sidebus creates a virtual display matching the tablet's panel,
+captures it, encodes it with the hardware H.264 or HEVC encoder, ships it over TLS 1.3 on
+USB or Wi-Fi, and shows it on the tablet, whose touches come back as mouse events. Bitrate
+and frame rate follow what the tablet reports.
 
 ## macOS
 
-Prérequis : macOS 14 minimum, Xcode ou les outils en ligne de commande avec Swift 6.
+Requires macOS 14 or later, and Xcode or the command line tools with Swift 6.
 
 ```sh
 cd mac
 swift build            # compile
-swift test             # tests unitaires
-swift run SidebusApp   # lance l'app directement, sans bundle
-./Scripts/bundle.sh    # construit et signe mac/build/Sidebus.app
-open build/Sidebus.app # lance le bundle
+swift test             # unit tests
+swift run SidebusApp   # run the app directly, without a bundle
+./Scripts/bundle.sh    # build and sign mac/build/Sidebus.app
+open build/Sidebus.app # run the bundle
 ```
 
-L'application n'a pas d'icône dans le Dock, elle apparaît dans la barre de menus.
+The app has no Dock icon, it lives in the menu bar.
 
-Le script signe avec la première identité de signature du trousseau, et retombe sur l'ad hoc
-s'il n'en trouve aucune. La différence compte pour TCC, qui mémorise les autorisations
-(Enregistrement de l'écran, Accessibilité, Réseau local) par règle de signature :
+The script signs with the first codesigning identity in the keychain, and falls back to ad
+hoc signing when it finds none. The difference matters to TCC, which remembers permissions
+(Screen Recording, Accessibility, Local Network) by signing rule:
 
-- ad hoc : `identifier "app.sidebus" and cdhash H"..."`, qui change à chaque recompilation,
-  donc l'autorisation est perdue à chaque build
-- identité : `identifier "app.sidebus" and certificate leaf = H"..."`, stable
+- ad hoc: `identifier "app.sidebus" and cdhash H"..."`, which changes on every rebuild, so
+  the permission is lost every time
+- identity: `identifier "app.sidebus" and certificate leaf = H"..."`, stable
 
-Forcer un choix avec `SIDEBUS_CODESIGN_IDENTITY`. Developer ID et notarisation en phase 9.
+Force a choice with `SIDEBUS_CODESIGN_IDENTITY`. Developer ID and notarization come in
+phase 9.
 
-Si une autorisation reste bloquée après un changement de signature :
-`tccutil reset ScreenCapture app.sidebus`, puis relancer.
+If a permission stays stuck after a signature change: `tccutil reset ScreenCapture
+app.sidebus`, then relaunch.
 
-### Harnais de développement
+### Development harness
 
-Jusqu'à la phase 7, l'écran à capturer vient de [DeskPad](https://github.com/Stengo/DeskPad),
-lancé à côté et non modifié :
+Up to phase 7, the display to capture came from
+[DeskPad](https://github.com/Stengo/DeskPad), run alongside and left unmodified:
 
 ```sh
 brew install --cask deskpad
 open -a DeskPad
 ```
 
-Son écran virtuel apparaît alors dans le sélecteur de Réglages > Vidéo. Ne pas déplacer la
-fenêtre de DeskPad sur l'écran qu'elle recopie, ça produit un miroir infini.
+Its virtual display then shows up in the picker under Settings > Video. Do not move the
+DeskPad window onto the display it mirrors, that produces an infinite mirror.
 
 ### Capture (phase 2)
 
-Dans Réglages > Vidéo : choisir un écran, puis « Enregistrer le flux dans un fichier ».
-macOS demande
-l'autorisation Enregistrement de l'écran au premier essai ; elle ne prend effet qu'après
-relance de l'application. Le flux part dans `/tmp/sidebus.h264`, relisible avec :
+Under Settings > Video: pick a display, then "Record the stream to a file". macOS asks for
+Screen Recording permission on the first attempt, and it only takes effect after the app
+restarts. The stream lands in `/tmp/sidebus.h264`, playable with:
 
 ```sh
 ffplay /tmp/sidebus.h264
 ```
 
-Réglages de l'encodeur : H.264 matériel, temps réel, sans B frames, contrôle de débit basse
-latence, 15 Mbit/s, keyframe toutes les 300 frames.
+Encoder settings: hardware H.264, realtime, no B frames, low latency rate control,
+15 Mbit/s, keyframe every 300 frames.
 
-Crochets de développement, pour mesurer sans passer par le menu :
+Development hooks, to measure without going through the menu:
 
 ```sh
 open --env SIDEBUS_AUTOCAPTURE=DeskPad \
@@ -79,10 +79,10 @@ open --env SIDEBUS_AUTOCAPTURE=DeskPad \
      mac/build/Sidebus.app
 ```
 
-`SIDEBUS_AUTOCAPTURE` démarre la capture au lancement sur le premier écran dont le nom
-contient la valeur donnée, et écrit une trace dans `/tmp/sidebus-debug.log`.
+`SIDEBUS_AUTOCAPTURE` starts capturing at launch, on the first display whose name contains
+the given value, and writes a trace to `/tmp/sidebus-debug.log`.
 
-Benchmark du seul chemin d'encodage :
+Benchmark of the encoding path alone:
 
 ```sh
 cd mac && SIDEBUS_BENCH=1 swift test -c release --filter EncoderBenchmark
@@ -90,200 +90,206 @@ cd mac && SIDEBUS_BENCH=1 swift test -c release --filter EncoderBenchmark
 
 ## Android
 
-Prérequis : le SDK Android, avec la plateforme 36 et un JDK 17 ou plus récent.
-`android/local.properties` doit pointer sur le SDK (`sdk.dir=...`), il n'est pas versionné.
+Requires the Android SDK with platform 36, and JDK 17 or later.
+`android/local.properties` must point at the SDK (`sdk.dir=...`), and is not versioned.
 
 ```sh
 cd android
-./gradlew assembleDebug           # compile l'APK
-./gradlew installDebug            # installe sur l'appareil branché
+./gradlew assembleDebug           # build the APK
+./gradlew installDebug            # install on the attached device
 adb shell am start -n app.sidebus/.MainActivity
 ```
 
-minSdk 30, cible la tablette en paysage. L'application écoute sur le port 27183 : c'est la
-tablette qui est le serveur, en USB comme en Wi-Fi.
+minSdk 30, landscape only. The app listens on port 27183: the tablet is the server, on USB
+as on Wi-Fi.
 
-## Transport USB
+## USB transport
 
-Rien à faire : brancher le câble suffit. Le Mac suit le flux `host:track-devices` du serveur
-adb, pose `adb forward tcp:27183 tcp:27183`, se connecte et envoie HELLO. Si la tablette ne
-répond pas de DEVICE_INFO, c'est que l'application n'est pas au premier plan : le Mac la
-lance avec `adb shell am start` et réessaie.
+Nothing to do, plugging the cable is enough. The Mac follows the adb server's
+`host:track-devices` stream, sets up `adb forward tcp:27183 tcp:27183`, connects and sends
+HELLO. If the tablet does not answer with DEVICE_INFO, the app is not in the foreground:
+the Mac starts it with `adb shell am start` and tries again.
 
-L'état et la latence s'affichent dans le menu. Pour les suivre en détail :
+State and latency show up in the menu. To follow them in detail:
 
 ```sh
 log stream --predicate 'subsystem == "app.sidebus"' --level debug --style compact
 ```
 
-Crochets de développement : `SIDEBUS_AUTO_PAIR=1` accepte l'appairage côté Mac sans
-dialogue, `SIDEBUS_DISABLE_USB=1` force la branche Wi-Fi, `SIDEBUS_MANUAL_PEER=hôte:port`
-préremplit une adresse.
+Development hooks: `SIDEBUS_AUTO_PAIR=1` accepts pairing on the Mac without a dialog,
+`SIDEBUS_DISABLE_USB=1` forces the Wi-Fi path, `SIDEBUS_MANUAL_PEER=host:port` prefills an
+address.
 
-Faute de tablette, un émulateur suffit à exercer tout le chemin, il apparaît comme un
-appareil adb :
+Without a tablet, an emulator exercises the whole path. It shows up as an adb device:
 
 ```sh
-~/Library/Android/sdk/emulator/emulator -avd <nom> &
+~/Library/Android/sdk/emulator/emulator -avd <name> &
 cd android && ./gradlew installDebug
 ```
 
-## Écran virtuel
+## Virtual display
 
-À la connexion, Sidebus crée un écran virtuel à la résolution et à la densité annoncées par
-la tablette, et le détruit à la déconnexion. Un écran fantôme qui persiste dérange
-l'agencement des fenêtres, c'est le reproche principal fait à ce genre d'outil.
+On connection, Sidebus creates a virtual display at the resolution and density the tablet
+announces, and destroys it on disconnection. A ghost display that outlives the session
+disturbs the window layout, and that is the main complaint aimed at tools of this kind.
 
-Les classes utilisées sont privées et peuvent disparaître à n'importe quelle version de
-macOS. L'échec est détecté explicitement : Sidebus recopie alors un écran existant et le
-signale dans le menu, sans jamais planter ni afficher un écran noir inexpliqué. Choisir un
-écran dans le menu force ce mode.
+The classes involved are private and can vanish with any macOS release. Failure is detected
+explicitly: Sidebus then mirrors an existing display and says so in the menu, rather than
+crashing or showing an unexplained black screen. Picking a display in the settings forces
+that mode.
 
-La taille physique déclarée, en millimètres, est calculée pour obtenir la densité voulue,
-et le mode est déclaré en points avec `hiDPI` à 1. Se tromper là donne un affichage flou ou
-une interface minuscule.
+The physical size declared in millimetres is computed to land on the wanted density, and
+the mode is declared in points with `hiDPI` set to 1. Getting that wrong yields either a
+blurry picture or a minuscule interface.
 
 ## Adaptation
 
-La tablette envoie ses compteurs toutes les deux secondes. Le Mac en déduit le débit :
-baisse franche dès 15 % de frames droppées, remontée de 10 % après six secondes calmes.
-Profils différents par transport, généreux en USB, prudent en Wi-Fi. Si le débit plancher
-ne suffit toujours pas, c'est le décodeur ou la chaleur qui limitent, pas le réseau : la
-cadence tombe alors à 30 fps.
+The tablet sends its counters every two seconds. The Mac derives the bitrate from them: a
+sharp cut as soon as 15 % of frames are dropped, a 10 % climb back after six quiet seconds.
+Profiles differ per transport, generous on USB, careful on Wi-Fi. When the floor bitrate is
+still not enough, the limit is the decoder or the heat, not the network: the frame rate
+then drops to 30 fps.
 
-Quand la tablette perd le fil, elle demande une keyframe et **cesse d'alimenter son
-décodeur** en attendant : continuer à lui donner des frames intermédiaires sans leur
-référence produit des blocs verts et magenta qui persistent. Le Mac répond en réencodant
-immédiatement la dernière image, sans quoi un écran immobile laisserait la tablette
-corrompue jusqu'au prochain mouvement. L'intervalle maximal entre keyframes est exprimé en
-secondes et non en frames : 300 frames à 7 fps font 43 secondes d'image cassée.
+When the tablet loses the thread it asks for a keyframe and **stops feeding its decoder**
+meanwhile. Handing it intermediate frames without their reference produces green and
+magenta blocks that linger. The Mac answers by re-encoding the last picture right away,
+without which a still screen would leave the tablet corrupted until the next movement. The
+maximum keyframe interval is expressed in seconds rather than frames: 300 frames at 7 fps
+is 43 seconds of broken picture.
 
-**HEVC est retenu dès que la tablette l'annonce.** Mesuré sur un Xiaomi 15, décodeur
-matériel Qualcomm : 0,5 Mbit/s contre 1,4 en H.264 sur le même contenu, à 57 et 60 fps,
-décodage 6 à 7 ms, sans frame perdue.
+**HEVC wins as soon as the tablet announces it.** Measured on a Xiaomi 15 with the
+Qualcomm hardware decoder: 0.5 Mbit/s against 1.4 in H.264 on the same content, at 57 and
+60 fps, 6 to 7 ms of decoding, not a frame lost.
 
-Attention aux décodeurs logiciels. Celui de l'émulateur Android rend des chromas cassées en
-HEVC, blocs verts et magenta, là où H.264 passe parfaitement sur le même montage.
-`SIDEBUS_CODEC=h264` force le repli.
+Beware software decoders. The Android emulator's returns broken chroma in HEVC, green and
+magenta blocks, where H.264 sails through on the same material. `SIDEBUS_CODEC=h264` forces
+the fallback.
 
-## Où passe le travail
+## Where the work happens
 
-Rien de lourd ne touche le CPU. La capture, la mise à l'échelle et la conversion de format
-se font dans le chemin graphique du système, l'encodage sur le moteur média dédié, et côté
-tablette le décodage matériel écrit directement dans la `Surface`, composée sans copie. Il
-ne faut surtout pas insérer d'étape GPU à la main dans ce chemin : rendre dans une texture
-au lieu d'une `SurfaceView` ajouterait une frame de latence.
+Nothing heavy touches the CPU. Capture, scaling and format conversion happen in the system
+graphics path, encoding on the dedicated media engine, and on the tablet side the hardware
+decoder writes straight into the `Surface`, composited without a copy. Do not insert a
+hand-written GPU step into that path: rendering into a texture instead of a `SurfaceView`
+would add a frame of latency.
 
-Ce qui reste sur CPU ne concerne que des octets déjà compressés :
+What remains on the CPU only touches bytes that are already compressed:
 
-- la conversion vers Annex B se fait **sur place**. Le préfixe de longueur AVCC et le code
-  de départ font tous deux quatre octets, il suffit donc de réécrire les quatre octets de
-  longueur, sans allouer.
-- le tampon de réception côté Android travaille par déplacement d'index, et le socket est
-  lu directement dedans. La version naïve recopiait tout l'en cours à chaque paquet : une
-  frame arrivant en plusieurs morceaux se payait autant de recopies complètes. Mesuré sur
-  un Xiaomi 15 sous charge : 28,5 % de CPU avant, 25,0 % après.
-- une frame sans rectangle modifié n'est pas encodée du tout. Écran immobile : 0,4 % de CPU
-  sur le Mac, 0,3 % sur le téléphone.
+- the conversion to Annex B happens **in place**. The AVCC length prefix and the start code
+  are both four bytes, so rewriting the four length bytes is enough, with no allocation.
+- the receive buffer on the Android side works by moving an index, and the socket is read
+  straight into it. The naive version copied everything pending on each packet: a frame
+  arriving in several pieces paid for as many full copies. Measured on a Xiaomi 15 under
+  load: 28.5 % CPU before, 25.0 % after.
+- a frame with no dirty rectangle is not encoded at all. Still screen: 0.4 % CPU on the
+  Mac, 0.3 % on the phone.
 
-## Rendu côté tablette
+## Rendering on the tablet
 
-`MediaCodec` en mode asynchrone, configuré directement sur la `Surface`, avec
-`KEY_LOW_LATENCY` et `KEY_PRIORITY` à 0. Le rendu est immédiat : `releaseOutputBuffer` dès
-la sortie du décodeur, aucune file d'attente. Quand aucun buffer d'entrée n'est libre, la
-frame est jetée plutôt que mise en attente, à une exception près : une keyframe obtient une
-courte fenêtre d'attente, parce qu'elle est le seul point de reprise et que la suivante peut
-être à cinq secondes.
+`MediaCodec` in async mode, configured directly on the `Surface`, with `KEY_LOW_LATENCY`
+and `KEY_PRIORITY` at 0. Rendering is immediate: `releaseOutputBuffer` as soon as the
+decoder produces, no queue. When no input buffer is free, the frame is dropped rather than
+queued, with one exception: a keyframe gets a short waiting window, because it is the only
+recovery point and the next one can be five seconds away.
 
-L'overlay des compteurs est **masqué par défaut** : ces chiffres servent à diagnostiquer,
-pas à rester en travers de l'écran partagé. Pour l'afficher :
+The counters overlay is **hidden by default**: those numbers are there to diagnose, not to
+sit across the shared screen. To show it:
 
 ```sh
-adb shell settings put global sidebus_overlay 1   # 0 pour le cacher
+adb shell settings put global sidebus_overlay 1   # 0 hides it again
 ```
 
-Le réglage est relu à chaque retour au premier plan, sans relancer l'application. La vue
-continue de compter même invisible : c'est elle qui alimente les messages STATS.
+The setting is read again on every return to the foreground, without restarting the app.
+The view keeps counting even while invisible: it is what feeds the STATS messages.
 
-Elle se rafraîchit à 4 Hz. La mettre à jour à chaque frame coûterait plus cher que tout le
-reste du pipeline, comme mesuré côté Mac en phase 2.
+It refreshes at 4 Hz. Updating it on every frame would cost more than the rest of the
+pipeline, as measured on the Mac side in phase 2.
 
-Deux pièges rencontrés, à ne pas réintroduire :
+Four traps met along the way, not to be reintroduced:
 
-- le décodeur doit être créé **synchronement** à la réception de VIDEO_CONFIG. Créé en
-  différé, il rate la keyframe qui suit immédiatement et reste bloqué sur des frames
-  intermédiaires inexploitables.
-- passer la `SurfaceView` en `INVISIBLE` détruit sa surface, qui n'est jamais recréée
-  ensuite. Pour masquer l'image, poser une vue noire par dessus.
-- ne pas effacer la surface avec `lockCanvas` : cela la connecte au producteur CPU et
-  `MediaCodec` ne peut plus s'y attacher, `configure` échoue alors avec un
-  `IllegalArgumentException` opaque (`surfaceConnectWithListener ... Invalid argument`).
-- un décodeur qui refuse de se configurer ne doit pas emporter la connexion : l'exception
-  remontait jusqu'à la boucle de lecture et fermait le lien.
+- the decoder must be created **synchronously** when VIDEO_CONFIG arrives. Created later it
+  misses the keyframe that immediately follows, and stays stuck on unusable intermediate
+  frames.
+- setting the `SurfaceView` to `INVISIBLE` destroys its surface, which is never recreated
+  afterwards. To hide the picture, lay a black view over it.
+- do not clear the surface with `lockCanvas`: that connects it to the CPU producer and
+  `MediaCodec` can no longer attach, so `configure` fails with an opaque
+  `IllegalArgumentException` (`surfaceConnectWithListener ... Invalid argument`).
+- a decoder that refuses to configure must not take the connection down with it: the
+  exception used to travel up to the read loop and close the link.
 
-## Transport Wi-Fi et appairage
+## Wi-Fi transport and pairing
 
-La tablette s'annonce en mDNS sous `_sidebus._tcp` dès qu'elle est au premier plan, avec sa
-résolution, ses codecs et l'empreinte de son certificat. Le Mac la trouve avec `NWBrowser`
-et se connecte directement à l'endpoint publié, sans résoudre l'adresse à la main.
+The tablet advertises itself over mDNS as `_sidebus._tcp` whenever it is in the foreground,
+along with its resolution, its codecs and its certificate fingerprint. The Mac finds it
+with `NWBrowser` and connects straight to the published endpoint, without resolving the
+address by hand.
 
-À la première connexion, les deux côtés affichent le même code à six chiffres, dérivé de
-l'empreinte du certificat, et **les deux doivent confirmer**. Le Mac demande le premier,
-pendant le handshake TLS puisque c'est là qu'il découvre l'empreinte ; il envoie ensuite
-PAIR_REQUEST et la tablette demande à son tour. Rien n'est enregistré avant les deux
-accords, donc un refus d'un côté ne laisse aucune trace de l'autre. Si l'empreinte change
-pour un appareil connu, la connexion est refusée.
+On the first connection both sides show the same six digit code, derived from the
+certificate fingerprint, and **both must confirm**. The Mac asks first, during the TLS
+handshake since that is where it discovers the fingerprint; it then sends PAIR_REQUEST and
+the tablet asks in turn. Nothing is stored before both agree, so a refusal on one side
+leaves no trace on the other. If the fingerprint changes for a known device, the connection
+is refused.
 
-Trois choses à savoir, toutes rencontrées pendant l'implémentation :
+Neither side lets a timeout run while a dialog waits for a human. On the Mac the eight
+second connection deadline pauses while a question is open; on the tablet the handshake has
+its own deadline, far longer than the ordinary read timeout. Without that, pairing only
+worked when both people answered within a few seconds.
 
-- la clé du Keystore doit autoriser le digest `NONE`. En TLS 1.3, Conscrypt hache lui même
-  puis demande une signature ECDSA brute ; sans ce digest, le Keystore refuse
-  (`INCOMPATIBLE_DIGEST`) et le handshake meurt sans alerte, ce qui ressemble à une panne
-  réseau.
-- une tablette annoncée mais injoignable, cas d'un réseau qui isole ses clients, ne renvoie
-  rien du tout : ni acceptation, ni refus. La connexion est donc bornée à huit secondes et
-  le message d'erreur explique la cause probable.
-- `NWConnection.connect()` doit être annulable, sinon le délai ci dessus ne sert à rien :
-  un groupe de tâches attend ses enfants à la sortie, et une tâche bloquée dans une
-  continuation ignore l'annulation.
+Four things worth knowing, all met during implementation:
 
-Sur les réseaux où le multicast ne passe pas, le menu propose « Connexion par adresse IP »,
-et la tablette affiche son adresse.
+- the Keystore key must allow the `NONE` digest. In TLS 1.3 Conscrypt hashes the message
+  itself then asks for a raw ECDSA signature; without that digest the Keystore refuses
+  (`INCOMPATIBLE_DIGEST`) and the handshake dies without an alert, which looks like a
+  network failure.
+- a tablet that is advertised but unreachable, the case of a network isolating its clients,
+  returns nothing at all: no acceptance, no refusal. The connection is therefore bounded to
+  eight seconds and the error message explains the likely cause.
+- `NWConnection.connect()` must be cancellable, otherwise the deadline above is useless: a
+  task group waits for its children on the way out, and a task blocked in a continuation
+  ignores cancellation.
+- the pairing code stays on the tablet's waiting screen on purpose. The Mac asks first, so
+  without that code in sight you would accept on the Mac blind. The check the tablet's
+  dialog performs does not replace the comparison: it works on a code that travelled
+  through the link, so it can be forged by the very party you are guarding against.
 
-## Appareils et partage
+On networks where multicast does not pass, the settings offer "Connect by IP address", and
+the tablet shows its own address.
 
-Le menu liste les appareils sous « Appareils », avec une icône qui porte l'état : lien à
-appairer, écran à partager, carré d'arrêt pendant la diffusion, sablier tant que la
-connexion se monte, tablette barrée hors ligne. Un clic sur la ligne fait la seule chose
-qu'elle propose.
+## Devices and sharing
 
-Rien ne se diffuse sans un geste. Une seule exception, voulue : un appareil dont le partage
-était actif reprend tout seul quand il réapparaît, sinon rebrancher un câble demanderait de
-rouvrir le menu à chaque fois. Arrêter le partage retire cette intention, et la coupure
-depuis le Centre de contrôle de macOS compte comme un arrêt.
+The menu lists devices under "Devices", with an icon that carries the state: a link to
+pair, a screen to share, a stop square while streaming, an hourglass while the connection
+comes up, a crossed out tablet when offline. Clicking a row does the one thing it offers.
 
-Le partage vers plusieurs tablettes en parallèle est prévu par construction : chaque
-appareil a sa session, son écran virtuel, son encodeur et son contrôleur de débit, sans
-état commun à arbitrer. Le coût CPU s'additionne.
+Nothing streams without a gesture. One exception, and it is deliberate: a device that was
+being shared to picks up again when it reappears, otherwise plugging a cable back in would
+mean reopening the menu every time. Stopping the share drops that intent, and cutting the
+capture from the macOS Control Center counts as a stop.
 
-Réglages > Appareils liste les appairés, y compris hors ligne, et permet d'en oublier un ou
-tous.
+Sharing to several tablets at once is possible by construction: each device has its own
+session, virtual display, encoder and bitrate controller, with no shared state to arbitrate.
+The CPU cost adds up.
 
-## Tactile
+Settings > Devices lists the paired ones, offline included, and lets you forget one or all
+of them.
 
-Les touchers de la vue vidéo partent en INPUT_EVENT, en coordonnées normalisées sur la vue
-et non sur l'écran de la tablette : le flux garde son rapport d'aspect et peut être bordé de
-bandes noires, c'est l'image qui fait référence. Le Mac les remappe sur
-`CGDisplayBounds` de l'écran capturé et poste l'événement avec `CGEventPost`.
+## Touch
 
-Un déplacement entre un appui et un relâchement devient un glissement, pas un simple
-mouvement de curseur, sinon rien ne se déplace ni ne se sélectionne.
+Touches on the video view leave as INPUT_EVENT, in coordinates normalised against the view
+rather than the tablet's panel: the stream keeps its aspect ratio and may be letterboxed,
+so the picture is the reference. The Mac maps them onto the `CGDisplayBounds` of the
+captured display and posts the event with `CGEventPost`.
 
-**Autorisation Accessibilité obligatoire.** Sans elle, `CGEventPost` est ignoré sans erreur :
-les touchers arrivent bien au Mac, ils ne produisent simplement rien. Réglages >
-Confidentialité et sécurité > Accessibilité, activer Sidebus, puis **relancer
-l'application** : l'autorisation ne prend effet qu'au lancement suivant. La ligne de
-l'appareil signale l'absence d'autorisation pendant la diffusion.
+A move between a press and a release becomes a drag, not a plain cursor move, otherwise
+nothing moves and nothing gets selected.
+
+**Accessibility permission is mandatory.** Without it `CGEventPost` is ignored with no
+error: touches do reach the Mac, they simply produce nothing. System Settings > Privacy and
+Security > Accessibility, enable Sidebus, then **restart the app**: the permission only
+takes effect on the next launch. The device row reports the missing permission while
+streaming.
 
 ## Distribution
 
@@ -294,20 +300,19 @@ SIDEBUS_NOTARY_PROFILE=sidebus \
 ./Scripts/release.sh
 ```
 
-Le script construit, signe avec le runtime renforcé, fabrique une image disque, la notarise
-et l'agrafe. L'App Store est exclu : `CGVirtualDisplay` est une API privée.
+The script builds, signs with the hardened runtime, makes a disk image, notarizes it and
+staples the ticket. The App Store is out of reach: `CGVirtualDisplay` is a private API.
 
-Côté Android, `./gradlew assembleRelease` produit un APK signé si `sidebus.keystore` et les
-mots de passe associés sont fournis en propriétés Gradle ou en variables d'environnement,
-sinon un APK non signé. Aucun secret dans le dépôt.
+On the Android side, `./gradlew assembleRelease` produces a signed APK when `sidebus.keystore`
+and its passwords are supplied as Gradle properties or environment variables, and an
+unsigned APK otherwise. No secret lives in the repository.
 
-Réglages > Autorisations montre l'état des trois autorisations TCC, ouvre le bon panneau
-des Réglages système et sait relancer l'application, puisqu'elles ne prennent effet qu'au
-lancement suivant.
+Settings > Permissions shows the state of the three TCC permissions, opens the right System
+Settings pane, and can restart the app, since they only take effect on the next launch.
 
-## Protocole
+## Protocol
 
-`protocol/PROTOCOL.md` décrit le format sur le fil, `protocol/testvectors/` en contient les
-vecteurs binaires. Les tests des deux côtés les décodent, vérifient les champs, réencodent
-et comparent octet à octet. Toute évolution du format se fait dans `PROTOCOL.md` d'abord,
-puis `python3 protocol/testvectors/generate.py`, puis les deux côtés dans la même commit.
+`protocol/PROTOCOL.md` describes the wire format, `protocol/testvectors/` holds its binary
+vectors. The tests on both sides decode them, check the fields, re-encode and compare byte
+for byte. Any change to the format goes into `PROTOCOL.md` first, then
+`python3 protocol/testvectors/generate.py`, then both sides in the same commit.

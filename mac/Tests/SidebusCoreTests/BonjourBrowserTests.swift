@@ -6,16 +6,16 @@ import XCTest
 
 final class BonjourBrowserTests: XCTestCase {
 
-    /// Publie un service témoin avec `dns-sd` et vérifie que le navigateur le voit avec
+    /// Publishes a witness service with `dns-sd` and checks the browser sees it with
     /// ses enregistrements TXT.
     ///
-    /// Désactivé par défaut : la découverte dépend du réseau de la machine, et le binaire
-    /// de test n'est pas signé, donc l'autorisation Réseau local de macOS peut le bloquer.
+    /// Off by default: discovery depends on the machine's network, and the test binary is
+    /// unsigned, so the macOS Local Network permission can block it.
     /// Lancer avec `SIDEBUS_BONJOUR=1 swift test --filter BonjourBrowserTests`.
-    func testAnnonceLocaleDecouverte() async throws {
+    func testLocalAdvertisementIsDiscovered() async throws {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["SIDEBUS_BONJOUR"] == "1",
-            "découverte désactivée, poser SIDEBUS_BONJOUR=1"
+            "discovery disabled, set SIDEBUS_BONJOUR=1"
         )
 
         let deviceID = UUID()
@@ -47,7 +47,7 @@ final class BonjourBrowserTests: XCTestCase {
             if Date() > deadline { break }
         }
 
-        let peer = try XCTUnwrap(found, "service témoin non découvert en 15 s")
+        let peer = try XCTUnwrap(found, "witness service not discovered within 15 s")
         XCTAssertEqual(peer.kind, .wifi)
         XCTAssertEqual(peer.deviceID, deviceID, "identifiant du TXT mal lu")
         if case .service = peer.endpoint {} else {

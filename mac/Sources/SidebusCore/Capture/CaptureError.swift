@@ -2,27 +2,27 @@ import CoreGraphics
 import Foundation
 
 public enum CaptureError: Error, CustomStringConvertible, Sendable {
-    /// L'autorisation Enregistrement de l'écran manque.
+    /// The Screen Recording permission is missing.
     case screenRecordingNotAuthorized
 
-    /// L'écran visé n'est pas partageable par ScreenCaptureKit.
+    /// The target display is not shareable through ScreenCaptureKit.
     case displayNotShareable(CGDirectDisplayID)
 
-    /// ScreenCaptureKit a arrêté le flux.
+    /// ScreenCaptureKit stopped the stream.
     case streamStopped(String)
 
     public var description: String {
         switch self {
         case .screenRecordingNotAuthorized:
             return """
-                autorisation Enregistrement de l'écran refusée. \
-                Réglages > Confidentialité et sécurité > Enregistrement de l'écran, \
-                puis relancer Sidebus
+                Screen Recording permission refused. \
+                System Settings > Privacy and Security > Screen Recording, \
+                then restart Sidebus
                 """
         case let .displayNotShareable(id):
-            return "l'écran \(id) n'est pas partageable"
+            return "display \(id) is not shareable"
         case let .streamStopped(reason):
-            return "flux de capture arrêté : \(reason)"
+            return "capture stream stopped: \(reason)"
         }
     }
 }

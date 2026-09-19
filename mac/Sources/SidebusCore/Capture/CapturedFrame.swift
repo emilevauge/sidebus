@@ -2,13 +2,13 @@ import CoreMedia
 import CoreVideo
 import Foundation
 
-/// Une frame sortie de ScreenCaptureKit, prête à encoder.
+/// A frame out of ScreenCaptureKit, ready to encode.
 ///
-/// Le `CVImageBuffer` est adossé à un `IOSurface` en mémoire GPU. Il est passé tel quel à
-/// VideoToolbox : aucune copie, aucun accès aux pixels depuis le CPU.
+/// The `CVImageBuffer` is backed by an `IOSurface` in GPU memory. It goes to VideoToolbox
+/// as is: no copy, no pixel access from the CPU.
 ///
 /// `@unchecked Sendable` parce que `CVImageBuffer` est un type CoreFoundation que le
-/// compilateur ne sait pas vérifier. Le buffer n'est ni muté ni partagé, il traverse le
+/// compiler cannot check. The buffer is neither mutated nor shared, it crosses the
 /// pipeline en lecture seule.
 public struct CapturedFrame: @unchecked Sendable {
     public let imageBuffer: CVImageBuffer

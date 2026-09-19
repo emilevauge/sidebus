@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Régénère les vecteurs de test du protocole.
+"""Regenerates the protocol test vectors.
 
-Les fichiers .bin sont la référence commune aux deux implémentations : les tests Swift et
-Kotlin les décodent, vérifient les champs, réencodent et comparent octet à octet.
+The .bin files are the reference shared by both implementations: the Swift and Kotlin tests
+decode them, check the fields, re-encode and compare byte for byte.
 
-Ce script ne sert qu'à les régénérer après une évolution de PROTOCOL.md. Il est écrit à
-plat, sans réutiliser de code des deux côtés, pour rester un témoin indépendant.
+This script only serves to regenerate them after a change to PROTOCOL.md. It is written
+flat, reusing no code from either side, so it stays an independent witness.
 """
 
 import struct
@@ -27,7 +27,7 @@ def string(value):
 
 VECTORS = {}
 
-# 0x01 HELLO : version 1, nom avec accents, UUID connu.
+# 0x01 HELLO: version 1, accented name, known UUID.
 VECTORS["hello.bin"] = message(
     0x01,
     struct.pack("<H", 1)
@@ -35,7 +35,7 @@ VECTORS["hello.bin"] = message(
     + uuidlib.UUID("550e8400-e29b-41d4-a716-446655440000").bytes,
 )
 
-# 0x02 DEVICE_INFO : 2560x1600, 320 dpi, H.264 et HEVC, avec l'identifiant persistant.
+# 0x02 DEVICE_INFO: 2560x1600, 320 dpi, H.264 and HEVC, with the persistent identifier.
 VECTORS["device_info.bin"] = message(
     0x02,
     struct.pack("<HHHB", 2560, 1600, 320, 0x03)
@@ -43,56 +43,56 @@ VECTORS["device_info.bin"] = message(
     + uuidlib.UUID("7c9e6679-7425-40de-944b-e07fc1f90ae7").bytes,
 )
 
-# 0x03 DISPLAY_CONFIG : 2560x1600 à 60 fps en H.264.
+# 0x03 DISPLAY_CONFIG: 2560x1600 at 60 fps in H.264.
 VECTORS["display_config.bin"] = message(0x03, struct.pack("<HHBB", 2560, 1600, 60, 0x01))
 
-# 0x04 VIDEO_CONFIG : un SPS et un PPS minuscules, en Annex B.
+# 0x04 VIDEO_CONFIG: one tiny SPS and one tiny PPS, in Annex B.
 VECTORS["video_config.bin"] = message(
     0x04,
     bytes([0, 0, 0, 1, 0x67, 0x64, 0x00, 0x2A]) + bytes([0, 0, 0, 1, 0x68, 0xEE, 0x3C, 0xB0]),
 )
 
-# 0x05 VIDEO_FRAME : keyframe, flags bit 0 à 1.
+# 0x05 VIDEO_FRAME: keyframe, flags bit 0 set.
 VECTORS["video_frame_key.bin"] = message(
     0x05,
     struct.pack("<Q", 1_234_567_890) + bytes([0, 0, 0, 1, 0x65, 0x88, 0x84]),
     flags=0x0001,
 )
 
-# 0x05 VIDEO_FRAME : frame intermédiaire, flags à 0.
+# 0x05 VIDEO_FRAME: intermediate frame, flags at 0.
 VECTORS["video_frame_delta.bin"] = message(
     0x05,
     struct.pack("<Q", 1_234_584_557) + bytes([0, 0, 0, 1, 0x41, 0x9A, 0x22]),
 )
 
-# 0x06 INPUT_EVENT : déplacement au quart haut, milieu horizontal.
+# 0x06 INPUT_EVENT: a move at the upper quarter, horizontally centred.
 VECTORS["input_event.bin"] = message(
     0x06, struct.pack("<BffBQ", 0x01, 0.5, 0.25, 0x00, 42)
 )
 
-# 0x07 PING et 0x08 PONG : même horodatage.
+# 0x07 PING and 0x08 PONG: same timestamp.
 VECTORS["ping.bin"] = message(0x07, struct.pack("<Q", 0x0102030405060708))
 VECTORS["pong.bin"] = message(0x08, struct.pack("<Q", 0x0102030405060708))
 
-# 0x09 KEYFRAME_REQ : payload vide.
+# 0x09 KEYFRAME_REQ: empty payload.
 VECTORS["keyframe_req.bin"] = message(0x09, b"")
 
-# 0x0A STATS : 120 reçues, 3 droppées, fenêtre de 2 s.
+# 0x0A STATS: 120 received, 3 dropped, a 2 s window.
 VECTORS["stats.bin"] = message(0x0A, struct.pack("<IIH", 120, 3, 2000))
 
-# 0x0B BYE : bascule de transport.
+# 0x0B BYE: transport switch.
 VECTORS["bye.bin"] = message(0x0B, struct.pack("<B", 0x01))
 
-# 0x0C PAIR_REQUEST : code à six chiffres.
+# 0x0C PAIR_REQUEST: six digit code.
 VECTORS["pair_request.bin"] = message(0x0C, struct.pack("<I", 428_913))
 
-# 0x0D PAIR_RESULT : appairage accepté.
+# 0x0D PAIR_RESULT: pairing accepted.
 VECTORS["pair_result.bin"] = message(0x0D, struct.pack("<B", 0x01))
 
-# Type inconnu : doit être sauté proprement, sans fermer la connexion.
+# Unknown type: must be skipped cleanly, without closing the connection.
 VECTORS["unknown_type.bin"] = message(0x7F, b"abc")
 
-# Deux messages collés dans le même paquet : le décodeur doit sortir les deux.
+# Two messages in one packet: the decoder must yield both.
 VECTORS["stream_two_messages.bin"] = VECTORS["ping.bin"] + VECTORS["keyframe_req.bin"]
 
 
@@ -100,4 +100,4 @@ if __name__ == "__main__":
     directory = Path(__file__).parent
     for name, payload in VECTORS.items():
         (directory / name).write_bytes(payload)
-        print(f"{name}: {len(payload)} octets")
+        print(f"{name}: {len(payload)} bytes")
