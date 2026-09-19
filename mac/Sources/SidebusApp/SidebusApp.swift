@@ -15,14 +15,14 @@ struct SidebusApp: App {
         }
         .windowResizability(.contentSize)
 
-        MenuBarExtra("Sidebus", systemImage: menuBarSymbol) {
+        // Label personnalisé : MenuBarExtra impose alors la forme
+        // « MenuBarExtra { contenu } label: { ... } ».
+        MenuBarExtra {
             MenuContent(devices: devices, permissions: permissions)
+        } label: {
+            // L'icône dit d'un coup d'œil si quelque chose est diffusé.
+            Image(nsImage: MenuBarIcon.pour(partageEnCours: devices.sharingCount > 0))
         }
-    }
-
-    /// L'icône dit d'un coup d'œil si quelque chose est diffusé.
-    private var menuBarSymbol: String {
-        devices.sharingCount > 0 ? "display.and.arrow.down" : "display"
     }
 }
 

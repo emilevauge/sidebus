@@ -39,6 +39,19 @@ cp "$BIN" "$APP/Contents/MacOS/SidebusApp"
 cp "$MAC_DIR/Resources/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# Icône de l'application, déclarée par CFBundleIconFile. Régénérée par art/build.sh.
+cp "$MAC_DIR/Resources/Sidebus.icns" "$APP/Contents/Resources/Sidebus.icns"
+
+# Bundle de ressources SwiftPM : il porte les gabarits de la barre de menus,
+# que Bundle.module va chercher dans Contents/Resources.
+RESOURCES="$(swift build -c "$CONFIG" --show-bin-path)/Sidebus_SidebusApp.bundle"
+if [[ -d "$RESOURCES" ]]; then
+	cp -R "$RESOURCES" "$APP/Contents/Resources/"
+else
+	echo "bundle de ressources introuvable : $RESOURCES" >&2
+	exit 1
+fi
+
 IDENTITY="${SIDEBUS_CODESIGN_IDENTITY:-}"
 if [[ -z "$IDENTITY" ]]; then
 	IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' 'NR==1 && NF>1 {print $2}')"

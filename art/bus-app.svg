@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Sidebus : bus vu de face, pare-brise traite comme une dalle d'ecran.
+       Dessin original, uniquement des <path> pour que la conversion en
+       VectorDrawable Android reste directe. -->
+  <defs>
+    <linearGradient id="plaque" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A3A7A"/>
+      <stop offset="1" stop-color="#111A3C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- plaque arrondie, 824 sur 1024 : la marge exigee par le gabarit macOS -->
+  <path fill="url(#plaque)" d="M285 100H739A185 185 0 0 1 924 285V739A185 185 0 0 1 739 924H285A185 185 0 0 1 100 739V285A185 185 0 0 1 285 100Z"/>
+
+  <!-- roues, derriere la caisse : seul le bas depasse -->
+  <g fill="#5A6796">
+    <path d="M290 738H350A26 26 0 0 1 376 764V812A26 26 0 0 1 350 838H290A26 26 0 0 1 264 812V764A26 26 0 0 1 290 738Z"/>
+    <path d="M674 738H734A26 26 0 0 1 760 764V812A26 26 0 0 1 734 838H674A26 26 0 0 1 648 812V764A26 26 0 0 1 674 738Z"/>
+  </g>
+
+  <!-- retroviseurs : tige fine puis miroir -->
+  <g fill="none" stroke="#FFC43D" stroke-width="20" stroke-linecap="round">
+    <path d="M250 356C230 356 222 352 214 344"/>
+    <path d="M774 356C794 356 802 352 810 344"/>
+  </g>
+  <g fill="#FFC43D">
+    <path d="M192 300H200A16 16 0 0 1 216 316V368A16 16 0 0 1 200 384H192A16 16 0 0 1 176 368V316A16 16 0 0 1 192 300Z"/>
+    <path d="M824 300H832A16 16 0 0 1 848 316V368A16 16 0 0 1 832 384H824A16 16 0 0 1 808 368V316A16 16 0 0 1 824 300Z"/>
+    <!-- caisse : montants droits, toit legerement bombe, bas arrondi -->
+    <path d="M242 234C242 214 252 203 270 201C352 170 672 170 754 201C772 203 782 214 782 234L782 749C782 765 766 785 746 785L278 785C258 785 242 765 242 749Z"/>
+  </g>
+
+  <!-- girouette de destination -->
+  <path fill="#1B2647" d="M414 212H610A22 22 0 0 1 632 234V234A22 22 0 0 1 610 256H414A22 22 0 0 1 392 234V234A22 22 0 0 1 414 212Z"/>
+
+  <!-- pare-brise : cadre sombre puis dalle, proportion 16:10 -->
+  <path fill="#1B2647" d="M320 286H704A44 44 0 0 1 748 330V542A44 44 0 0 1 704 586H320A44 44 0 0 1 276 542V330A44 44 0 0 1 320 286Z"/>
+  <path fill="#5793F5" d="M322 306H702A26 26 0 0 1 728 332V540A26 26 0 0 1 702 566H322A26 26 0 0 1 296 540V332A26 26 0 0 1 322 306Z"/>
+
+  <!-- phares -->
+  <g fill="#FFF3CE">
+    <path d="M296 672A44 44 0 1 1 384 672A44 44 0 1 1 296 672Z"/>
+    <path d="M640 672A44 44 0 1 1 728 672A44 44 0 1 1 640 672Z"/>
+  </g>
+
+  <!-- pare-chocs -->
+  <path fill="#1B2647" d="M278 724H746A22 22 0 0 1 768 746V754A22 22 0 0 1 746 776H278A22 22 0 0 1 256 754V746A22 22 0 0 1 278 724Z"/>
+</svg>

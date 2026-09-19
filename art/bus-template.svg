@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="87 60 850 850">
+  <!-- Barre de menus, au repos : la dalle est évidée.
+       Image template : noir plein sur fond transparent, macOS l'inverse seul
+       en mode sombre. Les retroviseurs sont colles a la caisse et la girouette
+       a disparu : a 18 points ces details fins ne tiennent pas. -->
+  <path fill="#000000" d="M214 286H244A26 26 0 0 1 270 312V368A26 26 0 0 1 244 394H214A26 26 0 0 1 188 368V312A26 26 0 0 1 214 286Z
+           M780 286H810A26 26 0 0 1 836 312V368A26 26 0 0 1 810 394H780A26 26 0 0 1 754 368V312A26 26 0 0 1 780 286Z
+           M326 740H372A30 30 0 0 1 402 770V822A30 30 0 0 1 372 852H326A30 30 0 0 1 296 822V770A30 30 0 0 1 326 740Z
+           M652 740H698A30 30 0 0 1 728 770V822A30 30 0 0 1 698 852H652A30 30 0 0 1 622 822V770A30 30 0 0 1 652 740Z
+           M262 244C262 224 272 154 290 152C372 108 652 108 734 152C752 154 762 224 762 244L762 734C762 750 746 776 720 776L304 776C278 776 262 750 262 734Z
+           M362 286A44 44 0 0 0 318 330V492A44 44 0 0 0 362 536H662A44 44 0 0 0 706 492V330A44 44 0 0 0 662 286Z
+           M310 646A60 60 0 1 0 430 646A60 60 0 1 0 310 646Z
+           M594 646A60 60 0 1 0 714 646A60 60 0 1 0 594 646Z"/>
+</svg>

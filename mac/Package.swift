@@ -17,7 +17,12 @@ let package = Package(
         // Toute la logique, testable, sans UI.
         .target(name: "SidebusCore", dependencies: ["CGVirtualDisplayBridge"]),
         // Application menu bar.
-        .executableTarget(name: "SidebusApp", dependencies: ["SidebusCore"]),
+        .executableTarget(
+            name: "SidebusApp",
+            dependencies: ["SidebusCore"],
+            // Les gabarits PDF de la barre de menus, lus via Bundle.module.
+            resources: [.process("Resources")]
+        ),
         .testTarget(name: "SidebusCoreTests", dependencies: ["SidebusCore"]),
     ]
 )
