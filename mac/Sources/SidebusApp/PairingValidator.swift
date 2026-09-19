@@ -28,6 +28,11 @@ final class PairingValidator: CertificateValidator {
     /// Empreinte de la connexion en cours, déjà appairée ou non.
     private(set) var acceptedFingerprint: Data?
 
+    /// Vrai pendant qu'un dialogue attend une réponse humaine. Le délai de connexion se
+    /// met en pause tant que c'est vrai : le temps de lecture d'un code ne dit rien de la
+    /// joignabilité de la tablette.
+    private(set) var isAskingUser = false
+
     @ObservationIgnored
     private let log = Logger(subsystem: "app.sidebus", category: "pairing")
 
@@ -55,7 +60,9 @@ final class PairingValidator: CertificateValidator {
                     L'empreinte de « \(expectedDeviceID) » a changé. Connexion refusée.
                     """
                 log.error("empreinte différente pour \(expectedDeviceID, privacy: .public), refus")
+                isAskingUser = true
                 await showMismatch(deviceID: expectedDeviceID)
+                isAskingUser = false
                 return false
             }
             acceptedFingerprint = fingerprint
@@ -69,7 +76,9 @@ final class PairingValidator: CertificateValidator {
             return true
         }
 
+        isAskingUser = true
         let accepted = await confirmPairing(code: PairingCode.code(for: fingerprint))
+        isAskingUser = false
         guard accepted else {
             lastRefusal = "appairage refusé sur le Mac"
             return false

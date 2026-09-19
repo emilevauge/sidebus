@@ -267,7 +267,10 @@ final class DeviceSession {
                 expectedDeviceID: peer.deviceID?.uuidString
             )
             do {
-                try await withTimeout(.seconds(8)) { try await transport.connect() }
+                try await withTimeout(
+                    .seconds(8),
+                    suspendedWhile: { [pairing] in await pairing.isAskingUser }
+                ) { try await transport.connect() }
             } catch is CancellationError {
                 await transport.close()
                 return sawDeviceInfo

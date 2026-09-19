@@ -14,7 +14,6 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.TextView
 import android.widget.Toast
 import app.sidebus.decoder.VideoDecoder
 import app.sidebus.input.TouchSender
@@ -24,6 +23,7 @@ import app.sidebus.transport.Connection
 import app.sidebus.transport.ServiceAdvertiser
 import app.sidebus.transport.TransportServer
 import app.sidebus.ui.DebugOverlay
+import app.sidebus.ui.WaitingView
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import kotlinx.coroutines.CoroutineScope
@@ -41,8 +41,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private lateinit var root: FrameLayout
     private lateinit var surfaceView: SurfaceView
-    private lateinit var curtain: View
-    private lateinit var status: TextView
+    private lateinit var curtain: WaitingView
     private lateinit var overlay: DebugOverlay
 
     private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
@@ -80,14 +79,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ),
         )
 
-        // Rideau noir au dessus de la vidéo. Surtout pas `lockCanvas` sur la surface pour
-        // l'effacer : cela la connecte au producteur CPU et MediaCodec ne peut plus s'y
-        // attacher ensuite, la configuration du décodeur échoue.
-        curtain = View(this).apply {
-            setBackgroundColor(Color.BLACK)
-            // Désappairage par appui long. Le rideau porte le geste plutôt que le texte
-            // d'état : il n'est visible que hors diffusion, donc il ne peut pas avaler
-            // les touchers destinés à l'écran partagé.
+        // Écran d'attente, qui sert aussi de rideau au dessus de la vidéo. Voir
+        // `WaitingView` pour les deux pièges de surface qu'il évite.
+        curtain = WaitingView(this).apply {
             setOnLongClickListener {
                 resetPairing()
                 true
@@ -98,20 +92,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-
-        status = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            gravity = Gravity.CENTER
-        }
-        root.addView(
-            status,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER,
             ),
         )
 
@@ -142,7 +122,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         advertiser = ServiceAdvertiser(this)
 
-        show("démarrage")
+        show("Démarrage")
         startServer()
     }
 
@@ -204,14 +184,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             TransportServer(serverSocketFactory = sslFactory).run { event ->
                 when (event) {
                     is TransportServer.Event.Listening ->
-                        show(
-                            "en écoute sur ${localAddress()}:${event.port}" +
-                                "\n\ncode d'appairage : $pairingCode" +
-                                "\nappui long pour réinitialiser l'appairage"
-                        )
+                        show("En attente d'un Mac", "${localAddress()}:${event.port}", pairingCode)
 
                     is TransportServer.Event.Connected -> {
-                        show("connecté à ${event.remote}")
+                        show("Connecté", "${event.remote}")
                         startStatsReporting()
                     }
 
@@ -236,14 +212,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             pairingDialog = null
                         }
                         show(
-                            "déconnecté (${event.reason})" +
-                                "\nen écoute sur ${localAddress()}" +
-                                "\n\ncode d'appairage : $pairingCode" +
-                                "\nappui long pour réinitialiser l'appairage"
+                            "En attente d'un Mac",
+                            "${localAddress()}  ·  ${event.reason}",
+                            pairingCode,
                         )
                     }
 
-                    is TransportServer.Event.Failed -> show("erreur : ${event.error.message}")
+                    is TransportServer.Event.Failed -> show("Erreur", event.error.message)
                 }
             }
         }
@@ -260,7 +235,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             is Message.Hello -> {
                 Log.i(TAG, "HELLO de ${message.name}, protocole ${message.version}")
                 peerName = message.name
-                show("connecté à ${message.name}, en attente du flux")
+                show("Connecté à ${message.name}", "en attente du flux")
                 withContext(Dispatchers.IO) { connection.send(info) }
             }
 
@@ -338,7 +313,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     "exactement pourquoi ils diffèrent."
             }
 
-            pairingDialog = AlertDialog.Builder(this)
+            pairingDialog = AlertDialog.Builder(this, R.style.Theme_Sidebus_Dialogue)
                 .setTitle("Appairer avec $peerName ?")
                 .setMessage(message)
                 .setCancelable(false)
@@ -419,7 +394,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
 
         runOnUiThread {
-            status.text = ""
             curtain.visibility = View.GONE
             overlay.transport = "USB"
         }
@@ -455,8 +429,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun show(text: String) {
-        runOnUiThread { status.text = if (text.isEmpty()) "" else "Sidebus\n\n$text" }
+    private fun show(etat: String, detail: String? = null, code: String? = null) {
+        runOnUiThread { curtain.montrer(etat, detail, code) }
     }
 
     /** Adresse IPv4, affichée pour le repli manuel de la phase 6. */

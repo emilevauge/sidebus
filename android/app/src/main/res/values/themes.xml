@@ -5,5 +5,18 @@
         <item name="android:colorBackground">@android:color/black</item>
         <item name="android:statusBarColor">@android:color/black</item>
         <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:alertDialogTheme">@style/Theme.Sidebus.Dialogue</item>
+    </style>
+
+    <!--
+        Le dialogue d'appairage héritait du thème système : boîte grise et boutons
+        turquoise sur un écran bleu nuit. Il reprend maintenant la palette de l'icône.
+    -->
+    <style name="Theme.Sidebus.Dialogue" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">@color/dialogue_fond</item>
+        <item name="android:windowBackground">@color/dialogue_fond</item>
+        <item name="android:textColorPrimary">@color/dialogue_texte</item>
+        <item name="android:textColorSecondary">@color/dialogue_texte_secondaire</item>
+        <item name="android:colorAccent">@color/dialogue_accent</item>
     </style>
 </resources>

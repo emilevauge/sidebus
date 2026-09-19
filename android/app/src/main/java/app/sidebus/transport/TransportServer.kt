@@ -75,11 +75,12 @@ class TransportServer(
                 }
 
                 socket.tcpNoDelay = true
-                // Sans délai de lecture, un Mac qui disparaît sans fermer proprement,
-                // coupure Wi-Fi ou veille, laisse la boucle bloquée pour toujours. Le
-                // serveur n'accepte alors plus personne, puisqu'il ne tient qu'une
-                // connexion à la fois.
-                socket.soTimeout = READ_TIMEOUT_MS
+                // Le handshake a son propre délai, bien plus long. Le Mac affiche le code
+                // d'appairage pendant la vérification du certificat, donc au milieu du
+                // handshake, et attend une réponse humaine. Avec le délai de lecture
+                // ordinaire, la connexion mourait avant que l'utilisateur ait eu le temps
+                // de comparer les deux codes.
+                socket.soTimeout = HANDSHAKE_TIMEOUT_MS
                 if (socket is javax.net.ssl.SSLSocket) {
                     try {
                         socket.startHandshake()
@@ -98,6 +99,11 @@ class TransportServer(
                         continue
                     }
                 }
+                // Handshake passé : on revient au délai ordinaire. Sans lui, un Mac qui
+                // disparaît sans fermer proprement, coupure Wi-Fi ou veille, laisse la
+                // boucle bloquée pour toujours, et le serveur n'accepte plus personne
+                // puisqu'il ne tient qu'une connexion à la fois.
+                socket.soTimeout = READ_TIMEOUT_MS
                 val connection = Connection(socket)
                 onEvent(Event.Connected(connection.remote))
 
@@ -157,6 +163,10 @@ class TransportServer(
          * que le lien est mort, quoi qu'en dise le socket.
          */
         private const val READ_TIMEOUT_MS = 10_000
+
+        /// Le temps d'aller chercher la tablette dans l'autre pièce et de comparer les
+        /// codes, des deux côtés. Aligné sur le délai de PAIR_RESULT du protocole.
+        private const val HANDSHAKE_TIMEOUT_MS = 130_000
 
         private const val TAG = "Sidebus"
     }
