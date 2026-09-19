@@ -112,10 +112,11 @@ public enum MessageCodec {
             payload.u8(fps)
             payload.u8(codec.rawValue)
 
-        case let .cameraConfig(width, height, codec, parameterSets):
+        case let .cameraConfig(width, height, codec, rotation, parameterSets):
             payload.u16(width)
             payload.u16(height)
             payload.u8(codec.rawValue)
+            payload.u8(rotation)
             payload.bytes(parameterSets)
 
         case let .cameraFrame(timestamp, isKeyframe, data):
@@ -123,7 +124,7 @@ public enum MessageCodec {
             payload.u64(timestamp)
             payload.bytes(data)
 
-        case .cameraStop:
+        case .cameraStop, .videoStop:
             break
 
         case let .unknown(_, unknownFlags, data):
@@ -287,6 +288,7 @@ public enum MessageCodec {
                     width: width,
                     height: height,
                     codec: codec,
+                    rotation: try reader.u8(),
                     parameterSets: reader.rest()
                 )
 
@@ -300,6 +302,9 @@ public enum MessageCodec {
 
             case .cameraStop:
                 return .cameraStop
+
+            case .videoStop:
+                return .videoStop
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)

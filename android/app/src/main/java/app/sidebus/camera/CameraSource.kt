@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.util.Size
+import android.view.OrientationEventListener
 import android.view.Surface
 import app.sidebus.protocol.CameraDescription
 import app.sidebus.protocol.CameraFacing
@@ -41,8 +42,14 @@ class CameraSource(private val context: Context) {
     /** Called for every encoded frame, on the encoder's callback thread. */
     var onFrame: ((data: ByteArray, timestampMicroseconds: Long, isKeyframe: Boolean) -> Unit)? = null
 
-    /** Called once when the encoder produces its parameter sets. */
-    var onConfig: ((width: Int, height: Int, codec: Int, parameterSets: ByteArray) -> Unit)? = null
+    /**
+     * Called when the encoder produces its parameter sets, and again whenever the rotation
+     * changes because the device was turned. The parameter sets are the same on the second
+     * call: the receiver only has to take the new rotation.
+     */
+    var onConfig: (
+        (width: Int, height: Int, codec: Int, rotation: Int, parameterSets: ByteArray) -> Unit
+    )? = null
 
     private val manager = context.getSystemService(CameraManager::class.java)
 
@@ -52,6 +59,15 @@ class CameraSource(private val context: Context) {
     private var session: CameraCaptureSession? = null
     private var encoder: MediaCodec? = null
     private var inputSurface: Surface? = null
+
+    /** Mounting angle of the opened sensor, and which way it looks. */
+    private var sensorOrientation = 0
+    private var isFront = false
+    /** Clockwise angle the device is held at, from its natural orientation. */
+    private var deviceOrientation = 0
+    private var lastRotation = -1
+    private var lastParameterSets: ByteArray? = null
+    private var orientationListener: OrientationEventListener? = null
 
     val isRunning: Boolean get() = device != null
 
@@ -101,6 +117,9 @@ class CameraSource(private val context: Context) {
         }
 
         val characteristics = manager.getCameraCharacteristics(cameraId)
+        sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        isFront = characteristics.get(CameraCharacteristics.LENS_FACING) ==
+            CameraCharacteristics.LENS_FACING_FRONT
         val configurations = characteristics.get(
             CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
         ) ?: run {
@@ -155,6 +174,7 @@ class CameraSource(private val context: Context) {
 
         this.openedSize = size
         this.openedCodec = codec
+        watchOrientation()
 
         openCamera(cameraId, surface, fps, executor)
     }
@@ -175,6 +195,10 @@ class CameraSource(private val context: Context) {
         thread = null
         handler = null
         sentConfig = false
+        orientationListener?.disable()
+        orientationListener = null
+        lastRotation = -1
+        lastParameterSets = null
     }
 
     // MARK: camera
@@ -237,6 +261,55 @@ class CameraSource(private val context: Context) {
             .onFailure { Log.e(TAG, "cannot create the capture session", it) }
     }
 
+    // MARK: orientation
+
+    /**
+     * Follows how the device is actually held and republishes the rotation when it changes.
+     *
+     * The accelerometer rather than the display rotation: the activity is locked to
+     * landscape, so its display rotation says nothing about a phone propped up in portrait
+     * to film. A webcam gets moved around, and that is exactly the case this has to cover.
+     */
+    private fun watchOrientation() {
+        orientationListener?.disable()
+        val listener = object : OrientationEventListener(context) {
+            override fun onOrientationChanged(orientation: Int) {
+                // ORIENTATION_UNKNOWN, which is what a device lying flat reports: keep the
+                // last angle rather than snap the picture back to zero.
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val quarter = ((orientation + 45) / 90 * 90) % 360
+                if (quarter == deviceOrientation) return
+                deviceOrientation = quarter
+                publishRotation()
+            }
+        }
+        orientationListener = listener
+        if (listener.canDetectOrientation()) listener.enable()
+    }
+
+    /**
+     * Quarter turns clockwise the receiver applies to show the picture upright.
+     *
+     * The formula `CameraCharacteristics.SENSOR_ORIENTATION` documents for JPEG_ORIENTATION:
+     * the sensor mounting angle plus the angle the device is held at, the angle counted the
+     * other way round for a front sensor since it looks back at the user.
+     */
+    private fun rotation(): Int {
+        val held = if (isFront) -deviceOrientation else deviceOrientation
+        return ((sensorOrientation + held + 360) % 360) / 90
+    }
+
+    /** Sends CAMERA_CONFIG again, same parameter sets, new rotation. */
+    private fun publishRotation() {
+        val size = openedSize ?: return
+        val sets = lastParameterSets ?: return
+        val rotation = rotation()
+        if (rotation == lastRotation) return
+        lastRotation = rotation
+        Log.i(TAG, "camera rotation now ${rotation * 90} degrees")
+        onConfig?.invoke(size.width, size.height, openedCodec, rotation, sets)
+    }
+
     // MARK: encoder
 
     private val encoderCallback = object : MediaCodec.Callback() {
@@ -267,7 +340,9 @@ class CameraSource(private val context: Context) {
                 }
             if (sets.isEmpty()) return
             sentConfig = true
-            onConfig?.invoke(size.width, size.height, openedCodec, sets)
+            lastParameterSets = sets
+            lastRotation = rotation()
+            onConfig?.invoke(size.width, size.height, openedCodec, lastRotation, sets)
         }
 
         override fun onError(codec: MediaCodec, error: MediaCodec.CodecException) {
@@ -287,7 +362,9 @@ class CameraSource(private val context: Context) {
             if (!sentConfig) {
                 val size = openedSize ?: return
                 sentConfig = true
-                onConfig?.invoke(size.width, size.height, openedCodec, bytes)
+                lastParameterSets = bytes
+                lastRotation = rotation()
+                onConfig?.invoke(size.width, size.height, openedCodec, lastRotation, bytes)
             }
             return
         }

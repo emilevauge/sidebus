@@ -20,17 +20,18 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case cameraConfig = 0x10
     case cameraFrame = 0x11
     case cameraStop = 0x12
+    case videoStop = 0x13
 }
 
 /// Which way a camera points. See `protocol/PROTOCOL.md`, section 5.5.
-public enum CameraFacing: UInt8, Sendable {
+public enum CameraFacing: UInt8, Sendable, Codable {
     case back = 0x00
     case front = 0x01
     case external = 0x02
 }
 
 /// One camera the tablet is willing to share.
-public struct CameraDescription: Sendable, Hashable {
+public struct CameraDescription: Sendable, Hashable, Codable, Identifiable {
     public let id: UInt8
     public let facing: CameraFacing
     public let label: String
@@ -106,12 +107,24 @@ public enum Message: Sendable, Equatable {
     case cameraStart(id: UInt8, width: UInt16, height: UInt16, fps: UInt8, codec: Codec)
 
     /// What the tablet actually opened, with the codec parameter sets.
-    case cameraConfig(width: UInt16, height: UInt16, codec: Codec, parameterSets: Data)
+    ///
+    /// `rotation` is the quarter turns clockwise the receiver has to apply to show the
+    /// picture upright. See `protocol/PROTOCOL.md` 5.6.
+    case cameraConfig(
+        width: UInt16,
+        height: UInt16,
+        codec: Codec,
+        rotation: UInt8,
+        parameterSets: Data
+    )
 
     /// One encoded camera frame, same shape as VIDEO_FRAME in the other direction.
     case cameraFrame(timestamp: UInt64, isKeyframe: Bool, data: Data)
 
     case cameraStop
+
+    /// The Mac stops sharing its screen but keeps the link. See `protocol/PROTOCOL.md` 4.18.
+    case videoStop
 
     /// A message of a type this version does not know. Kept so that it can be skipped
     /// cleanly rather than closing the connection.
@@ -137,6 +150,7 @@ public enum Message: Sendable, Equatable {
         case .cameraConfig: return MessageType.cameraConfig.rawValue
         case .cameraFrame: return MessageType.cameraFrame.rawValue
         case .cameraStop: return MessageType.cameraStop.rawValue
+        case .videoStop: return MessageType.videoStop.rawValue
         case let .unknown(type, _, _): return type
         }
     }

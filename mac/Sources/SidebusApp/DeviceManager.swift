@@ -27,16 +27,24 @@ struct DeviceEntry: Identifiable {
     /// True for a hand typed address: it gets forgotten, not unpaired.
     let isManual: Bool
 
+    /// Cameras the device offers, from the live session when there is one, otherwise from
+    /// what was recorded on the last connection. Empty when it has never said.
+    let cameras: [CameraDescription]
+
+    /// Camera currently coming back from this device.
+    var activeCamera: CameraDescription? { session?.activeCamera }
+
     var isOnline: Bool { transport != nil }
 
-    /// True as soon as sharing is asked for, even before the first frame.
-    var isSharing: Bool { session?.mode == .sharing }
+    /// True as soon as screen sharing is asked for, even before the first frame.
+    var isSharing: Bool { session?.sharesScreen == true }
 
-    /// Connecting, pairing or preparing the stream: something is under way, but nothing
+    /// Pairing, connecting or preparing the stream: something is under way, but nothing
     /// shows on the tablet yet.
     var isBusy: Bool {
         guard let session else { return false }
-        return !session.isStreaming
+        if session.mode == .pairing { return true }
+        return session.sharesScreen && !session.isStreaming
     }
 
     var detail: String? { session?.detail ?? offlineDetail }
@@ -51,10 +59,11 @@ struct DeviceEntry: Identifiable {
 
     var action: Action {
         guard isOnline else { return .none }
-        // A session in progress stops, whether it is pairing or preparing the stream.
-        // Without that, a tablet that does not answer blocks the row.
-        if session != nil { return .stopSharing }
-        return isPaired ? .startSharing : .pair
+        // A pairing that does not answer must not block the row: clicking it again stops
+        // it.
+        if let session, session.mode == .pairing { return .stopSharing }
+        if isPaired { return isSharing ? .stopSharing : .startSharing }
+        return .pair
     }
 
     /// Symbol of the row. It carries the state on its own, and that is what makes the menu
@@ -62,7 +71,7 @@ struct DeviceEntry: Identifiable {
     var symbol: String {
         guard isOnline else { return "ipad.slash" }
         if isBusy { return "hourglass" }
-        if session != nil { return "stop.circle.fill" }
+        if isSharing { return "stop.circle.fill" }
         return isPaired ? "play.rectangle.on.rectangle" : "link.badge.plus"
     }
 
@@ -115,10 +124,16 @@ final class DeviceManager {
     @ObservationIgnored
     private var browseTask: Task<Void, Never>?
 
-    /// Devices the user wants shared. Persisted in the directory, and that is what drives
-    /// the automatic resume.
+    /// Devices whose screen the user wants shared. Persisted in the directory, and that is
+    /// what drives the automatic resume.
     @ObservationIgnored
     private var sharingIntent: Set<String> = []
+
+    /// Devices whose camera the user wants, and which one. Not persisted: a webcam is asked
+    /// for when it is needed, and reopening one on its own at launch would light the lens
+    /// with nobody looking.
+    @ObservationIgnored
+    private var cameraIntent: [String: DeviceSession.CameraChoice] = [:]
 
     @ObservationIgnored
     private let log = Logger(subsystem: "app.sidebus", category: "devices")
@@ -355,17 +370,29 @@ final class DeviceManager {
         guard directory.contains(key) else { return }
         sharingIntent.insert(key)
         directory.setResumesSharing(true, for: key)
+        // A camera already holds the link: no need to hang up, the screen joins it.
+        running[key]?.setScreenSharing(true)
         reconcile()
     }
 
     func stopSharing(_ key: String) {
         sharingIntent.remove(key)
         directory.setResumesSharing(false, for: key)
-        guard let session = running.removeValue(forKey: key) else {
+
+        guard let session = running[key] else {
             refreshEntries()
             return
         }
         log.info("sharing stopped for \(key, privacy: .public)")
+
+        // The camera still wants the link: keep it, drop the screen alone.
+        if cameraIntent[key] != nil, session.mode == .live {
+            session.setScreenSharing(false)
+            refreshEntries()
+            return
+        }
+
+        running.removeValue(forKey: key)
         refreshEntries()
         Task {
             await session.stop(bye: .normal, status: "sharing stopped")
@@ -373,9 +400,47 @@ final class DeviceManager {
         }
     }
 
+    // MARK: - Cameras
+
+    /// Asks a device for one of its cameras, opening the link if nothing holds it yet.
+    ///
+    /// Independent of screen sharing: a tablet can send its camera while showing nothing,
+    /// which is the case that makes it a webcam rather than a second display.
+    func startCamera(_ key: String, choice: DeviceSession.CameraChoice) {
+        guard directory.contains(key) else { return }
+        cameraIntent[key] = choice
+        if let session = running[key], session.mode == .live {
+            session.requestCamera(choice)
+            refreshEntries()
+            return
+        }
+        reconcile()
+    }
+
+    func stopCamera(_ key: String) {
+        cameraIntent.removeValue(forKey: key)
+        guard let session = running[key] else {
+            refreshEntries()
+            return
+        }
+        session.stopCamera()
+
+        // Nothing else was holding the link: hang up rather than keep a socket and a
+        // wake lock on the tablet for nothing.
+        if !sharingIntent.contains(key) {
+            running.removeValue(forKey: key)
+            Task {
+                await session.stop(bye: .normal, status: "camera stopped")
+                self.refreshEntries()
+            }
+        }
+        refreshEntries()
+    }
+
     /// Forgets a device: keychain fingerprint, directory entry, session in progress.
     func unpair(_ key: String) {
         log.info("unpairing \(key, privacy: .public)")
+        stopCamera(key)
         stopSharing(key)
         directory.remove(key)
         refreshEntries()
@@ -387,6 +452,7 @@ final class DeviceManager {
 
     func unpairAll() {
         log.info("every device forgotten")
+        for key in cameraIntent.keys { stopCamera(key) }
         for key in sharingIntent { stopSharing(key) }
         directory.removeAll()
         refreshEntries()
@@ -402,13 +468,29 @@ final class DeviceManager {
     /// switch, or take note of a disappearance.
     private func reconcile() {
         let visible = visiblePeers()
+        let wanted = sharingIntent.union(cameraIntent.keys)
 
-        for key in sharingIntent where directory.contains(key) {
+        for key in wanted where directory.contains(key) {
             guard let peer = visible[key]?.first else { continue }
+            let wantsScreen = sharingIntent.contains(key)
+            let camera = cameraIntent[key]
 
             guard let session = running[key] else {
-                log.info("sharing to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
-                let session = makeSession(key: key, mode: .sharing, peer: peer)
+                log.info(
+                    """
+                    opening a link to \(peer.name, privacy: .public) over \
+                    \(peer.kind.rawValue, privacy: .public), \
+                    screen \(wantsScreen ? "on" : "off"), \
+                    camera \(camera == nil ? "off" : "on")
+                    """
+                )
+                let session = makeSession(
+                    key: key,
+                    mode: .live,
+                    peer: peer,
+                    sharesScreen: wantsScreen,
+                    wantedCamera: camera
+                )
                 running[key] = session
                 session.start()
                 continue
@@ -417,7 +499,7 @@ final class DeviceManager {
             // Clean switch to a better transport: BYE with the proper code, close, then
             // reconnect. No live socket migration, the gain is not worth the complexity,
             // and a 200 ms cut when the cable goes in passes unnoticed.
-            if session.mode == .sharing, session.peer.kind == .wifi, peer.kind == .usb {
+            if session.mode == .live, session.peer.kind == .wifi, peer.kind == .usb {
                 log.info("switching Wi-Fi to USB for \(peer.name, privacy: .public)")
                 running.removeValue(forKey: key)
                 Task {
@@ -430,17 +512,29 @@ final class DeviceManager {
         refreshEntries()
     }
 
-    private func makeSession(key: String, mode: DeviceSession.Mode, peer: Peer) -> DeviceSession {
+    private func makeSession(
+        key: String,
+        mode: DeviceSession.Mode,
+        peer: Peer,
+        sharesScreen: Bool = false,
+        wantedCamera: DeviceSession.CameraChoice? = nil
+    ) -> DeviceSession {
         let session = DeviceSession(
             key: key,
             mode: mode,
             peer: peer,
+            sharesScreen: sharesScreen,
+            wantedCamera: wantedCamera,
             macName: macName,
             macUUID: macUUID,
             watcher: watcher,
             peerForKey: { [weak self] key in self?.bestPeer(for: key) },
             onIdentified: { [weak self] uuid, device, peer in
                 self?.identified(uuid: uuid, device: device, peer: peer)
+            },
+            onCameras: { [weak self] key, cameras in
+                self?.directory.setCameras(cameras, for: key)
+                self?.refreshEntries()
             },
             onFinished: { [weak self] finished in
                 self?.finished(finished)
@@ -478,6 +572,9 @@ final class DeviceManager {
                 sharingIntent.insert(identifier)
                 directory.setResumesSharing(true, for: identifier)
             }
+            if let choice = cameraIntent.removeValue(forKey: oldKey) {
+                cameraIntent[identifier] = choice
+            }
         }
         refreshEntries()
     }
@@ -488,8 +585,10 @@ final class DeviceManager {
         }
         if let refusal = session.pairing.lastRefusal {
             lastRefusal = refusal
-            // A refused pairing must not leave the sharing intent behind.
+            // A refused pairing must not leave an intent behind, or reconciliation would
+            // reopen the link and ask the question again.
             sharingIntent.remove(session.key)
+            cameraIntent.removeValue(forKey: session.key)
         }
         refreshEntries()
     }
@@ -509,6 +608,8 @@ final class DeviceManager {
             let peer = peers[0]
             let session = running[key]
             let record = paired[key]
+            let cameras = session.map { $0.cameras.isEmpty ? (record?.cameras ?? []) : $0.cameras }
+                ?? record?.cameras ?? []
             rows.append(
                 DeviceEntry(
                     id: key,
@@ -517,7 +618,8 @@ final class DeviceManager {
                     transport: peer.kind,
                     session: session,
                     offlineDetail: nil,
-                    isManual: manualKeys.contains(key)
+                    isManual: manualKeys.contains(key),
+                    cameras: cameras
                 )
             )
         }
@@ -531,12 +633,13 @@ final class DeviceManager {
                     transport: nil,
                     session: nil,
                     offlineDetail: "seen over \(Self.describe(device.lastTransport)), \(Self.ago(device.lastSeen))",
-                    isManual: false
+                    isManual: false,
+                    cameras: device.cameras ?? []
                 )
             )
         }
 
-        sharingCount = running.values.count { $0.mode == .sharing }
+        sharingCount = running.values.count { $0.sharesScreen }
         sessions = Array(running.values)
         pairedDevices = directory.all()
         entries = rows.sorted {

@@ -103,9 +103,10 @@ VECTORS["camera_start.bin"] = message(
 )
 
 # 0x10 CAMERA_CONFIG: what the tablet actually opened, plus the parameter sets.
+# Rotation 1: the sensor is mounted a quarter turn off the way the device is held.
 VECTORS["camera_config.bin"] = message(
     0x10,
-    struct.pack("<HHB", 1280, 720, 0x01)
+    struct.pack("<HHBB", 1280, 720, 0x01, 1)
     + bytes([0, 0, 0, 1, 0x67, 0x42, 0x00])
     + bytes([0, 0, 0, 1, 0x68, 0xCE]),
 )
@@ -119,6 +120,9 @@ VECTORS["camera_frame.bin"] = message(
 
 # 0x12 CAMERA_STOP: empty payload.
 VECTORS["camera_stop.bin"] = message(0x12, b"")
+
+# 0x13 VIDEO_STOP: empty payload.
+VECTORS["video_stop.bin"] = message(0x13, b"")
 
 # Unknown type: must be skipped cleanly, without closing the connection.
 VECTORS["unknown_type.bin"] = message(0x7F, b"abc")

@@ -204,16 +204,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         touch.attach(null)
                         statsJob?.cancel()
                         statsJob = null
-                        synchronized(decoderLock) {
-                            decoder?.release()
-                            decoder = null
-                        }
-                        parameterSets = null
+                        stopRendering()
                         camera.stop()
-                        // Never go INVISIBLE: that destroys the surface, which is then never
-                        // recreated, and the decoder cannot restart on the next connection.
                         runOnUiThread {
-                            curtain.visibility = View.VISIBLE
                             pairingDialog?.dismiss()
                             pairingDialog = null
                         }
@@ -296,6 +289,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 camera.stop()
             }
 
+            is Message.VideoStop -> {
+                Log.i(TAG, "VIDEO_STOP")
+                stopRendering()
+                show("Connected to $peerName", "screen sharing stopped")
+            }
+
             is Message.Bye -> Log.i(TAG, "BYE, reason ${message.reason}")
 
             is Message.Unknown ->
@@ -328,10 +327,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return
         }
 
-        camera.onConfig = { width, height, codec, parameterSets ->
+        camera.onConfig = { width, height, codec, rotation, parameterSets ->
             scope.launch(Dispatchers.IO) {
                 runCatching {
-                    connection.send(Message.CameraConfig(width, height, codec, parameterSets))
+                    connection.send(
+                        Message.CameraConfig(width, height, codec, rotation, parameterSets),
+                    )
                 }
             }
         }
@@ -474,6 +475,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             curtain.visibility = View.GONE
             overlay.transport = "USB"
         }
+    }
+
+    /**
+     * Drops the decoder and shows the waiting screen again, the link untouched.
+     *
+     * VIDEO_STOP, or a disconnection. Silence cannot stand in for it: nothing is encoded
+     * while the shared screen does not change, so an idle stream looks exactly like a stream
+     * that has ended.
+     */
+    private fun stopRendering() {
+        synchronized(decoderLock) {
+            decoder?.release()
+            decoder = null
+        }
+        pendingConfig = null
+        parameterSets = null
+        awaitingKeyframe = true
+        // Never go INVISIBLE: that destroys the surface, which is then never recreated, and
+        // the decoder cannot restart on the next connection.
+        runOnUiThread { curtain.visibility = View.VISIBLE }
     }
 
     /**

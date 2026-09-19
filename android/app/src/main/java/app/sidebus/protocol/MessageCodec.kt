@@ -96,6 +96,7 @@ object MessageCodec {
                 payload.u16(message.width)
                 payload.u16(message.height)
                 payload.u8(message.codec)
+                payload.u8(message.rotation)
                 payload.write(message.parameterSets)
             }
 
@@ -106,6 +107,8 @@ object MessageCodec {
             }
 
             is Message.CameraStop -> Unit
+
+            is Message.VideoStop -> Unit
 
             is Message.Unknown -> {
                 flags = message.flags
@@ -202,6 +205,7 @@ object MessageCodec {
                 width = reader.u16(),
                 height = reader.u16(),
                 codec = reader.u8(),
+                rotation = reader.u8(),
                 parameterSets = reader.rest(),
             )
 
@@ -212,6 +216,7 @@ object MessageCodec {
             )
 
             MessageType.CAMERA_STOP -> Message.CameraStop
+            MessageType.VIDEO_STOP -> Message.VideoStop
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

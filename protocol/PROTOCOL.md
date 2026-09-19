@@ -80,6 +80,7 @@ Fields are serialised in table order, with no alignment and no padding.
 | `0x10` | CAMERA_CONFIG  | Android to Mac     | see 4.16                                |
 | `0x11` | CAMERA_FRAME   | Android to Mac     | see 4.17                                |
 | `0x12` | CAMERA_STOP    | Mac to Android     | empty                                   |
+| `0x13` | VIDEO_STOP     | Mac to Android     | empty, see 4.18                         |
 
 Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
 the socket.
@@ -261,14 +262,21 @@ worth filming.
 
 ### 4.16 CAMERA_CONFIG (`0x10`)
 
-| Field  | Type  | Description                                          |
-| ------ | ----- | ---------------------------------------------------- |
-| width  | `u16` | width actually opened, in pixels                     |
-| height | `u16` | height actually opened, in pixels                    |
-| codec  | `u8`  | codec actually used, see 5.1                         |
-| data   | rest  | codec parameter sets in Annex B, as in VIDEO_CONFIG  |
+| Field    | Type  | Description                                          |
+| -------- | ----- | ---------------------------------------------------- |
+| width    | `u16` | width actually opened, in pixels                     |
+| height   | `u16` | height actually opened, in pixels                    |
+| codec    | `u8`  | codec actually used, see 5.1                         |
+| rotation | `u8`  | rotation to apply on display, see 5.6                |
+| data     | rest  | codec parameter sets in Annex B, as in VIDEO_CONFIG  |
 
 Always precedes the first CAMERA_FRAME, and is sent again on any reconfiguration.
+
+The encoded picture is in sensor coordinates: `width` and `height` describe the frames on
+the wire, before rotation. The tablet computes `rotation` from the sensor mounting angle and
+the orientation the device is held in, and the receiver turns the picture by that much to
+show it upright. Rotating on the receiver costs one GPU transform and keeps the encoder on
+the sensor's native sizes, where the zero copy path from camera to encoder works.
 
 ### 4.17 CAMERA_FRAME (`0x11`)
 
@@ -285,6 +293,15 @@ Flags:
 
 Same shape as VIDEO_FRAME, in the other direction. The timestamp comes from the tablet's
 monotonic clock, so it can only be compared with other CAMERA_FRAME timestamps.
+
+### 4.18 VIDEO_STOP (`0x13`)
+
+Empty payload. The Mac has stopped sharing its screen but keeps the link, which is what
+happens when only a camera is still wanted. The tablet releases its decoder and goes back to
+the waiting screen.
+
+A silence cannot take its place: nothing is encoded while the shared screen does not change,
+so an absence of VIDEO_FRAME says nothing about whether sharing is over.
 
 ## 5. Enumerations
 
@@ -334,6 +351,15 @@ In v1 the tablet only sends `0x00`.
 | `0x01` | front   |
 | `0x02` | external |
 
+### 5.6 Camera rotation
+
+| Value  | Rotation to apply on display |
+| ------ | ---------------------------- |
+| `0x00` | none                         |
+| `0x01` | 90 degrees clockwise         |
+| `0x02` | 180 degrees                  |
+| `0x03` | 270 degrees clockwise        |
+
 ## 6. Connection sequence
 
 1. The Mac opens the socket (Wi-Fi directly, or `127.0.0.1:27183` through the adb tunnel),
@@ -347,6 +373,11 @@ In v1 the tablet only sends `0x00`.
 6. PING every second in both directions. A peer with no PONG and no traffic for 5 s counts
    as disconnected: close the socket.
 7. STATS every 2 s, from the tablet. Feeds the bitrate adaptation.
+
+Steps 4 and 5 are skipped when the Mac only wants a camera. The link then holds on PING
+alone, and CAMERA_START follows DEVICE_INFO directly. Screen sharing can start later on the
+same link with DISPLAY_CONFIG, and stop again with VIDEO_STOP, without the camera stream
+being touched.
 
 INPUT_EVENT and KEYFRAME_REQ can be sent at any time once DISPLAY_CONFIG has passed.
 

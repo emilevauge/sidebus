@@ -24,8 +24,17 @@ final class DeviceSession {
     enum Mode: Sendable {
         /// Connect long enough to exchange the pairing, then hang up.
         case pairing
-        /// Connect and stream, reconnecting while the device stays visible.
-        case sharing
+        /// Connect and stay, reconnecting while the device stays visible. What the link
+        /// carries, screen or camera or both, is `sharesScreen` and `wantedCamera`.
+        case live
+    }
+
+    /// Which camera the Mac wants running on this device.
+    enum CameraChoice: Equatable, Sendable {
+        case id(UInt8)
+        /// Whatever the tablet offers first, its back camera by preference. Used when the
+        /// list is not known yet, which is the case before the first connection.
+        case preferred
     }
 
     enum Phase: Equatable {
@@ -42,6 +51,13 @@ final class DeviceSession {
     /// `DeviceManager.key(for:)`.
     private(set) var key: String
     let mode: Mode
+
+    /// True when this link is carrying the Mac's screen. Independent of the camera: either
+    /// can run without the other, on the same connection.
+    private(set) var sharesScreen: Bool
+
+    /// Camera the Mac wants from this device, kept across reconnections.
+    private(set) var wantedCamera: CameraChoice?
 
     private(set) var phase: Phase = .connecting
     private(set) var peer: Peer
@@ -71,6 +87,9 @@ final class DeviceSession {
     /// Description of the camera stream, for the preview window's title.
     private(set) var cameraDescription: String?
 
+    /// Quarter turns clockwise to apply to the camera picture, from CAMERA_CONFIG.
+    private(set) var cameraRotation: Int = 0
+
     @ObservationIgnored
     let pairing = PairingValidator()
 
@@ -88,6 +107,10 @@ final class DeviceSession {
     private let peerForKey: @MainActor (String) -> Peer?
     @ObservationIgnored
     private let onIdentified: @MainActor (UUID, PeerSession.DeviceDescription, Peer) -> Void
+    /// CAMERA_LIST received. `DeviceManager` records it so the menu can offer the cameras
+    /// of a device that is not connected.
+    @ObservationIgnored
+    private let onCameras: @MainActor (String, [CameraDescription]) -> Void
     @ObservationIgnored
     private let onFinished: @MainActor (DeviceSession) -> Void
 
@@ -117,6 +140,16 @@ final class DeviceSession {
     private var cameraDecoder: CameraDecoder?
     @ObservationIgnored
     private var cameraTask: Task<Void, Never>?
+    /// What is needed to start or stop the screen stream after the fact, once the link is
+    /// up. Set the moment the device is identified and paired.
+    @ObservationIgnored
+    private var liveDevice: PeerSession.DeviceDescription?
+    @ObservationIgnored
+    private var livePeer: Peer?
+    /// The configuration the decoder is running on, so a CAMERA_CONFIG that only brings a
+    /// new rotation does not tear it down.
+    @ObservationIgnored
+    private var cameraSetup: (width: Int, height: Int, codec: Codec, parameterSets: Data)?
 
     @ObservationIgnored
     private let log = Logger(subsystem: "app.sidebus", category: "session")
@@ -125,21 +158,27 @@ final class DeviceSession {
         key: String,
         mode: Mode,
         peer: Peer,
+        sharesScreen: Bool = false,
+        wantedCamera: CameraChoice? = nil,
         macName: String,
         macUUID: UUID,
         watcher: AdbWatcher,
         peerForKey: @escaping @MainActor (String) -> Peer?,
         onIdentified: @escaping @MainActor (UUID, PeerSession.DeviceDescription, Peer) -> Void,
+        onCameras: @escaping @MainActor (String, [CameraDescription]) -> Void,
         onFinished: @escaping @MainActor (DeviceSession) -> Void
     ) {
         self.key = key
         self.mode = mode
         self.peer = peer
+        self.sharesScreen = sharesScreen
+        self.wantedCamera = wantedCamera
         self.macName = macName
         self.macUUID = macUUID
         self.watcher = watcher
         self.peerForKey = peerForKey
         self.onIdentified = onIdentified
+        self.onCameras = onCameras
         self.onFinished = onFinished
     }
 
@@ -159,7 +198,11 @@ final class DeviceSession {
         case let .awaitingRemotePairing(code):
             return "confirm code \(code) on the tablet"
         case .connected:
-            return "connected, preparing the stream"
+            if sharesScreen { return "connected, preparing the stream" }
+            if activeCamera != nil {
+                return [cameraDescription, "camera"].compactMap { $0 }.joined(separator: ", ")
+            }
+            return wantedCamera != nil ? "connected, opening the camera" : "connected"
         case .streaming:
             var parts: [String] = []
             if let streamDescription { parts.append(streamDescription) }
@@ -345,6 +388,8 @@ final class DeviceSession {
 
                 case let .closed(reason):
                     log.info("session closed: \(reason, privacy: .public)")
+                    liveDevice = nil
+                    livePeer = nil
                     await stopStreaming()
                     roundTripMilliseconds = nil
                     if case .failed = phase {} else { phase = .stopped(reason) }
@@ -359,6 +404,13 @@ final class DeviceSession {
         }
 
         await stopStreaming()
+        // The camera has to be asked for again on the next connection, but the intent
+        // survives: `wantedCamera` is left alone on purpose.
+        activeCamera = nil
+        cameraFrame = nil
+        cameraSetup = nil
+        liveDevice = nil
+        livePeer = nil
         session = nil
         return sawDeviceInfo
     }
@@ -381,14 +433,17 @@ final class DeviceSession {
 
         case let .cameraList(list):
             cameras = list
+            onCameras(key, list)
             log.info("tablet offers \(list.count) camera(s)")
+            applyCameraIntent()
 
-        case let .cameraConfig(width, height, codec, parameterSets):
+        case let .cameraConfig(width, height, codec, rotation, parameterSets):
             Self.appendRawIfRequested(parameterSets)
             await startCameraDecoder(
                 width: Int(width),
                 height: Int(height),
                 codec: codec,
+                rotation: Int(rotation),
                 parameterSets: parameterSets
             )
 
@@ -484,13 +539,74 @@ final class DeviceSession {
     ) async {
         onIdentified(device.uuid, device, peer)
 
-        guard mode == .sharing else {
+        guard mode == .live else {
+            // A pairing session hangs up as soon as it is done. CAMERA_LIST travels with
+            // DEVICE_INFO, so waiting a moment is what makes the tablet's cameras known
+            // before the first share, and the menu can offer them straight away.
+            try? await Task.sleep(for: .milliseconds(300))
             try? await session.send(.bye(reason: .normal))
             await session.stop(reason: "pairing done")
             phase = .stopped("paired")
             return
         }
-        await startStreaming(to: device, session: session, peer: peer)
+
+        liveDevice = device
+        livePeer = peer
+
+        if sharesScreen {
+            await startStreaming(to: device, session: session, peer: peer)
+        }
+        applyCameraIntent()
+    }
+
+    // MARK: - Intents
+
+    /// Starts or stops the screen stream on a link that is already up.
+    ///
+    /// The camera is not touched: the two intents share one connection and nothing else.
+    func setScreenSharing(_ on: Bool) {
+        guard sharesScreen != on else { return }
+        sharesScreen = on
+
+        guard mode == .live, let session, let device = liveDevice, let peer = livePeer else {
+            return
+        }
+        Task {
+            if on {
+                await startStreaming(to: device, session: session, peer: peer)
+            } else {
+                await stopStreaming()
+                // Silence would not do: nothing is encoded while the shared screen holds
+                // still, so the tablet cannot tell an idle stream from one that has ended.
+                try? await session.send(.videoStop)
+                if phase == .streaming { phase = .connected }
+                log.info("screen sharing stopped, link kept for the camera")
+            }
+        }
+    }
+
+    /// Asks for a camera, now or as soon as the link is up.
+    func requestCamera(_ choice: CameraChoice) {
+        wantedCamera = choice
+        applyCameraIntent()
+    }
+
+    /// Sends CAMERA_START once the link is live and the wanted camera is on the list.
+    private func applyCameraIntent() {
+        guard mode == .live, liveDevice != nil, let choice = wantedCamera else { return }
+        guard let camera = resolve(choice) else { return }
+        guard activeCamera != camera else { return }
+        startCamera(camera)
+    }
+
+    /// The camera a choice points at, `nil` while CAMERA_LIST has not arrived.
+    private func resolve(_ choice: CameraChoice) -> CameraDescription? {
+        switch choice {
+        case let .id(id):
+            return cameras.first { $0.id == id }
+        case .preferred:
+            return cameras.first { $0.facing == .back } ?? cameras.first
+        }
     }
 
     // MARK: - Camera
@@ -502,6 +618,7 @@ final class DeviceSession {
     /// second device rather than the one showing the screen.
     func startCamera(_ camera: CameraDescription, width: Int = 1280, height: Int = 720, fps: Int = 30) {
         guard let session else { return }
+        wantedCamera = .id(camera.id)
         activeCamera = camera
         log.info("CAMERA_START \(camera.label, privacy: .public)")
         Task {
@@ -518,12 +635,15 @@ final class DeviceSession {
     }
 
     func stopCamera() {
+        wantedCamera = nil
         guard activeCamera != nil else { return }
         log.info("CAMERA_STOP")
         let session = self.session
         activeCamera = nil
         cameraFrame = nil
         cameraDescription = nil
+        cameraSetup = nil
+        cameraRotation = 0
         cameraTask?.cancel()
         cameraTask = nil
         let decoder = cameraDecoder
@@ -538,8 +658,24 @@ final class DeviceSession {
         width: Int,
         height: Int,
         codec: Codec,
+        rotation: Int,
         parameterSets: Data
     ) async {
+        // The tablet sends CAMERA_CONFIG again every time it is turned. Same stream, new
+        // angle: rebuilding the decoder would blank the picture until the next keyframe,
+        // for a change that costs one transform on the layer.
+        if let current = cameraSetup,
+            current.width == width,
+            current.height == height,
+            current.codec == codec,
+            current.parameterSets == parameterSets
+        {
+            cameraRotation = rotation
+            cameraDescription = Self.describe(width: width, height: height, rotation: rotation)
+            log.info("camera rotation now \(rotation * 90) degrees")
+            return
+        }
+
         cameraTask?.cancel()
         await cameraDecoder?.stop()
 
@@ -557,8 +693,10 @@ final class DeviceSession {
         }
 
         cameraDecoder = decoder
-        cameraDescription = "\(width) × \(height)"
-        log.info("camera stream \(width)×\(height)")
+        cameraSetup = (width, height, codec, parameterSets)
+        cameraRotation = rotation
+        cameraDescription = Self.describe(width: width, height: height, rotation: rotation)
+        log.info("camera stream \(width)×\(height), rotation \(rotation * 90) degrees")
 
         let frames = decoder.frames
         cameraTask = Task { [weak self] in
@@ -573,6 +711,11 @@ final class DeviceSession {
                 if seen == 10 { Self.dumpIfRequested(frame) }
             }
         }
+    }
+
+    /// Size of the picture as the window shows it: a quarter turn swaps the two sides.
+    private static func describe(width: Int, height: Int, rotation: Int) -> String {
+        rotation % 2 == 0 ? "\(width) × \(height)" : "\(height) × \(width)"
     }
 
     /// Appends the Annex B bytes as received when `SIDEBUS_CAMERA_RAW` names a path. The

@@ -22,6 +22,7 @@ object MessageType {
     const val CAMERA_CONFIG = 0x10
     const val CAMERA_FRAME = 0x11
     const val CAMERA_STOP = 0x12
+    const val VIDEO_STOP = 0x13
 }
 
 /** Which way a camera points. See `protocol/PROTOCOL.md`, section 5.5. */
@@ -175,21 +176,29 @@ sealed class Message {
         override val type = MessageType.CAMERA_START
     }
 
-    /** What the tablet actually opened, with the codec parameter sets. */
+    /**
+     * What the tablet actually opened, with the codec parameter sets.
+     *
+     * [rotation] is the number of quarter turns clockwise the receiver applies to show the
+     * picture upright. See `protocol/PROTOCOL.md`, section 5.6.
+     */
     data class CameraConfig(
         val width: Int,
         val height: Int,
         val codec: Int,
+        val rotation: Int,
         val parameterSets: ByteArray,
     ) : Message() {
         override val type = MessageType.CAMERA_CONFIG
 
         override fun equals(other: Any?) =
             other is CameraConfig && width == other.width && height == other.height &&
-                codec == other.codec && parameterSets.contentEquals(other.parameterSets)
+                codec == other.codec && rotation == other.rotation &&
+                parameterSets.contentEquals(other.parameterSets)
 
         override fun hashCode() =
-            ((width * 31 + height) * 31 + codec) * 31 + parameterSets.contentHashCode()
+            (((width * 31 + height) * 31 + codec) * 31 + rotation) * 31 +
+                parameterSets.contentHashCode()
     }
 
     /** One encoded camera frame, same shape as VIDEO_FRAME in the other direction. */
@@ -210,6 +219,14 @@ sealed class Message {
 
     object CameraStop : Message() {
         override val type = MessageType.CAMERA_STOP
+    }
+
+    /**
+     * The Mac stops sharing its screen but keeps the link, which is what happens when only a
+     * camera is still wanted. See `protocol/PROTOCOL.md`, section 4.18.
+     */
+    object VideoStop : Message() {
+        override val type = MessageType.VIDEO_STOP
     }
 
     /**

@@ -173,6 +173,7 @@ class MessageCodecTest {
                 1280,
                 720,
                 Codec.H264,
+                1,
                 byteArrayOf(0, 0, 0, 1, 0x67, 0x42, 0x00, 0, 0, 0, 1, 0x68, 0xCE.toByte()),
             ),
         )
@@ -189,6 +190,11 @@ class MessageCodecTest {
     @Test
     fun cameraStop() {
         check("camera_stop.bin", Message.CameraStop)
+    }
+
+    @Test
+    fun videoStop() {
+        check("video_stop.bin", Message.VideoStop)
     }
 
     @Test

@@ -156,6 +156,7 @@ final class MessageCodecTests: XCTestCase {
                 width: 1280,
                 height: 720,
                 codec: .h264,
+                rotation: 1,
                 parameterSets: Data([0, 0, 0, 1, 0x67, 0x42, 0x00, 0, 0, 0, 1, 0x68, 0xCE])
             )
         )
@@ -174,6 +175,10 @@ final class MessageCodecTests: XCTestCase {
 
     func testCameraStop() throws {
         try check("camera_stop.bin", .cameraStop)
+    }
+
+    func testVideoStop() throws {
+        try check("video_stop.bin", .videoStop)
     }
 
     func testUnknownTypeIsSkippable() throws {

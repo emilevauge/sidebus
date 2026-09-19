@@ -40,24 +40,36 @@ struct MenuContent: View {
             }
         }
 
-        let cameras = devices.sessions.filter { !$0.cameras.isEmpty }
-        if !cameras.isEmpty {
+        // Online and paired devices only. A camera needs a link, and a link needs pairing.
+        let filmable = devices.entries.filter { $0.isOnline && $0.isPaired }
+        if !filmable.isEmpty {
             Divider()
 
             Section("Cameras") {
-                ForEach(cameras, id: \.key) { session in
-                    ForEach(session.cameras, id: \.id) { camera in
+                ForEach(filmable) { entry in
+                    if entry.cameras.isEmpty {
+                        // Never connected long enough to hear CAMERA_LIST. Offer the link
+                        // anyway: the tablet will say what it has, and its back camera
+                        // starts on its own.
                         Button {
-                            if session.activeCamera == camera {
-                                session.stopCamera()
+                            devices.startCamera(entry.id, choice: .preferred)
+                            openWindow(id: "camera")
+                        } label: {
+                            Label("Camera (\(entry.name))", systemImage: "web.camera")
+                        }
+                    }
+                    ForEach(entry.cameras) { camera in
+                        Button {
+                            if entry.activeCamera == camera {
+                                devices.stopCamera(entry.id)
                             } else {
-                                session.startCamera(camera)
+                                devices.startCamera(entry.id, choice: .id(camera.id))
                                 openWindow(id: "camera")
                             }
                         } label: {
                             Label(
-                                cameraLabel(camera, on: session),
-                                systemImage: session.activeCamera == camera
+                                cameraLabel(camera, on: entry),
+                                systemImage: entry.activeCamera == camera
                                     ? "stop.circle.fill" : "web.camera"
                             )
                         }
@@ -83,10 +95,9 @@ struct MenuContent: View {
         .keyboardShortcut("q")
     }
 
-    private func cameraLabel(_ camera: CameraDescription, on session: DeviceSession) -> String {
-        var text = camera.label
-        if let name = session.deviceName { text += " (\(name))" }
-        if session.activeCamera == camera, let description = session.cameraDescription {
+    private func cameraLabel(_ camera: CameraDescription, on entry: DeviceEntry) -> String {
+        var text = "\(camera.label) (\(entry.name))"
+        if entry.activeCamera == camera, let description = entry.session?.cameraDescription {
             text += "\n\(description)"
         }
         return text

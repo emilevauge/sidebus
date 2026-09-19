@@ -20,18 +20,29 @@ public struct PairedDevice: Codable, Sendable, Hashable, Identifiable {
     /// when sharing starts, cleared when it stops.
     public var resumesSharing: Bool
 
+    /// Cameras the device offered the last time it was connected, `nil` while it has never
+    /// said.
+    ///
+    /// Kept so the menu can list them while the device sits idle: without this, asking for
+    /// a camera would mean connecting first just to learn the names. Optional rather than
+    /// an empty array, because a record written by an older version has no such field and
+    /// the synthesized decoder would refuse it.
+    public var cameras: [CameraDescription]?
+
     public init(
         deviceID: String,
         name: String,
         lastTransport: TransportKind? = nil,
         lastSeen: Date = Date(),
-        resumesSharing: Bool = false
+        resumesSharing: Bool = false,
+        cameras: [CameraDescription]? = nil
     ) {
         self.deviceID = deviceID
         self.name = name
         self.lastTransport = lastTransport
         self.lastSeen = lastSeen
         self.resumesSharing = resumesSharing
+        self.cameras = cameras
     }
 }
 
@@ -73,6 +84,15 @@ public struct DeviceDirectory: @unchecked Sendable {
         entry.name = name
         if let transport { entry.lastTransport = transport }
         entry.lastSeen = Date()
+        entries[deviceID] = entry
+        save(entries)
+    }
+
+    /// Records the cameras the device announced in CAMERA_LIST.
+    public func setCameras(_ cameras: [CameraDescription], for deviceID: String) {
+        var entries = load()
+        guard var entry = entries[deviceID], entry.cameras != cameras else { return }
+        entry.cameras = cameras
         entries[deviceID] = entry
         save(entries)
     }
