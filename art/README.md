@@ -57,8 +57,21 @@ les ramène à l'échelle dans la toile de 108 dp.
 - `.../mipmap-anydpi-v26/ic_launcher.xml` et `ic_launcher_round.xml` assemblent
   le tout. minSdk vaut 30, donc aucun PNG hérité.
 
-Zone de sécurité : le système rogne, seuls les 66 dp centraux d'une toile de
-108 dp sont toujours visibles, et certains masques sont ronds. Le point du
-dessin le plus éloigné du centre est à 413 dans le repère 1024, soit 35 dp à
-l'échelle retenue, donc à l'intérieur du masque circulaire de 36 dp de rayon.
-Si le dessin change, recalculer cette échelle avant de toucher au `<group>`.
+Zone de sécurité : sur une toile de 108 dp, seul le disque central de 66 dp de
+diamètre est garanti visible, soit **33 dp de rayon**. C'est cette valeur qui
+compte, pas les 36 dp du plus grand masque rond possible.
+
+Le dessin est mis à l'échelle pour que son point le plus éloigné du centre
+tombe à 30,5 dp. Cette marge n'est pas du luxe : certains lanceurs, MIUI en
+particulier, agrandissent les icônes tierces par dessus le masque. Une première
+version calée à 33,9 dp, donc pile sur la limite, se faisait trancher les roues
+sur un Xiaomi.
+
+Si le dessin change, recalculer l'échelle et la translation du `<group>` à
+partir du centre de la boîte englobante et du rayon maximal :
+
+```
+scale = 30.5 / rayon_max
+translateX = 54 - centre_x * scale
+translateY = 54 - centre_y * scale
+```

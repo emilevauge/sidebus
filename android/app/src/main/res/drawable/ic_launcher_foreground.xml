@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Premier plan de l'icône adaptative : le bus de art/bus-app.svg, sans la
-     plaque de fond. Converti a la main depuis le SVG, qui n'utilise que des
-     <path>. Le groupe ramene le repere 1024 du dessin dans la toile de 108 dp.
-     Zone de securite : seuls les 66 dp centraux sont toujours visibles et
-     certains masques sont ronds. Le point du dessin le plus eloigne du centre
-     est a 413 dans le repere 1024, soit 35 dp a cette echelle, donc a
-     l'interieur du masque circulaire de 36 dp de rayon. -->
+     plaque de fond. Converti à la main depuis le SVG, qui n'utilise que des
+     <path>. Le groupe ramène le repère 1024 du dessin dans la toile de 108 dp.
+
+     Zone de sécurité : sur une toile de 108 dp, seul le disque central de 66 dp
+     de diamètre est garanti visible, soit 33 dp de rayon. Le dessin est mis à
+     l'échelle pour que son point le plus éloigné du centre tombe à 30,5 dp, ce
+     qui laisse de la marge. Cette marge n'est pas du luxe : certains lanceurs,
+     MIUI en particulier, agrandissent les icônes tierces par dessus le masque,
+     et un dessin calé pile sur la limite se fait trancher.
+
+     Si le dessin change, recalculer l'échelle et la translation à partir du
+     centre de sa boîte englobante et de son rayon maximal. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -13,10 +19,10 @@
     android:viewportHeight="108">
 
     <group
-        android:scaleX="0.0847"
-        android:scaleY="0.0847"
-        android:translateX="10.634"
-        android:translateY="10.983">
+        android:scaleX="0.07605"
+        android:scaleY="0.07605"
+        android:translateX="15.062"
+        android:translateY="15.67">
 
         <path
             android:pathData="M290 738H350A26 26 0 0 1 376 764V812A26 26 0 0 1 350 838H290A26 26 0 0 1 264 812V764A26 26 0 0 1 290 738Z"

@@ -195,8 +195,18 @@ frame est jetée plutôt que mise en attente, à une exception près : une keyfr
 courte fenêtre d'attente, parce qu'elle est le seul point de reprise et que la suivante peut
 être à cinq secondes.
 
-L'overlay se rafraîchit à 4 Hz. Le mettre à jour à chaque frame coûterait plus cher que tout
-le reste du pipeline, comme mesuré côté Mac en phase 2.
+L'overlay des compteurs est **masqué par défaut** : ces chiffres servent à diagnostiquer,
+pas à rester en travers de l'écran partagé. Pour l'afficher :
+
+```sh
+adb shell settings put global sidebus_overlay 1   # 0 pour le cacher
+```
+
+Le réglage est relu à chaque retour au premier plan, sans relancer l'application. La vue
+continue de compter même invisible : c'est elle qui alimente les messages STATS.
+
+Elle se rafraîchit à 4 Hz. La mettre à jour à chaque frame coûterait plus cher que tout le
+reste du pipeline, comme mesuré côté Mac en phase 2.
 
 Deux pièges rencontrés, à ne pas réintroduire :
 

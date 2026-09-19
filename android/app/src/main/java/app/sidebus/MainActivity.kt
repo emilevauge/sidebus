@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.SurfaceHolder
@@ -115,6 +116,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         )
 
         overlay = DebugOverlay(this)
+        // Masqué par défaut : les chiffres sont là pour diagnostiquer, pas pour rester
+        // en travers de l'écran partagé. La vue continue de compter même invisible,
+        // c'est elle qui alimente les messages STATS.
+        overlay.visibility = if (overlayDemande()) View.VISIBLE else View.GONE
         root.addView(
             overlay,
             FrameLayout.LayoutParams(
@@ -143,8 +148,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        // Relu à chaque retour au premier plan : le réglage se change en adb sans
+        // relancer l'application.
+        overlay.visibility = if (overlayDemande()) View.VISIBLE else View.GONE
         advertiser.start(TransportServer.DEFAULT_PORT, DeviceDescriptor.deviceInfo(this))
     }
+
+    /**
+     * Affichage des compteurs, à la demande :
+     * `adb shell settings put global sidebus_overlay 1`, et 0 pour les cacher.
+     *
+     * Un réglage global plutôt qu'une propriété système : il se lit par une API publique,
+     * sans réflexion ni appel à getprop, et il se change à chaud.
+     */
+    private fun overlayDemande(): Boolean =
+        Settings.Global.getString(contentResolver, "sidebus_overlay") == "1"
 
     override fun onPause() {
         advertiser.stop()
