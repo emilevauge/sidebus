@@ -73,6 +73,8 @@ Les champs sont sérialisés dans l'ordre du tableau, sans alignement ni remplis
 | `0x09` | KEYFRAME_REQ   | Android vers Mac   | vide                                      |
 | `0x0A` | STATS          | Android vers Mac   | voir 4.10                                 |
 | `0x0B` | BYE            | bidirectionnel     | `u8` code de raison                       |
+| `0x0C` | PAIR_REQUEST   | Mac vers Android   | `u32` code d'appairage, voir 4.12         |
+| `0x0D` | PAIR_RESULT    | Android vers Mac   | `u8` 0 refusé, 1 accepté, voir 4.13       |
 
 Recevoir un message dans le mauvais sens (par exemple un HELLO côté Mac) est une erreur
 fatale : fermer le socket.
@@ -187,6 +189,34 @@ Les compteurs portent sur la fenêtre écoulée, pas depuis le début de la sess
 
 L'émetteur ferme le socket après l'envoi, sans attendre de réponse.
 
+### 4.12 PAIR_REQUEST (`0x0C`)
+
+| Champ | Type  | Description                                          |
+| ----- | ----- | ---------------------------------------------------- |
+| code  | `u32` | code à six chiffres dérivé de l'empreinte, voir 7    |
+
+Le Mac l'envoie après DEVICE_INFO, et seulement quand il ne connaissait pas l'empreinte du
+certificat présenté : c'est à dire quand il vient lui même de demander confirmation à son
+utilisateur. La tablette affiche alors le code et demande confirmation à son tour.
+
+Le Mac n'enregistre l'empreinte qu'après un PAIR_RESULT accepté. Un appairage refusé d'un
+côté ne laisse donc rien derrière lui de l'autre.
+
+La tablette compare le code reçu à celui qu'elle dérive de son propre certificat. Ils
+doivent être identiques : une différence signifie que le certificat vu par le Mac n'est pas
+celui de la tablette, et la tablette le signale dans sa demande de confirmation.
+
+### 4.13 PAIR_RESULT (`0x0D`)
+
+| Champ    | Type | Description            |
+| -------- | ---- | ---------------------- |
+| accepted | `u8` | 0 refusé, 1 accepté    |
+
+Toute valeur autre que 1 vaut refus.
+
+Le Mac attend ce message au plus 120 s après PAIR_REQUEST. Passé ce délai, il traite
+l'absence de réponse comme un refus et envoie BYE avec le code 0.
+
 ## 5. Énumérations
 
 ### 5.1 Codecs
@@ -232,11 +262,13 @@ En v1 la tablette n'émet que `0x00`.
 1. Le Mac établit le socket (Wi-Fi direct, ou `127.0.0.1:27183` via le tunnel adb), puis
    le handshake TLS.
 2. Mac envoie HELLO. Android répond DEVICE_INFO.
-3. Mac choisit la résolution et le codec, crée l'écran virtuel, envoie DISPLAY_CONFIG.
-4. Mac envoie VIDEO_CONFIG, puis un flux de VIDEO_FRAME démarrant par une keyframe.
-5. PING toutes les secondes dans les deux sens. Un pair sans PONG ni trafic pendant 5 s est
+3. Si l'appareil n'était pas appairé, Mac envoie PAIR_REQUEST et attend PAIR_RESULT. Un
+   refus met fin à la connexion par un BYE de code 0.
+4. Mac choisit la résolution et le codec, crée l'écran virtuel, envoie DISPLAY_CONFIG.
+5. Mac envoie VIDEO_CONFIG, puis un flux de VIDEO_FRAME démarrant par une keyframe.
+6. PING toutes les secondes dans les deux sens. Un pair sans PONG ni trafic pendant 5 s est
    considéré déconnecté : fermer le socket.
-6. STATS toutes les 2 s, depuis la tablette. Alimente l'adaptation de débit.
+7. STATS toutes les 2 s, depuis la tablette. Alimente l'adaptation de débit.
 
 INPUT_EVENT et KEYFRAME_REQ peuvent être émis à tout moment une fois DISPLAY_CONFIG passé.
 
@@ -260,11 +292,23 @@ empreinte = SHA-256(certificat au format DER)
 code      = (empreinte[0] << 24 | empreinte[1] << 16 | empreinte[2] << 8 | empreinte[3]) mod 1 000 000
 ```
 
-Le résultat est affiché sur six chiffres, zéros de tête compris. La tablette l'affiche, le
-Mac l'affiche, l'utilisateur confirme que les deux sont identiques. Aucun message de
-protocole n'est échangé pour cela : la comparaison est visuelle et hors bande.
+Le résultat est affiché sur six chiffres, zéros de tête compris. La comparaison des deux
+codes affichés reste visuelle et hors bande : c'est elle qui protège du pair qui se fait
+passer pour la tablette, et aucun échange de protocole ne peut la remplacer.
 
-Le Mac enregistre ensuite l'empreinte dans le trousseau, associée à l'`uuid` de l'appareil.
+L'appairage demande une confirmation **des deux côtés**, dans cet ordre :
+
+1. Le Mac affiche le code dès le handshake TLS, puisque c'est là qu'il découvre
+   l'empreinte. Un refus ferme le socket, rien n'est enregistré.
+2. Une fois DEVICE_INFO reçu, le Mac envoie PAIR_REQUEST. La tablette affiche le code à son
+   tour et répond PAIR_RESULT.
+
+PAIR_REQUEST ne transporte pas un secret : le code se déduit du certificat, que quiconque
+écoute le handshake voit passer. Il sert à déclencher la confirmation sur la tablette et à
+lui permettre de détecter que le Mac ne voit pas le même certificat qu'elle présente.
+
+Le Mac enregistre l'empreinte dans le trousseau, associée à l'`uuid` de l'appareil, une
+fois les deux confirmations obtenues.
 Si l'empreinte d'un appareil connu change, la connexion est refusée et l'utilisateur
 alerté, sans proposition de passer outre en un clic.
 

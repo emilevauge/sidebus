@@ -69,9 +69,16 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
         // donne une interface minuscule sur une dalle dense.
         let bounds = CGDisplayBounds(id)
         XCTAssertEqual(bounds.width, 1280, "mode HiDPI attendu, donc 1280 points")
-        let mode = CGDisplayCopyDisplayMode(id)
-        XCTAssertEqual(mode?.pixelWidth, 2560)
-        XCTAssertEqual(mode?.pixelHeight, 1600)
+        XCTAssertEqual(bounds.height, 800)
+
+        // `CGDisplayCopyDisplayMode` rend nil sur un écran virtuel dont le mode a été posé
+        // avec `.forSession` : le réglage n'est pas écrit dans la configuration permanente,
+        // et l'API ne lit que celle ci. Les bornes ci dessus disent déjà que le mode 2x est
+        // actif, donc on n'exige ce mode que s'il est exposé.
+        if let mode = CGDisplayCopyDisplayMode(id) {
+            XCTAssertEqual(mode.pixelWidth, 2560)
+            XCTAssertEqual(mode.pixelHeight, 1600)
+        }
 
         await provider.release()
         try await Task.sleep(for: .milliseconds(500))

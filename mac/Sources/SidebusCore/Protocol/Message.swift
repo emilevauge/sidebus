@@ -13,6 +13,8 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case keyframeRequest = 0x09
     case stats = 0x0A
     case bye = 0x0B
+    case pairRequest = 0x0C
+    case pairResult = 0x0D
 }
 
 public enum Codec: UInt8, Sendable {
@@ -65,6 +67,13 @@ public enum Message: Sendable, Equatable {
     case stats(received: UInt32, dropped: UInt32, windowMilliseconds: UInt16)
     case bye(reason: ByeReason)
 
+    /// Demande de confirmation d'appairage, envoyée par le Mac après DEVICE_INFO quand il
+    /// ne connaissait pas l'empreinte du certificat. Voir `protocol/PROTOCOL.md` 4.12.
+    case pairRequest(code: UInt32)
+
+    /// Réponse de la tablette à PAIR_REQUEST.
+    case pairResult(accepted: Bool)
+
     /// Message d'un type que cette version ne connaît pas. Conservé pour pouvoir
     /// l'ignorer proprement plutôt que de fermer la connexion.
     case unknown(type: UInt8, flags: UInt16, payload: Data)
@@ -82,6 +91,8 @@ public enum Message: Sendable, Equatable {
         case .keyframeRequest: return MessageType.keyframeRequest.rawValue
         case .stats: return MessageType.stats.rawValue
         case .bye: return MessageType.bye.rawValue
+        case .pairRequest: return MessageType.pairRequest.rawValue
+        case .pairResult: return MessageType.pairResult.rawValue
         case let .unknown(type, _, _): return type
         }
     }

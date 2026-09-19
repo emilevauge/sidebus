@@ -1,6 +1,7 @@
 package app.sidebus
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -54,6 +55,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private val decoderLock = Any()
     private var statsJob: Job? = null
     private var lastKeyframeRequest = 0L
+    /** Nom du Mac annoncé par HELLO, affiché dans la demande d'appairage. */
+    @Volatile private var peerName = "ce Mac"
+    private var pairingDialog: AlertDialog? = null
     private lateinit var touch: TouchSender
     private lateinit var advertiser: ServiceAdvertiser
 
@@ -208,7 +212,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         // Surtout pas de passage en INVISIBLE : cela détruit la surface,
                         // qui n'est alors jamais recréée, et le décodeur ne peut plus
                         // redémarrer à la connexion suivante.
-                        runOnUiThread { curtain.visibility = View.VISIBLE }
+                        runOnUiThread {
+                            curtain.visibility = View.VISIBLE
+                            pairingDialog?.dismiss()
+                            pairingDialog = null
+                        }
                         show(
                             "déconnecté (${event.reason})" +
                                 "\nen écoute sur ${localAddress()}" +
@@ -233,6 +241,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         when (message) {
             is Message.Hello -> {
                 Log.i(TAG, "HELLO de ${message.name}, protocole ${message.version}")
+                peerName = message.name
                 show("connecté à ${message.name}, en attente du flux")
                 withContext(Dispatchers.IO) { connection.send(info) }
             }
@@ -274,12 +283,58 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 connection.send(Message.Pong(message.timestamp))
             }
 
+            is Message.PairRequest -> askPairing(message.code, connection)
+
             is Message.Bye -> Log.i(TAG, "BYE, raison ${message.reason}")
 
             is Message.Unknown ->
                 Log.i(TAG, "message de type inconnu 0x%02X ignoré".format(message.type))
 
             else -> Log.d(TAG, "reçu ${message::class.simpleName}")
+        }
+    }
+
+    /**
+     * Demande de confirmation d'appairage reçue du Mac.
+     *
+     * La boîte de dialogue ne bloque **pas** la boucle de lecture : le Mac attend un PONG
+     * chaque seconde et coupe après cinq secondes de silence, donc suspendre la lecture le
+     * temps que l'utilisateur réponde tuerait la connexion avant sa réponse. On affiche, on
+     * rend la main, et la réponse part quand elle vient.
+     */
+    private fun askPairing(code: Int, connection: Connection) {
+        val received = "%06d".format(code)
+        val local = DeviceIdentity.pairingCode()
+        Log.i(TAG, "PAIR_REQUEST, code reçu $received, code local $local")
+
+        runOnUiThread {
+            pairingDialog?.dismiss()
+
+            // Les deux codes dérivent du même certificat. S'ils diffèrent, le Mac ne parle
+            // pas à cette tablette : on le dit au lieu de laisser confirmer à l'aveugle.
+            val message = if (received == local) {
+                "Code : $local\n\nVérifiez que le Mac affiche le même code."
+            } else {
+                "Attention : le Mac affiche $received, cette tablette $local.\n\n" +
+                    "Les deux codes devraient être identiques. Refusez, sauf si vous savez " +
+                    "exactement pourquoi ils diffèrent."
+            }
+
+            pairingDialog = AlertDialog.Builder(this)
+                .setTitle("Appairer avec $peerName ?")
+                .setMessage(message)
+                .setCancelable(false)
+                .setPositiveButton("Appairer") { _, _ -> answerPairing(true, connection) }
+                .setNegativeButton("Refuser") { _, _ -> answerPairing(false, connection) }
+                .show()
+        }
+    }
+
+    private fun answerPairing(accepted: Boolean, connection: Connection) {
+        pairingDialog = null
+        Log.i(TAG, "appairage ${if (accepted) "accepté" else "refusé"}")
+        scope.launch(Dispatchers.IO) {
+            runCatching { connection.send(Message.PairResult(accepted)) }
         }
     }
 

@@ -21,6 +21,8 @@ des deux côtés doivent être mis à jour dans la même commit.
 | `keyframe_req.bin` | KEYFRAME_REQ | payload vide |
 | `stats.bin` | STATS | 120 reçues, 3 droppées, fenêtre 2000 ms |
 | `bye.bin` | BYE | raison 1, bascule de transport |
+| `pair_request.bin` | PAIR_REQUEST | code 428913 |
+| `pair_result.bin` | PAIR_RESULT | appairage accepté |
 | `unknown_type.bin` | 0x7F | type inconnu, payload `abc`, doit être sauté sans erreur |
 | `stream_two_messages.bin` | PING + KEYFRAME_REQ | deux messages collés, le décodeur doit sortir les deux |
 

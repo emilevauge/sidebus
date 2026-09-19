@@ -83,6 +83,12 @@ VECTORS["stats.bin"] = message(0x0A, struct.pack("<IIH", 120, 3, 2000))
 # 0x0B BYE : bascule de transport.
 VECTORS["bye.bin"] = message(0x0B, struct.pack("<B", 0x01))
 
+# 0x0C PAIR_REQUEST : code à six chiffres.
+VECTORS["pair_request.bin"] = message(0x0C, struct.pack("<I", 428_913))
+
+# 0x0D PAIR_RESULT : appairage accepté.
+VECTORS["pair_result.bin"] = message(0x0D, struct.pack("<B", 0x01))
+
 # Type inconnu : doit être sauté proprement, sans fermer la connexion.
 VECTORS["unknown_type.bin"] = message(0x7F, b"abc")
 

@@ -113,6 +113,25 @@ final class MessageCodecTests: XCTestCase {
         try check("bye.bin", .bye(reason: .transportSwitch))
     }
 
+    func testPairRequest() throws {
+        try check("pair_request.bin", .pairRequest(code: 428_913))
+    }
+
+    func testPairResult() throws {
+        try check("pair_result.bin", .pairResult(accepted: true))
+    }
+
+    /// Le protocole réserve 1 pour l'acceptation : tout le reste est un refus, y compris
+    /// un code que cette version ne connaît pas encore.
+    func testPairResultRefuseToutSauf1() throws {
+        let refus = try MessageCodec.decodePayload(
+            type: 0x0D,
+            flags: 0,
+            payload: Data([0x07])
+        )
+        XCTAssertEqual(refus, .pairResult(accepted: false))
+    }
+
     func testTypeInconnuIgnorable() throws {
         try check(
             "unknown_type.bin",

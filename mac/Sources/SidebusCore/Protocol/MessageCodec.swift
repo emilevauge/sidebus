@@ -91,6 +91,12 @@ public enum MessageCodec {
         case let .bye(reason):
             payload.u8(reason.rawValue)
 
+        case let .pairRequest(code):
+            payload.u32(code)
+
+        case let .pairResult(accepted):
+            payload.u8(accepted ? 1 : 0)
+
         case let .unknown(_, unknownFlags, data):
             flags = unknownFlags
             payload.bytes(data)
@@ -206,6 +212,14 @@ public enum MessageCodec {
                     throw ProtocolError.unknownEnumValue("raison de BYE", rawReason)
                 }
                 return .bye(reason: reason)
+
+            case .pairRequest:
+                return .pairRequest(code: try reader.u32())
+
+            case .pairResult:
+                // Toute valeur autre que 1 vaut refus : une version future qui ajouterait
+                // un code de refus détaillé ne doit pas passer pour une acceptation.
+                return .pairResult(accepted: try reader.u8() == 1)
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)

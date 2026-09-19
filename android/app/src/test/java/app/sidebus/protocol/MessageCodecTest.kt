@@ -128,6 +128,26 @@ class MessageCodecTest {
     }
 
     @Test
+    fun pairRequest() {
+        check("pair_request.bin", Message.PairRequest(428_913))
+    }
+
+    @Test
+    fun pairResult() {
+        check("pair_result.bin", Message.PairResult(true))
+    }
+
+    /**
+     * Le protocole réserve 1 pour l'acceptation : tout le reste est un refus, y compris un
+     * code que cette version ne connaît pas encore.
+     */
+    @Test
+    fun pairResultRefuseToutSauf1() {
+        val refus = MessageCodec.decodePayload(0x0D, 0, byteArrayOf(0x07))
+        assertEquals(Message.PairResult(false), refus)
+    }
+
+    @Test
     fun typeInconnuIgnorable() {
         check("unknown_type.bin", Message.Unknown(0x7F, 0, "abc".toByteArray()))
     }

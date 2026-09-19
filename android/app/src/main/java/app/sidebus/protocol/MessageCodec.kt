@@ -72,6 +72,8 @@ object MessageCodec {
             }
 
             is Message.Bye -> payload.u8(message.reason)
+            is Message.PairRequest -> payload.u32(message.code)
+            is Message.PairResult -> payload.u8(if (message.accepted) 1 else 0)
 
             is Message.Unknown -> {
                 flags = message.flags
@@ -142,6 +144,10 @@ object MessageCodec {
             MessageType.KEYFRAME_REQ -> Message.KeyframeRequest
             MessageType.STATS -> Message.Stats(reader.u32(), reader.u32(), reader.u16())
             MessageType.BYE -> Message.Bye(reader.u8())
+            MessageType.PAIR_REQUEST -> Message.PairRequest(reader.u32())
+            // Toute valeur autre que 1 vaut refus : une version future qui ajouterait un
+            // code de refus détaillé ne doit pas passer pour une acceptation.
+            MessageType.PAIR_RESULT -> Message.PairResult(reader.u8() == 1)
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

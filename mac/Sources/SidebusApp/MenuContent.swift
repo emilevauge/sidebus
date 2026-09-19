@@ -1,88 +1,53 @@
 import AppKit
-import CoreGraphics
 import SwiftUI
 
 struct MenuContent: View {
-    @Bindable var model: DisplayMenuModel
-    let connection: ConnectionModel
+    let devices: DeviceManager
     let permissions: PermissionsModel
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if let lastError = model.lastError {
-            Text(lastError)
-        }
+        Text(devices.summary)
 
-        if model.displays.isEmpty {
-            Text("Aucun écran détecté")
-        } else {
-            Picker("Écran capturé", selection: $model.selectedID) {
-                Text("Aucun").tag(CGDirectDisplayID?.none)
-                ForEach(model.displays) { display in
-                    Text(display.menuLabel).tag(CGDirectDisplayID?.some(display.id))
-                }
-            }
-            .pickerStyle(.inline)
+        if let refusal = devices.lastRefusal {
+            Text(refusal)
         }
 
         Divider()
 
-        Text(connection.menuLabel)
+        Section("Appareils") {
+            if devices.entries.isEmpty {
+                Text("Aucun appareil")
+            }
 
-        if let refusal = connection.pairing.lastRefusal {
-            Text(refusal)
+            ForEach(devices.entries) { entry in
+                Button {
+                    devices.perform(entry)
+                } label: {
+                    Label(label(for: entry), systemImage: entry.symbol)
+                }
+                .disabled(entry.action == .none)
+            }
         }
 
-        Picker("Résolution", selection: Binding(
-            get: { connection.resolutionScale },
-            set: { connection.setResolutionScale($0) }
-        )) {
-            Text("Native").tag(1.0)
-            Text("75 %").tag(0.75)
-            Text("50 %").tag(0.5)
-        }
-        .pickerStyle(.inline)
-
-        Button(connection.sharingLabel) {
-            connection.toggleSharing()
-        }
-
-        Button("Oublier les appareils appairés") {
-            connection.forgetPairedDevices()
-        }
+        Divider()
 
         Button("Connexion par adresse IP…") {
             askForAddress()
         }
 
-        if !connection.manualPeers.isEmpty {
+        if !devices.manualPeers.isEmpty {
             Button("Oublier les adresses saisies") {
-                connection.removeManualPeers()
+                devices.removeManualPeers()
             }
         }
 
-        Divider()
-
-        Button(model.captureLabel) {
-            model.toggleCapture()
-        }
-        .disabled(model.selectedID == nil && !model.isCapturing)
-
-        if model.isCapturing {
-            Text("Sortie : \(DisplayMenuModel.outputPath)")
-        }
-
-        Divider()
-
-        Button(permissions.allGranted ? "Autorisations…" : "Autorisations manquantes…") {
-            permissions.refresh()
+        Button("Réglages…") {
             NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "permissions")
+            permissions.refresh()
+            openWindow(id: "settings")
         }
-
-        Button("Actualiser la liste") {
-            model.refresh()
-        }
+        .keyboardShortcut(",")
 
         Divider()
 
@@ -90,6 +55,15 @@ struct MenuContent: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    /// Nom, transport, puis l'état sur une deuxième ligne quand il y a quelque chose à
+    /// dire. Un `Text` multiligne passe très bien dans un `NSMenu`.
+    private func label(for entry: DeviceEntry) -> String {
+        var text = entry.name
+        if entry.isOnline { text += " (\(entry.transportLabel))" }
+        if let detail = entry.detail, !detail.isEmpty { text += "\n\(detail)" }
+        return text
     }
 
     /// Saisie manuelle de l'adresse. Indispensable sur les réseaux qui bloquent le
@@ -110,7 +84,7 @@ struct MenuContent: View {
         alert.window.initialFirstResponder = field
 
         if alert.runModal() == .alertFirstButtonReturn {
-            connection.addManualPeer(address: field.stringValue)
+            devices.addManualPeer(address: field.stringValue)
         }
     }
 }

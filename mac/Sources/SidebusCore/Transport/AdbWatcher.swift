@@ -65,6 +65,10 @@ public actor AdbWatcher: PeerDiscovery {
     }
 
     public let port: UInt16
+
+    /// Nom commercial de chaque appareil, appris par `getprop`. Sans lui la liste n'affiche
+    /// que des numéros de série adb, illisibles.
+    private var models: [String: String] = [:]
     private var connection: NWConnection?
     private var continuation: AsyncStream<[Peer]>.Continuation?
     private let queue = DispatchQueue(label: "app.sidebus.adb")
@@ -148,7 +152,10 @@ public actor AdbWatcher: PeerDiscovery {
                 }
                 let body = length > 0 ? try await receive(exactly: length, on: connection) : Data()
                 let devices = Self.parseDevices(String(decoding: body, as: UTF8.self))
-                continuation?.yield(devices.filter(\.isUsable).map(peer(for:)))
+                let usable = devices.filter(\.isUsable)
+                continuation?.yield(usable.map(peer(for:)))
+                // En tâche de fond : la liste sort tout de suite, les noms arrivent après.
+                Task { await self.learnModels(of: usable) }
             }
         } catch {
             // Perte du serveur adb : le flux se termine, l'appelant décidera de relancer.
@@ -160,12 +167,53 @@ public actor AdbWatcher: PeerDiscovery {
     private func peer(for device: Device) -> Peer {
         Peer(
             id: device.serial,
-            // Le nom réel de la tablette arrive dans DEVICE_INFO, après connexion.
-            name: device.serial,
+            // Le modèle si on l'a déjà demandé, sinon le numéro de série en attendant. Le
+            // nom exact, celui que l'utilisateur a donné à sa tablette, arrive plus tard
+            // dans DEVICE_INFO.
+            name: models[device.serial] ?? device.serial,
             kind: .usb,
             host: "127.0.0.1",
             port: port
         )
+    }
+
+    /// Demande le modèle des appareils qu'on ne connaît pas encore, puis republie la liste.
+    ///
+    /// Un `getprop` par appareil, une seule fois : c'est un aller retour de quelques
+    /// millisecondes, mais le faire à chaque annonce de `track-devices` serait du gaspillage.
+    private func learnModels(of devices: [Device]) async {
+        guard let adb = Self.locateAdb() else { return }
+        var learned = false
+
+        for device in devices where models[device.serial] == nil {
+            // Le nom commercial d'abord : `ro.product.model` donne le code usine, du genre
+            // 24129PN74G, là où marketname donne « Xiaomi 15 ». Ces clés varient d'un
+            // constructeur à l'autre, d'où la liste. Un seul appel shell pour les essayer
+            // toutes, et la première ligne non vide gagne.
+            guard let output = try? await run(
+                adb,
+                [
+                    "-s", device.serial, "shell",
+                    """
+                    getprop ro.product.marketname; \
+                    getprop ro.vendor.product.marketname; \
+                    getprop ro.config.marketing_name; \
+                    getprop ro.product.model
+                    """,
+                ]
+            ) else { continue }
+
+            guard let name = output
+                .split(separator: "\n")
+                .map({ $0.trimmingCharacters(in: .whitespaces) })
+                .first(where: { !$0.isEmpty })
+            else { continue }
+            models[device.serial] = name
+            learned = true
+        }
+
+        guard learned else { return }
+        continuation?.yield(devices.filter(\.isUsable).map(peer(for:)))
     }
 
     /// Analyse la charge utile de `track-devices` : une ligne par appareil,

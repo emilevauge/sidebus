@@ -15,6 +15,8 @@ object MessageType {
     const val KEYFRAME_REQ = 0x09
     const val STATS = 0x0A
     const val BYE = 0x0B
+    const val PAIR_REQUEST = 0x0C
+    const val PAIR_RESULT = 0x0D
 }
 
 object Codec {
@@ -127,6 +129,19 @@ sealed class Message {
 
     data class Bye(val reason: Int) : Message() {
         override val type = MessageType.BYE
+    }
+
+    /**
+     * Demande de confirmation d'appairage, envoyée par le Mac après DEVICE_INFO quand il ne
+     * connaissait pas l'empreinte du certificat. Voir `protocol/PROTOCOL.md` 4.12.
+     */
+    data class PairRequest(val code: Int) : Message() {
+        override val type = MessageType.PAIR_REQUEST
+    }
+
+    /** Réponse de la tablette à PAIR_REQUEST. */
+    data class PairResult(val accepted: Boolean) : Message() {
+        override val type = MessageType.PAIR_RESULT
     }
 
     /**
