@@ -127,6 +127,18 @@ final class PairingValidator: CertificateValidator {
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Pair")
         alert.addButton(withTitle: "Refuse")
+
+        // Same deadline as the one bounding the connection's pause. Without it the alert
+        // outlives the connection it belongs to, and clicking "Pair" an hour later answers
+        // a socket that closed long ago.
+        let deadline = Task { @MainActor in
+            try? await Task.sleep(for: Sidebus.humanAnswerDeadline)
+            guard !Task.isCancelled else { return }
+            self.log.info("pairing prompt left unanswered, closing it")
+            NSApp.abortModal()
+        }
+        defer { deadline.cancel() }
+
         return alert.runModal() == .alertFirstButtonReturn
     }
 

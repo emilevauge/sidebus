@@ -31,7 +31,7 @@ final class TimeoutTests: XCTestCase {
         let client = TransportClient(host: "10.255.255.1", port: 27183, kind: .wifi)
         do {
             try await withTimeout(.seconds(2)) { try await client.connect() }
-            XCTFail("la connexion ne devait pas aboutir")
+            XCTFail("the connection should not have succeeded")
         } catch {
             await client.close()
         }
@@ -42,42 +42,69 @@ final class TimeoutTests: XCTestCase {
     /// pause, pairing fails as soon as comparing the two codes takes more than eight
     /// seconds.
     func testDeadlinePausesDuringAQuestion() async throws {
-        let enPause = Flag()
-        await enPause.raise()
+        let paused = Flag()
+        await paused.raise()
 
-        let valeur = try await withTimeout(
+        let value = try await withTimeout(
             .milliseconds(300),
-            suspendedWhile: { await enPause.isRaised() }
+            suspendedWhile: { await paused.isRaised() }
         ) {
             // Twice the deadline, but all of it happens during the pause.
             try await Task.sleep(for: .milliseconds(600))
-            await enPause.lower()
+            await paused.lower()
             return 42
         }
 
-        XCTAssertEqual(valeur, 42)
+        XCTAssertEqual(value, 42)
     }
 
     /// The pause must not disarm the deadline forever.
     func testDeadlineResumesAfterTheQuestion() async {
-        let enPause = Flag()
-        await enPause.raise()
+        let paused = Flag()
+        await paused.raise()
         Task {
             try? await Task.sleep(for: .milliseconds(200))
-            await enPause.lower()
+            await paused.lower()
         }
 
         do {
             _ = try await withTimeout(
                 .milliseconds(300),
-                suspendedWhile: { await enPause.isRaised() }
+                suspendedWhile: { await paused.isRaised() }
             ) {
                 try await Task.sleep(for: .seconds(10))
                 return 0
             }
             XCTFail("the deadline should have fired")
         } catch TransportError.timedOut {
-            // attendu
+            // expected
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    /// A question nobody ever answers must not hold the connection open forever.
+    func testThePauseIsItselfBounded() async {
+        let paused = Flag()
+        await paused.raise()
+        let started = Date()
+
+        do {
+            _ = try await withTimeout(
+                .seconds(30),
+                suspendedWhile: { await paused.isRaised() },
+                maximumPause: .milliseconds(400)
+            ) {
+                try await Task.sleep(for: .seconds(30))
+                return 0
+            }
+            XCTFail("the bounded pause should have fired")
+        } catch TransportError.timedOut {
+            XCTAssertLessThan(
+                Date().timeIntervalSince(started),
+                3,
+                "the pause was not bounded"
+            )
         } catch {
             XCTFail("unexpected error: \(error)")
         }
