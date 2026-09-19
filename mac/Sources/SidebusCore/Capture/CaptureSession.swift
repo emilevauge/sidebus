@@ -74,6 +74,11 @@ public actor CaptureSession {
                     break
                 }
             }
+
+            // La capture s'est arrêtée, par exemple parce que macOS a coupé le partage.
+            // Terminer l'encodeur propage la nouvelle au consommateur, qui attendrait
+            // sinon des frames qui ne viendront plus.
+            await encoder.finish()
         }
 
         return encoder.frames

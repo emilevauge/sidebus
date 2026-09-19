@@ -681,14 +681,18 @@ final class ConnectionModel {
                     }
                 }
                 // La capture s'est arrêtée alors que le lien tient : c'est macOS qui l'a
-                // coupée, par exemple depuis son propre indicateur d'enregistrement.
+                // coupée, presque toujours parce que l'utilisateur a cliqué « Arrêter le
+                // partage » dans le Centre de contrôle. C'est une intention explicite :
+                // on arrête pour de bon, sinon la reconnexion relance la capture dans la
+                // seconde et le geste n'a servi à rien.
                 //
                 // Sauf si la tâche a été annulée : dans ce cas une autre diffusion a déjà
                 // pris la place, et démonter ici tuerait la session suivante.
                 log.info("flux d'encodage terminé après \(sent) frames")
                 if !Task.isCancelled, self.isConnected, self.isSharingEnabled {
-                    self.status = "capture arrêtée par le système"
-                    await self.stopStreaming()
+                    log.info("capture coupée par macOS, arrêt du partage")
+                    self.setSharing(false)
+                    self.status = "partage arrêté depuis macOS"
                 }
             }
         } catch {

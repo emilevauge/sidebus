@@ -95,3 +95,25 @@ final class VideoEncoderTests: XCTestCase {
         return count
     }
 }
+
+final class EncoderTerminationTests: XCTestCase {
+
+    /// Quand la capture s'arrête, l'encodeur doit fermer son flux : c'est ce qui prévient
+    /// le consommateur. Sans ça, il attend des frames qui ne viendront jamais et la
+    /// tablette reste figée sur sa dernière image.
+    func testLeFluxSeTermineQuandLEncodeurEstArrete() async throws {
+        let encoder = try VideoEncoder(
+            configuration: VideoEncoderConfiguration(width: 320, height: 240, fps: 30)
+        )
+
+        let terminated = Task { () -> Bool in
+            for await _ in encoder.frames {}
+            return true
+        }
+
+        await encoder.finish()
+
+        let completed = try await withTimeout(.seconds(3)) { await terminated.value }
+        XCTAssertTrue(completed, "le flux encodé ne s'est pas terminé")
+    }
+}

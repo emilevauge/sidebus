@@ -2,6 +2,9 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
+import os
+
+let captureLog = Logger(subsystem: "app.sidebus", category: "capture")
 
 /// Capture un écran avec ScreenCaptureKit et livre les frames en flux asynchrone.
 public actor ScreenCapturer {
@@ -153,6 +156,7 @@ private final class StreamDelegate: NSObject, SCStreamDelegate, @unchecked Senda
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        captureLog.info("flux arrêté : \(String(describing: error), privacy: .public)")
         continuation.finish()
     }
 }
