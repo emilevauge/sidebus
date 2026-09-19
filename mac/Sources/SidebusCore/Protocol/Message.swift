@@ -15,6 +15,31 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case bye = 0x0B
     case pairRequest = 0x0C
     case pairResult = 0x0D
+    case cameraList = 0x0E
+    case cameraStart = 0x0F
+    case cameraConfig = 0x10
+    case cameraFrame = 0x11
+    case cameraStop = 0x12
+}
+
+/// Which way a camera points. See `protocol/PROTOCOL.md`, section 5.5.
+public enum CameraFacing: UInt8, Sendable {
+    case back = 0x00
+    case front = 0x01
+    case external = 0x02
+}
+
+/// One camera the tablet is willing to share.
+public struct CameraDescription: Sendable, Hashable {
+    public let id: UInt8
+    public let facing: CameraFacing
+    public let label: String
+
+    public init(id: UInt8, facing: CameraFacing, label: String) {
+        self.id = id
+        self.facing = facing
+        self.label = label
+    }
 }
 
 public enum Codec: UInt8, Sendable {
@@ -74,6 +99,20 @@ public enum Message: Sendable, Equatable {
     /// The tablet's answer to PAIR_REQUEST.
     case pairResult(accepted: Bool)
 
+    /// Cameras the tablet can share, sent unsolicited after DEVICE_INFO.
+    case cameraList([CameraDescription])
+
+    /// Asks the tablet to open a camera and start encoding it.
+    case cameraStart(id: UInt8, width: UInt16, height: UInt16, fps: UInt8, codec: Codec)
+
+    /// What the tablet actually opened, with the codec parameter sets.
+    case cameraConfig(width: UInt16, height: UInt16, codec: Codec, parameterSets: Data)
+
+    /// One encoded camera frame, same shape as VIDEO_FRAME in the other direction.
+    case cameraFrame(timestamp: UInt64, isKeyframe: Bool, data: Data)
+
+    case cameraStop
+
     /// A message of a type this version does not know. Kept so that it can be skipped
     /// cleanly rather than closing the connection.
     case unknown(type: UInt8, flags: UInt16, payload: Data)
@@ -93,6 +132,11 @@ public enum Message: Sendable, Equatable {
         case .bye: return MessageType.bye.rawValue
         case .pairRequest: return MessageType.pairRequest.rawValue
         case .pairResult: return MessageType.pairResult.rawValue
+        case .cameraList: return MessageType.cameraList.rawValue
+        case .cameraStart: return MessageType.cameraStart.rawValue
+        case .cameraConfig: return MessageType.cameraConfig.rawValue
+        case .cameraFrame: return MessageType.cameraFrame.rawValue
+        case .cameraStop: return MessageType.cameraStop.rawValue
         case let .unknown(type, _, _): return type
         }
     }

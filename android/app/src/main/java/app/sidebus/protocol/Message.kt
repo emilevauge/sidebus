@@ -17,7 +17,22 @@ object MessageType {
     const val BYE = 0x0B
     const val PAIR_REQUEST = 0x0C
     const val PAIR_RESULT = 0x0D
+    const val CAMERA_LIST = 0x0E
+    const val CAMERA_START = 0x0F
+    const val CAMERA_CONFIG = 0x10
+    const val CAMERA_FRAME = 0x11
+    const val CAMERA_STOP = 0x12
 }
+
+/** Which way a camera points. See `protocol/PROTOCOL.md`, section 5.5. */
+object CameraFacing {
+    const val BACK = 0x00
+    const val FRONT = 0x01
+    const val EXTERNAL = 0x02
+}
+
+/** One camera the tablet is willing to share. */
+data class CameraDescription(val id: Int, val facing: Int, val label: String)
 
 object Codec {
     const val H264 = 0x01
@@ -142,6 +157,59 @@ sealed class Message {
     /** The tablet's answer to PAIR_REQUEST. */
     data class PairResult(val accepted: Boolean) : Message() {
         override val type = MessageType.PAIR_RESULT
+    }
+
+    /** Cameras the tablet can share, sent unsolicited after DEVICE_INFO. */
+    data class CameraList(val cameras: List<CameraDescription>) : Message() {
+        override val type = MessageType.CAMERA_LIST
+    }
+
+    /** Asks the tablet to open a camera and start encoding it. */
+    data class CameraStart(
+        val id: Int,
+        val width: Int,
+        val height: Int,
+        val fps: Int,
+        val codec: Int,
+    ) : Message() {
+        override val type = MessageType.CAMERA_START
+    }
+
+    /** What the tablet actually opened, with the codec parameter sets. */
+    data class CameraConfig(
+        val width: Int,
+        val height: Int,
+        val codec: Int,
+        val parameterSets: ByteArray,
+    ) : Message() {
+        override val type = MessageType.CAMERA_CONFIG
+
+        override fun equals(other: Any?) =
+            other is CameraConfig && width == other.width && height == other.height &&
+                codec == other.codec && parameterSets.contentEquals(other.parameterSets)
+
+        override fun hashCode() =
+            ((width * 31 + height) * 31 + codec) * 31 + parameterSets.contentHashCode()
+    }
+
+    /** One encoded camera frame, same shape as VIDEO_FRAME in the other direction. */
+    data class CameraFrame(
+        val timestamp: Long,
+        val isKeyframe: Boolean,
+        val data: ByteArray,
+    ) : Message() {
+        override val type = MessageType.CAMERA_FRAME
+
+        override fun equals(other: Any?) =
+            other is CameraFrame && timestamp == other.timestamp &&
+                isKeyframe == other.isKeyframe && data.contentEquals(other.data)
+
+        override fun hashCode() =
+            (timestamp.hashCode() * 31 + isKeyframe.hashCode()) * 31 + data.contentHashCode()
+    }
+
+    object CameraStop : Message() {
+        override val type = MessageType.CAMERA_STOP
     }
 
     /**

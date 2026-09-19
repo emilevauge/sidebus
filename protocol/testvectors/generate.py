@@ -89,6 +89,37 @@ VECTORS["pair_request.bin"] = message(0x0C, struct.pack("<I", 428_913))
 # 0x0D PAIR_RESULT: pairing accepted.
 VECTORS["pair_result.bin"] = message(0x0D, struct.pack("<B", 0x01))
 
+# 0x0E CAMERA_LIST: two cameras, back and front.
+VECTORS["camera_list.bin"] = message(
+    0x0E,
+    struct.pack("<B", 2)
+    + struct.pack("<BB", 0, 0x00) + string("Back camera")
+    + struct.pack("<BB", 1, 0x01) + string("Front camera"),
+)
+
+# 0x0F CAMERA_START: camera 1, 1280x720 at 30 fps in H.264.
+VECTORS["camera_start.bin"] = message(
+    0x0F, struct.pack("<BHHBB", 1, 1280, 720, 30, 0x01)
+)
+
+# 0x10 CAMERA_CONFIG: what the tablet actually opened, plus the parameter sets.
+VECTORS["camera_config.bin"] = message(
+    0x10,
+    struct.pack("<HHB", 1280, 720, 0x01)
+    + bytes([0, 0, 0, 1, 0x67, 0x42, 0x00])
+    + bytes([0, 0, 0, 1, 0x68, 0xCE]),
+)
+
+# 0x11 CAMERA_FRAME: keyframe, flags bit 0 set.
+VECTORS["camera_frame.bin"] = message(
+    0x11,
+    struct.pack("<Q", 987_654_321) + bytes([0, 0, 0, 1, 0x65, 0x11, 0x22]),
+    flags=0x0001,
+)
+
+# 0x12 CAMERA_STOP: empty payload.
+VECTORS["camera_stop.bin"] = message(0x12, b"")
+
 # Unknown type: must be skipped cleanly, without closing the connection.
 VECTORS["unknown_type.bin"] = message(0x7F, b"abc")
 

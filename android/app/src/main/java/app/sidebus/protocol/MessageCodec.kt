@@ -75,6 +75,38 @@ object MessageCodec {
             is Message.PairRequest -> payload.u32(message.code)
             is Message.PairResult -> payload.u8(if (message.accepted) 1 else 0)
 
+            is Message.CameraList -> {
+                payload.u8(message.cameras.size.coerceAtMost(255))
+                for (camera in message.cameras.take(255)) {
+                    payload.u8(camera.id)
+                    payload.u8(camera.facing)
+                    payload.string(camera.label)
+                }
+            }
+
+            is Message.CameraStart -> {
+                payload.u8(message.id)
+                payload.u16(message.width)
+                payload.u16(message.height)
+                payload.u8(message.fps)
+                payload.u8(message.codec)
+            }
+
+            is Message.CameraConfig -> {
+                payload.u16(message.width)
+                payload.u16(message.height)
+                payload.u8(message.codec)
+                payload.write(message.parameterSets)
+            }
+
+            is Message.CameraFrame -> {
+                if (message.isKeyframe) flags = flags or 0x0001
+                payload.u64(message.timestamp)
+                payload.write(message.data)
+            }
+
+            is Message.CameraStop -> Unit
+
             is Message.Unknown -> {
                 flags = message.flags
                 payload.write(message.payload)
@@ -148,6 +180,38 @@ object MessageCodec {
             // Any value other than 1 counts as a refusal: a future version adding a detailed
             // refusal code must not read as an acceptance.
             MessageType.PAIR_RESULT -> Message.PairResult(reader.u8() == 1)
+
+            MessageType.CAMERA_LIST -> {
+                val count = reader.u8()
+                val cameras = ArrayList<CameraDescription>(count)
+                repeat(count) {
+                    cameras.add(CameraDescription(reader.u8(), reader.u8(), reader.string()))
+                }
+                Message.CameraList(cameras)
+            }
+
+            MessageType.CAMERA_START -> Message.CameraStart(
+                id = reader.u8(),
+                width = reader.u16(),
+                height = reader.u16(),
+                fps = reader.u8(),
+                codec = reader.u8(),
+            )
+
+            MessageType.CAMERA_CONFIG -> Message.CameraConfig(
+                width = reader.u16(),
+                height = reader.u16(),
+                codec = reader.u8(),
+                parameterSets = reader.rest(),
+            )
+
+            MessageType.CAMERA_FRAME -> Message.CameraFrame(
+                timestamp = reader.u64(),
+                isKeyframe = (flags and 0x0001) != 0,
+                data = reader.rest(),
+            )
+
+            MessageType.CAMERA_STOP -> Message.CameraStop
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

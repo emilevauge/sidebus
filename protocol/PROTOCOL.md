@@ -75,6 +75,11 @@ Fields are serialised in table order, with no alignment and no padding.
 | `0x0B` | BYE            | bidirectional      | `u8` reason code                        |
 | `0x0C` | PAIR_REQUEST   | Mac to Android     | `u32` pairing code, see 4.12            |
 | `0x0D` | PAIR_RESULT    | Android to Mac     | `u8` 0 refused, 1 accepted, see 4.13    |
+| `0x0E` | CAMERA_LIST    | Android to Mac     | cameras the tablet can share, see 4.14  |
+| `0x0F` | CAMERA_START   | Mac to Android     | see 4.15                                |
+| `0x10` | CAMERA_CONFIG  | Android to Mac     | see 4.16                                |
+| `0x11` | CAMERA_FRAME   | Android to Mac     | see 4.17                                |
+| `0x12` | CAMERA_STOP    | Mac to Android     | empty                                   |
 
 Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
 the socket.
@@ -216,6 +221,71 @@ Any value other than 1 counts as a refusal.
 The Mac waits at most 120 s for this message after PAIR_REQUEST. Past that, it treats the
 silence as a refusal and sends BYE with code 0.
 
+### 4.14 CAMERA_LIST (`0x0E`)
+
+| Field | Type | Description                          |
+| ----- | ---- | ------------------------------------ |
+| count | `u8` | number of cameras that follow        |
+
+Then `count` entries, each:
+
+| Field  | Type     | Description                                   |
+| ------ | -------- | --------------------------------------------- |
+| id     | `u8`     | index to pass back in CAMERA_START            |
+| facing | `u8`     | see 5.5                                       |
+| label  | `string` | readable name, for the Mac's menu             |
+
+The tablet sends it unsolicited, right after DEVICE_INFO, and again whenever the list
+changes. A Mac that does not care simply ignores it.
+
+Only the cameras a third party application may open are listed. A phone with five physical
+sensors usually exposes two, one per facing, the others living behind a logical camera.
+
+### 4.15 CAMERA_START (`0x0F`)
+
+| Field  | Type  | Description                              |
+| ------ | ----- | ---------------------------------------- |
+| id     | `u8`  | camera from CAMERA_LIST                  |
+| width  | `u16` | requested width, in pixels               |
+| height | `u16` | requested height, in pixels              |
+| fps    | `u8`  | requested frames per second              |
+| codec  | `u8`  | requested codec, see 5.1                 |
+
+A request, not an order. The tablet picks the closest size its sensor supports and answers
+CAMERA_CONFIG with what it actually opened. A tablet that cannot open the camera at all
+answers nothing and the Mac gives up after its own deadline.
+
+The camera stream travels alongside the screen stream on the same socket. Nothing forbids
+running both at once, though a tablet propped up as a display rarely points at anything
+worth filming.
+
+### 4.16 CAMERA_CONFIG (`0x10`)
+
+| Field  | Type  | Description                                          |
+| ------ | ----- | ---------------------------------------------------- |
+| width  | `u16` | width actually opened, in pixels                     |
+| height | `u16` | height actually opened, in pixels                    |
+| codec  | `u8`  | codec actually used, see 5.1                         |
+| data   | rest  | codec parameter sets in Annex B, as in VIDEO_CONFIG  |
+
+Always precedes the first CAMERA_FRAME, and is sent again on any reconfiguration.
+
+### 4.17 CAMERA_FRAME (`0x11`)
+
+| Field     | Type  | Description                                     |
+| --------- | ----- | ----------------------------------------------- |
+| timestamp | `u64` | capture timestamp, in µs                        |
+| data      | rest  | NAL units in Annex B, to the end of the payload |
+
+Flags:
+
+| Bit | Meaning                 |
+| --- | ----------------------- |
+| 0   | the frame is a keyframe |
+
+Same shape as VIDEO_FRAME, in the other direction. The timestamp comes from the tablet's
+monotonic clock, so it can only be compared with other CAMERA_FRAME timestamps.
+
 ## 5. Enumerations
 
 ### 5.1 Codecs
@@ -255,6 +325,14 @@ In v1 the tablet only sends `0x00`.
 | `0x00` | normal close      |
 | `0x01` | transport switch  |
 | `0x02` | error             |
+
+### 5.5 Camera facing
+
+| Value  | Facing  |
+| ------ | ------- |
+| `0x00` | back    |
+| `0x01` | front   |
+| `0x02` | external |
 
 ## 6. Connection sequence
 

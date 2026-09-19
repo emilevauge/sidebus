@@ -22,6 +22,11 @@ sides must be updated in the same commit.
 | `bye.bin` | BYE | reason 1, transport switch |
 | `pair_request.bin` | PAIR_REQUEST | code 428913 |
 | `pair_result.bin` | PAIR_RESULT | pairing accepted |
+| `camera_list.bin` | CAMERA_LIST | two cameras, back and front |
+| `camera_start.bin` | CAMERA_START | camera 1, 1280 × 720, 30 fps, H.264 |
+| `camera_config.bin` | CAMERA_CONFIG | 1280 × 720, H.264, one SPS and one PPS |
+| `camera_frame.bin` | CAMERA_FRAME | timestamp 987,654,321 µs, keyframe |
+| `camera_stop.bin` | CAMERA_STOP | empty payload |
 | `unknown_type.bin` | 0x7F | unknown type, payload `abc`, must be skipped without error |
 | `stream_two_messages.bin` | PING + KEYFRAME_REQ | two messages in one packet, the decoder must yield both |
 

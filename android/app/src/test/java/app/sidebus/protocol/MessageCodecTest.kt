@@ -148,6 +148,50 @@ class MessageCodecTest {
     }
 
     @Test
+    fun cameraList() {
+        check(
+            "camera_list.bin",
+            Message.CameraList(
+                listOf(
+                    CameraDescription(0, CameraFacing.BACK, "Back camera"),
+                    CameraDescription(1, CameraFacing.FRONT, "Front camera"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun cameraStart() {
+        check("camera_start.bin", Message.CameraStart(1, 1280, 720, 30, Codec.H264))
+    }
+
+    @Test
+    fun cameraConfig() {
+        check(
+            "camera_config.bin",
+            Message.CameraConfig(
+                1280,
+                720,
+                Codec.H264,
+                byteArrayOf(0, 0, 0, 1, 0x67, 0x42, 0x00, 0, 0, 0, 1, 0x68, 0xCE.toByte()),
+            ),
+        )
+    }
+
+    @Test
+    fun cameraFrame() {
+        check(
+            "camera_frame.bin",
+            Message.CameraFrame(987_654_321, true, byteArrayOf(0, 0, 0, 1, 0x65, 0x11, 0x22)),
+        )
+    }
+
+    @Test
+    fun cameraStop() {
+        check("camera_stop.bin", Message.CameraStop)
+    }
+
+    @Test
     fun typeInconnuIgnorable() {
         check("unknown_type.bin", Message.Unknown(0x7F, 0, "abc".toByteArray()))
     }

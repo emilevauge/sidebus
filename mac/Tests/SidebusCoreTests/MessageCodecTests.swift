@@ -132,6 +132,50 @@ final class MessageCodecTests: XCTestCase {
         XCTAssertEqual(refus, .pairResult(accepted: false))
     }
 
+    func testCameraList() throws {
+        try check(
+            "camera_list.bin",
+            .cameraList([
+                CameraDescription(id: 0, facing: .back, label: "Back camera"),
+                CameraDescription(id: 1, facing: .front, label: "Front camera"),
+            ])
+        )
+    }
+
+    func testCameraStart() throws {
+        try check(
+            "camera_start.bin",
+            .cameraStart(id: 1, width: 1280, height: 720, fps: 30, codec: .h264)
+        )
+    }
+
+    func testCameraConfig() throws {
+        try check(
+            "camera_config.bin",
+            .cameraConfig(
+                width: 1280,
+                height: 720,
+                codec: .h264,
+                parameterSets: Data([0, 0, 0, 1, 0x67, 0x42, 0x00, 0, 0, 0, 1, 0x68, 0xCE])
+            )
+        )
+    }
+
+    func testCameraFrame() throws {
+        try check(
+            "camera_frame.bin",
+            .cameraFrame(
+                timestamp: 987_654_321,
+                isKeyframe: true,
+                data: Data([0, 0, 0, 1, 0x65, 0x11, 0x22])
+            )
+        )
+    }
+
+    func testCameraStop() throws {
+        try check("camera_stop.bin", .cameraStop)
+    }
+
     func testUnknownTypeIsSkippable() throws {
         try check(
             "unknown_type.bin",

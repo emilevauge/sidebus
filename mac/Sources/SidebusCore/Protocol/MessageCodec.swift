@@ -97,6 +97,35 @@ public enum MessageCodec {
         case let .pairResult(accepted):
             payload.u8(accepted ? 1 : 0)
 
+        case let .cameraList(cameras):
+            payload.u8(UInt8(min(cameras.count, 255)))
+            for camera in cameras.prefix(255) {
+                payload.u8(camera.id)
+                payload.u8(camera.facing.rawValue)
+                payload.string(camera.label)
+            }
+
+        case let .cameraStart(id, width, height, fps, codec):
+            payload.u8(id)
+            payload.u16(width)
+            payload.u16(height)
+            payload.u8(fps)
+            payload.u8(codec.rawValue)
+
+        case let .cameraConfig(width, height, codec, parameterSets):
+            payload.u16(width)
+            payload.u16(height)
+            payload.u8(codec.rawValue)
+            payload.bytes(parameterSets)
+
+        case let .cameraFrame(timestamp, isKeyframe, data):
+            if isKeyframe { flags |= 0x0001 }
+            payload.u64(timestamp)
+            payload.bytes(data)
+
+        case .cameraStop:
+            break
+
         case let .unknown(_, unknownFlags, data):
             flags = unknownFlags
             payload.bytes(data)
@@ -220,6 +249,57 @@ public enum MessageCodec {
                 // Any value other than 1 counts as a refusal: a future version adding a
                 // detailed refusal code must not read as an acceptance.
                 return .pairResult(accepted: try reader.u8() == 1)
+
+            case .cameraList:
+                let count = try reader.u8()
+                var cameras: [CameraDescription] = []
+                for _ in 0..<count {
+                    let id = try reader.u8()
+                    let rawFacing = try reader.u8()
+                    guard let facing = CameraFacing(rawValue: rawFacing) else {
+                        throw ProtocolError.unknownEnumValue("camera facing", rawFacing)
+                    }
+                    cameras.append(
+                        CameraDescription(id: id, facing: facing, label: try reader.string())
+                    )
+                }
+                return .cameraList(cameras)
+
+            case .cameraStart:
+                let id = try reader.u8()
+                let width = try reader.u16()
+                let height = try reader.u16()
+                let fps = try reader.u8()
+                let rawCodec = try reader.u8()
+                guard let codec = Codec(rawValue: rawCodec) else {
+                    throw ProtocolError.unknownEnumValue("codec", rawCodec)
+                }
+                return .cameraStart(id: id, width: width, height: height, fps: fps, codec: codec)
+
+            case .cameraConfig:
+                let width = try reader.u16()
+                let height = try reader.u16()
+                let rawCodec = try reader.u8()
+                guard let codec = Codec(rawValue: rawCodec) else {
+                    throw ProtocolError.unknownEnumValue("codec", rawCodec)
+                }
+                return .cameraConfig(
+                    width: width,
+                    height: height,
+                    codec: codec,
+                    parameterSets: reader.rest()
+                )
+
+            case .cameraFrame:
+                let timestamp = try reader.u64()
+                return .cameraFrame(
+                    timestamp: timestamp,
+                    isKeyframe: flags & 0x0001 != 0,
+                    data: reader.rest()
+                )
+
+            case .cameraStop:
+                return .cameraStop
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)
