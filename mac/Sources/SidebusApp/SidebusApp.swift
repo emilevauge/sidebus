@@ -9,6 +9,7 @@ struct SidebusApp: App {
     @State private var devices = DeviceManager()
     @State private var permissions = PermissionsModel()
     @State private var updates = UpdateChecker()
+    @State private var cameraExtension = CameraExtensionInstaller()
 
     var body: some Scene {
         Window("Sidebus Settings", id: "settings") {
@@ -16,7 +17,8 @@ struct SidebusApp: App {
                 devices: devices,
                 displays: displays,
                 permissions: permissions,
-                updates: updates
+                updates: updates,
+                cameraExtension: cameraExtension
             )
         }
         .windowResizability(.contentSize)

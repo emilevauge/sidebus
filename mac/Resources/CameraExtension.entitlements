@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  A Core Media I/O extension has to be sandboxed. Unlike the host application, which is
+	  not, and cannot be: CGVirtualDisplay is a private API.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+</dict>
+</plist>

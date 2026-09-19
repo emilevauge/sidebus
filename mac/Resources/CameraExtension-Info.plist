@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>SidebusCameraExtension</string>
+	<!--
+	  The identifier has to sit under the host application's, app.sidebus, or the system
+	  refuses to install the extension.
+	-->
+	<key>CFBundleIdentifier</key>
+	<string>app.sidebus.camera</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Sidebus Camera</string>
+	<!-- SYSX, the package type of a system extension. -->
+	<key>CFBundlePackageType</key>
+	<string>SYSX</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<!--
+	  Marks the bundle as a Core Media I/O extension and names the mach service the system
+	  reaches it through. The name must start with the Team ID: Scripts/bundle.sh fills the
+	  placeholder from the signing identity.
+	-->
+	<key>CMIOExtension</key>
+	<dict>
+		<key>CMIOExtensionMachServiceName</key>
+		<string>__TEAM_ID__.app.sidebus.camera</string>
+	</dict>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>Sidebus publishes your phone camera as a camera every application can use.</string>
+</dict>
+</plist>

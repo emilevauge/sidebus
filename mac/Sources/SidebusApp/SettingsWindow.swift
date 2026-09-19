@@ -10,6 +10,7 @@ struct SettingsWindow: View {
     @Bindable var displays: DisplayMenuModel
     @Bindable var permissions: PermissionsModel
     let updates: UpdateChecker
+    let cameraExtension: CameraExtensionInstaller
 
     var body: some View {
         TabView {
@@ -18,6 +19,11 @@ struct SettingsWindow: View {
 
             VideoSettings(devices: devices, displays: displays)
                 .tabItem { Label("Video", systemImage: "rectangle.on.rectangle") }
+
+            if cameraExtension.isAvailable {
+                CameraExtensionSettings(installer: cameraExtension)
+                    .tabItem { Label("Camera", systemImage: "web.camera") }
+            }
 
             PermissionsView(model: permissions)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
@@ -263,6 +269,47 @@ private struct AboutSettings: View {
                 .font(.caption)
                 .foregroundStyle(.red)
         }
+    }
+}
+
+// MARK: - Camera extension
+
+/// Only shown by a build that carries the extension, which is not the ordinary one.
+private struct CameraExtensionSettings: View {
+    @Bindable var installer: CameraExtensionInstaller
+
+    var body: some View {
+        Form {
+            Section("System camera") {
+                Text(
+                    """
+                    Installs a camera that every application can open, Zoom and Meet                     included, fed by the phone. Without it the picture only exists in the                     Sidebus window.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                LabeledContent("State", value: installer.summary)
+
+                HStack {
+                    Button("Install") { installer.install() }
+                        .disabled(installer.state == .installing)
+                    Button("Remove") { installer.uninstall() }
+                        .disabled(installer.state == .installing)
+                }
+            }
+
+            Section("Requirements") {
+                Text(
+                    """
+                    Installing it needs an entitlement Apple only grants to a paid developer                     account. On a machine without one it only works with System Integrity                     Protection off and AMFI disabled. See docs/camera-extension.md.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

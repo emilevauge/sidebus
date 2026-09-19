@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Construit mac/build/Sidebus.app et le signe en ad hoc.
+# Builds mac/build/Sidebus.app and signs it.
 #
 # Signing: a local codesigning identity when the keychain holds one, ad hoc otherwise. The
 # difference matters to TCC, which remembers permissions (Screen Recording, Accessibility,
@@ -11,7 +11,11 @@
 #   identity -> "identifier app.sidebus and certificate leaf = H<...>"   stable
 #
 # Force a choice with SIDEBUS_CODESIGN_IDENTITY (the identity name, or "-" for ad hoc).
-# La signature Developer ID et la notarisation arrivent en phase 9.
+# Developer ID signing and notarization come later.
+#
+# The camera extension is embedded only when SIDEBUS_CAMERA_EXTENSION=1. It carries a
+# restricted entitlement, so a machine with its usual protections in place kills the
+# application on launch. See docs/camera-extension.md.
 #
 # Usage: Scripts/bundle.sh [release|debug]   (default: release)
 
@@ -71,7 +75,47 @@ if [[ "$IDENTITY" == "-" ]]; then
 else
 	echo "==> signing with identity \"$IDENTITY\""
 fi
-codesign --force --sign "$IDENTITY" --identifier app.sidebus --timestamp=none "$APP"
+
+# Team ID, read from the signing certificate's organizational unit. It prefixes the
+# extension's mach service name, which the system checks.
+TEAM_ID=""
+if [[ "$IDENTITY" != "-" ]]; then
+	TEAM_ID="$(security find-certificate -c "$IDENTITY" -p 2>/dev/null \
+		| openssl x509 -noout -subject 2>/dev/null \
+		| sed -n 's/.*OU=\([A-Z0-9]*\).*/\1/p')"
+fi
+
+APP_ENTITLEMENTS="$MAC_DIR/Resources/Sidebus.entitlements"
+
+if [[ "${SIDEBUS_CAMERA_EXTENSION:-0}" == "1" ]]; then
+	APP_ENTITLEMENTS="$MAC_DIR/Resources/Sidebus-CameraExtension.entitlements"
+	if [[ -z "$TEAM_ID" ]]; then
+		echo "the camera extension needs a signing identity carrying a Team ID" >&2
+		exit 1
+	fi
+
+	EXT_BIN="$(swift build -c "$CONFIG" --show-bin-path)/SidebusCameraExtension"
+	EXT="$APP/Contents/Library/SystemExtensions/app.sidebus.camera.systemextension"
+	echo "==> embedding the camera extension, team $TEAM_ID"
+	mkdir -p "$EXT/Contents/MacOS"
+	cp "$EXT_BIN" "$EXT/Contents/MacOS/SidebusCameraExtension"
+	sed "s/__TEAM_ID__/$TEAM_ID/" "$MAC_DIR/Resources/CameraExtension-Info.plist" \
+		> "$EXT/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$EXT/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$EXT/Contents/Info.plist"
+
+	# Inside out: an enclosing bundle is sealed over its contents, so the extension has to
+	# be signed before the application that carries it.
+	codesign --force --sign "$IDENTITY" \
+		--identifier app.sidebus.camera \
+		--entitlements "$MAC_DIR/Resources/CameraExtension.entitlements" \
+		--options runtime --timestamp=none "$EXT"
+fi
+
+codesign --force --sign "$IDENTITY" \
+	--identifier app.sidebus \
+	--entitlements "$APP_ENTITLEMENTS" \
+	--timestamp=none "$APP"
 codesign --verify --verbose=2 "$APP"
 
 echo

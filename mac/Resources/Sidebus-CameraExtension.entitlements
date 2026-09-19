@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Everything in Sidebus.entitlements, plus the right to install the Core Media I/O
+	  extension that publishes the phone camera to every other application.
+
+	  A separate file on purpose. The extra key is restricted: Apple grants it only through
+	  a provisioning profile, and a personal development team is refused. A binary carrying
+	  it without a matching profile is killed the moment it launches, so the ordinary build
+	  must not carry it. See docs/camera-extension.md.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+	<key>com.apple.developer.system-extension.install</key>
+	<true/>
+</dict>
+</plist>

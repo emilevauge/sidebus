@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "SidebusApp", targets: ["SidebusApp"]),
+        .executable(name: "SidebusCameraExtension", targets: ["SidebusCameraExtension"]),
         .library(name: "SidebusCore", targets: ["SidebusCore"]),
     ],
     targets: [
@@ -22,6 +23,12 @@ let package = Package(
             dependencies: ["SidebusCore"],
             // The menu bar PDF templates, read through Bundle.module.
             resources: [.process("Resources")]
+        ),
+        // Core Media I/O extension: the process that publishes the camera to the system.
+        // Packaged by Scripts/bundle.sh into Contents/Library/SystemExtensions.
+        .executableTarget(
+            name: "SidebusCameraExtension",
+            linkerSettings: [.linkedFramework("CoreMediaIO")]
         ),
         .testTarget(name: "SidebusCoreTests", dependencies: ["SidebusCore"]),
     ]
