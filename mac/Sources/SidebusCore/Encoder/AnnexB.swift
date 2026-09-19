@@ -182,33 +182,64 @@ public enum AnnexB {
         return units
     }
 
-    /// Rewrites Annex B start codes as four byte length prefixes, in place.
+    /// Rewrites Annex B start codes as four byte length prefixes.
     ///
-    /// The exact opposite of `convertInPlace`, and just as free: both markers are four bytes
-    /// wide, so only those four bytes change and nothing is reallocated. VideoToolbox wants
-    /// AVCC on the way in, `MediaCodec` wants Annex B on the way out.
+    /// Stays in place when every start code is four bytes wide, which costs nothing: both
+    /// markers are the same size, so only those four bytes change.
+    ///
+    /// `MediaCodec` mixes both forms inside one frame, a four byte code in front and three
+    /// byte ones between the NAL units that follow. A three byte code cannot be rewritten in
+    /// place, since the prefix is one byte longer, so the buffer is rebuilt in that case.
+    /// Ignoring those codes leaves them inside the payload, the preceding length comes out
+    /// too long, and the decoder produces flat blocks of colour instead of a picture.
     public static func convertToLengthPrefixed(_ data: inout Data) {
-        var boundaries: [Int] = []
+        var boundaries: [(start: Int, codeLength: Int)] = []
         var index = data.startIndex
         while index < data.endIndex {
             let length = startCodeLength(in: data, at: index)
-            if length == 4 {
-                boundaries.append(index)
-                index += 4
+            if length > 0 {
+                boundaries.append((index, length))
+                index += length
                 continue
             }
             index += 1
         }
         guard !boundaries.isEmpty else { return }
 
-        for (position, start) in boundaries.enumerated() {
-            let end = position + 1 < boundaries.count ? boundaries[position + 1] : data.endIndex
-            let payload = UInt32(end - start - 4)
-            data[start] = UInt8((payload >> 24) & 0xFF)
-            data[start + 1] = UInt8((payload >> 16) & 0xFF)
-            data[start + 2] = UInt8((payload >> 8) & 0xFF)
-            data[start + 3] = UInt8(payload & 0xFF)
+        if boundaries.allSatisfy({ $0.codeLength == 4 }) {
+            for (position, boundary) in boundaries.enumerated() {
+                let end = position + 1 < boundaries.count
+                    ? boundaries[position + 1].start
+                    : data.endIndex
+                write(UInt32(end - boundary.start - 4), into: &data, at: boundary.start)
+            }
+            return
         }
+
+        var rebuilt = Data()
+        rebuilt.reserveCapacity(data.count + boundaries.count)
+        for (position, boundary) in boundaries.enumerated() {
+            let payloadStart = boundary.start + boundary.codeLength
+            let payloadEnd = position + 1 < boundaries.count
+                ? boundaries[position + 1].start
+                : data.endIndex
+            guard payloadEnd > payloadStart else { continue }
+
+            let length = UInt32(payloadEnd - payloadStart)
+            rebuilt.append(UInt8((length >> 24) & 0xFF))
+            rebuilt.append(UInt8((length >> 16) & 0xFF))
+            rebuilt.append(UInt8((length >> 8) & 0xFF))
+            rebuilt.append(UInt8(length & 0xFF))
+            rebuilt.append(data.subdata(in: payloadStart..<payloadEnd))
+        }
+        data = rebuilt
+    }
+
+    private static func write(_ value: UInt32, into data: inout Data, at index: Int) {
+        data[index] = UInt8((value >> 24) & 0xFF)
+        data[index + 1] = UInt8((value >> 16) & 0xFF)
+        data[index + 2] = UInt8((value >> 8) & 0xFF)
+        data[index + 3] = UInt8(value & 0xFF)
     }
 
     /// Length of the start code at `index`, or 0 when there is none. Both the three byte and

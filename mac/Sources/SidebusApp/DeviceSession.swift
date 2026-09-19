@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreMedia
 import Foundation
 import Observation
@@ -13,6 +14,8 @@ import os
 /// tablets possible with no common state to arbitrate.
 ///
 /// Discovery stays with `DeviceManager`, being global by nature.
+private let cameraLog = Logger(subsystem: "app.sidebus", category: "camera")
+
 @MainActor
 @Observable
 final class DeviceSession {
@@ -381,6 +384,7 @@ final class DeviceSession {
             log.info("tablet offers \(list.count) camera(s)")
 
         case let .cameraConfig(width, height, codec, parameterSets):
+            Self.appendRawIfRequested(parameterSets)
             await startCameraDecoder(
                 width: Int(width),
                 height: Int(height),
@@ -389,6 +393,7 @@ final class DeviceSession {
             )
 
         case let .cameraFrame(timestamp, _, data):
+            Self.appendRawIfRequested(data)
             try? await cameraDecoder?.decode(data, timestamp: timestamp)
 
         default:
@@ -557,11 +562,51 @@ final class DeviceSession {
 
         let frames = decoder.frames
         cameraTask = Task { [weak self] in
+            var seen = 0
             for await frame in frames {
                 guard let self, !Task.isCancelled else { return }
                 self.cameraFrame = frame
+                seen += 1
+                if seen % 30 == 0 { self.log.debug("\(seen) camera frames decoded") }
+                // Development hook: writes one decoded frame to disk, which is the only way
+                // to check the picture actually arrives when no screen is available.
+                if seen == 10 { Self.dumpIfRequested(frame) }
             }
         }
+    }
+
+    /// Appends the Annex B bytes as received when `SIDEBUS_CAMERA_RAW` names a path. The
+    /// file plays with `ffplay`, which settles whether a broken picture comes from the
+    /// stream itself or from our decoding of it.
+    private static func appendRawIfRequested(_ data: Data) {
+        guard let path = ProcessInfo.processInfo.environment["SIDEBUS_CAMERA_RAW"], !path.isEmpty
+        else { return }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
+    /// Writes a decoded frame as a PNG when `SIDEBUS_CAMERA_DUMP` names a path.
+    private static func dumpIfRequested(_ frame: CapturedFrame) {
+        guard let path = ProcessInfo.processInfo.environment["SIDEBUS_CAMERA_DUMP"],
+            !path.isEmpty
+        else { return }
+
+        let image = CIImage(cvPixelBuffer: frame.imageBuffer)
+        let context = CIContext()
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let data = context.pngRepresentation(
+                of: image,
+                format: .RGBA8,
+                colorSpace: colorSpace
+            )
+        else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
+        cameraLog.info("camera frame written to \(path, privacy: .public)")
     }
 
     // MARK: - Streaming

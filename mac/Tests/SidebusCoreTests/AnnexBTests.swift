@@ -148,6 +148,37 @@ final class AnnexBReceiveTests: XCTestCase {
         XCTAssertEqual(data, original)
     }
 
+    /// `MediaCodec` puts a four byte code in front of a frame and three byte ones between
+    /// the NAL units that follow. Leaving those inside the payload makes the preceding
+    /// length too long, and the decoder returns flat blocks of colour instead of a picture.
+    func testConvertHandlesMixedStartCodeWidths() {
+        var data = Data([
+            0, 0, 0, 1, 0x65, 0x11,
+            0, 0, 1, 0x41, 0x22, 0x33,
+        ])
+        AnnexB.convertToLengthPrefixed(&data)
+
+        XCTAssertEqual(
+            Array(data),
+            [0, 0, 0, 2, 0x65, 0x11, 0, 0, 0, 3, 0x41, 0x22, 0x33]
+        )
+    }
+
+    func testMixedWidthsSurviveTheRoundTrip() throws {
+        var data = Data([
+            0, 0, 0, 1, 0x65, 0x11,
+            0, 0, 1, 0x41, 0x22,
+        ])
+        AnnexB.convertToLengthPrefixed(&data)
+        try AnnexB.convertInPlace(&data, nalLengthSize: 4)
+
+        // Both NAL units come back, with the four byte form throughout.
+        XCTAssertEqual(
+            Array(data),
+            [0, 0, 0, 1, 0x65, 0x11, 0, 0, 0, 1, 0x41, 0x22]
+        )
+    }
+
     func testConvertWithoutStartCodeLeavesTheBufferAlone() {
         var data = Data([0x01, 0x02, 0x03])
         AnnexB.convertToLengthPrefixed(&data)
