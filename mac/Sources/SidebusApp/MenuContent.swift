@@ -47,6 +47,10 @@ struct MenuContent: View {
             connection.toggleSharing()
         }
 
+        Button("Oublier les appareils appairés") {
+            connection.forgetPairedDevices()
+        }
+
         Button("Connexion par adresse IP…") {
             askForAddress()
         }

@@ -70,6 +70,12 @@ final class PairingValidator: CertificateValidator {
         return true
     }
 
+    /// Oublie l'empreinte de la session courante, après un désappairage.
+    func forgetAccepted() {
+        lastAcceptedFingerprint = nil
+        lastRefusal = nil
+    }
+
     /// Rattache l'empreinte acceptée à l'identifiant réel de l'appareil, connu seulement
     /// après DEVICE_INFO.
     func bind(deviceID: UUID) {

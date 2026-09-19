@@ -74,6 +74,28 @@ final class ConnectionModel {
         isSharingEnabled ? "Arrêter le partage" : "Reprendre le partage"
     }
 
+    /// Oublie les appareils appairés et relance la session, pour rejouer l'appairage.
+    func forgetPairedDevices() {
+        let hadSession = session != nil
+        log.info("appareils appairés oubliés")
+
+        Task {
+            await Task.detached { PairingStore.shared.removeAll() }.value
+            self.pairing.forgetAccepted()
+
+            guard hadSession else {
+                self.status = "appairages oubliés"
+                return
+            }
+            // Le lien courant reste valide, mais il a été établi avec une empreinte qu'on
+            // vient d'oublier : on le ferme pour que le prochain redemande le code.
+            self.setSharing(false)
+            self.status = "appairages oubliés"
+            try? await Task.sleep(for: .seconds(1))
+            self.setSharing(true)
+        }
+    }
+
     func toggleSharing() {
         setSharing(!isSharingEnabled)
     }

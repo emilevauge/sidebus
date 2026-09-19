@@ -104,7 +104,10 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         descriptor.sizeInMillimeters = configuration.sizeInMillimeters
         descriptor.productID = 0x1234
         descriptor.vendorID = 0x5342  // "SB"
-        descriptor.serialNum = 0x0001
+        // Numéro de série tiré au hasard à chaque création. Réutiliser le même triplet
+        // fabricant, produit, série finit par se heurter aux entrées que le système garde
+        // des écrans précédents.
+        descriptor.serialNum = UInt32.random(in: 1...UInt32.max)
         descriptor.terminationHandler = { _, _ in }
 
         let display = CGVirtualDisplay(descriptor: descriptor)

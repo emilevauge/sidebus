@@ -153,6 +153,21 @@ public struct PairingStore: Sendable {
         return entries
     }
 
+    /// Oublie tous les appareils appairés. Le prochain lien redemandera un code.
+    public func removeAll() {
+        for account in all().keys {
+            remove(deviceID: account)
+        }
+        // Le trousseau peut contenir des entrées d'index inverse orphelines, et le
+        // fichier de repli sa propre copie : on balaie les deux.
+        SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecUseDataProtectionKeychain as String: true,
+        ] as CFDictionary)
+        fileStore.removeAll()
+    }
+
     /// Vrai si cette empreinte est déjà appairée, quel que soit l'appareil.
     ///
     /// Sert au cas USB : l'identifiant de l'appareil n'est connu qu'après DEVICE_INFO,
@@ -219,5 +234,9 @@ private struct FingerprintFile {
         var entries = load()
         entries.removeValue(forKey: account)
         try? save(entries)
+    }
+
+    func removeAll() {
+        try? FileManager.default.removeItem(at: url)
     }
 }

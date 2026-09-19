@@ -43,6 +43,21 @@ object DeviceIdentity {
         return generated
     }
 
+    /**
+     * Efface l'identité de la tablette : nouvelle paire de clés, nouveau certificat,
+     * nouvel identifiant. Le Mac la verra comme un appareil inconnu et redemandera le
+     * code d'appairage.
+     */
+    fun reset(context: Context) {
+        runCatching {
+            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_UUID)
+            .apply()
+    }
+
     fun certificate(): X509Certificate {
         entry()?.let { return it.certificate as X509Certificate }
         generate()

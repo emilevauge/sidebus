@@ -43,11 +43,28 @@ public actor ScreenCapturer {
             throw CaptureError.screenRecordingNotAuthorized
         }
 
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false,
-            onScreenWindowsOnly: true
-        )
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+        // Un écran virtuel qui vient d'être créé n'apparaît pas tout de suite dans le
+        // contenu partageable : le système met quelques centaines de millisecondes à le
+        // publier. On réessaie plutôt que d'échouer sur une course.
+        var display: SCDisplay?
+        for attempt in 0..<6 {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+            if let found = content.displays.first(where: { $0.displayID == displayID }) {
+                display = found
+                break
+            }
+            if attempt == 0 || attempt == 5 {
+                let ids = content.displays.map { String($0.displayID) }.joined(separator: ", ")
+                captureLog.info(
+                    "écran \(displayID) pas partageable, écrans offerts : [\(ids, privacy: .public)]"
+                )
+            }
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        guard let display else {
             throw CaptureError.displayNotShareable(displayID)
         }
 

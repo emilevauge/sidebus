@@ -13,6 +13,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.Toast
 import app.sidebus.decoder.VideoDecoder
 import app.sidebus.input.TouchSender
 import app.sidebus.pairing.DeviceIdentity
@@ -77,7 +78,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         // Rideau noir au dessus de la vidéo. Surtout pas `lockCanvas` sur la surface pour
         // l'effacer : cela la connecte au producteur CPU et MediaCodec ne peut plus s'y
         // attacher ensuite, la configuration du décodeur échoue.
-        curtain = View(this).apply { setBackgroundColor(Color.BLACK) }
+        curtain = View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            // Désappairage par appui long. Le rideau porte le geste plutôt que le texte
+            // d'état : il n'est visible que hors diffusion, donc il ne peut pas avaler
+            // les touchers destinés à l'écran partagé.
+            setOnLongClickListener {
+                resetPairing()
+                true
+            }
+        }
         root.addView(
             curtain,
             FrameLayout.LayoutParams(
@@ -174,7 +184,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     is TransportServer.Event.Listening ->
                         show(
                             "en écoute sur ${localAddress()}:${event.port}" +
-                                "\n\ncode d'appairage : $pairingCode"
+                                "\n\ncode d'appairage : $pairingCode" +
+                                "\nappui long pour réinitialiser l'appairage"
                         )
 
                     is TransportServer.Event.Connected -> {
@@ -201,7 +212,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                         show(
                             "déconnecté (${event.reason})" +
                                 "\nen écoute sur ${localAddress()}" +
-                                "\n\ncode d'appairage : $pairingCode"
+                                "\n\ncode d'appairage : $pairingCode" +
+                                "\nappui long pour réinitialiser l'appairage"
                         )
                     }
 
@@ -338,6 +350,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             curtain.visibility = View.GONE
             overlay.transport = "USB"
         }
+    }
+
+    /**
+     * Oublie l'identité de la tablette et redémarre l'écran. Le Mac la verra comme un
+     * appareil inconnu et redemandera un code d'appairage.
+     */
+    private fun resetPairing() {
+        Log.i(TAG, "désappairage demandé")
+        connection?.close()
+        DeviceIdentity.reset(this)
+        Toast.makeText(this, "Appairage réinitialisé", Toast.LENGTH_SHORT).show()
+        recreate()
     }
 
     /** Garde le rapport d'aspect du flux, quitte à laisser des bandes noires. */
