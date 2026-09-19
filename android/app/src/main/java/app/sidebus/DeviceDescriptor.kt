@@ -9,7 +9,7 @@ import app.sidebus.pairing.DeviceIdentity
 import app.sidebus.protocol.Codec
 import app.sidebus.protocol.Message
 
-/** Ce que la tablette annonce au Mac dans DEVICE_INFO. */
+/** What the tablet announces to the Mac in DEVICE_INFO. */
 object DeviceDescriptor {
 
     fun deviceInfo(context: Context): Message.DeviceInfo {

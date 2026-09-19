@@ -29,7 +29,7 @@ class MessageCodecTest {
         val decoded = decoder.next()
         assertNotNull("$name: nothing decoded", decoded)
         assertEquals("$name: fields differ", expected, decoded)
-        assertNull("$name : octets en trop", decoder.next())
+        assertNull("$name: bytes left over", decoder.next())
 
         assertArrayEquals("$name: re-encoding differs", bytes, MessageCodec.encode(expected))
     }
@@ -198,7 +198,7 @@ class MessageCodecTest {
     }
 
     @Test
-    fun typeInconnuIgnorable() {
+    fun unknownTypeIsSkippable() {
         check("unknown_type.bin", Message.Unknown(0x7F, 0, "abc".toByteArray()))
     }
 
@@ -252,7 +252,7 @@ class MessageCodecTest {
 
     /** Several messages in a row, to check the buffer compaction. */
     @Test
-    fun centMessagesDeSuite() {
+    fun hundredMessagesInARow() {
         val decoder = MessageDecoder(initialCapacity = 1024)
         repeat(100) { index ->
             decoder.append(MessageCodec.encode(Message.Ping(index.toLong())))
@@ -274,20 +274,20 @@ class MessageCodecTest {
     }
 
     @Test
-    fun payloadTropGrand() {
+    fun payloadTooLarge() {
         val decoder = MessageDecoder()
-        // length = 16 Mio, au dessus de la borne de 8 Mio.
+        // length = 16 MiB, over the 8 MiB limit.
         decoder.append(byteArrayOf(0x5B, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01))
         try {
             decoder.next()
             fail("an exception was expected")
         } catch (error: ProtocolException) {
-            assertTrue(error.message!!.contains("borne"))
+            assertTrue(error.message!!.contains("over the limit"))
         }
     }
 
     @Test
-    fun payloadTronque() {
+    fun payloadTruncated() {
         val decoder = MessageDecoder()
         decoder.append(byteArrayOf(0x5B, 0x07, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 1, 2, 3, 4))
         try {
@@ -312,7 +312,7 @@ class MessageCodecTest {
     }
 
     @Test
-    fun nomTropLongTronque() {
+    fun overlongNameIsTruncated() {
         val long = "é".repeat(200) // 400 bytes in UTF-8
         val encoded = MessageCodec.encode(Message.Hello(1, long, UUID.randomUUID()))
         val decoder = MessageDecoder()

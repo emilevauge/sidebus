@@ -339,7 +339,7 @@ class MessageDecoder(initialCapacity: Int = 256 * 1024) {
         writeOffset += count
     }
 
-    /** Renvoie le prochain message complet, ou `null` s'il manque des octets. */
+    /** The next complete message, or `null` while bytes are still missing. */
     fun next(): Message? {
         val available = writeOffset - readOffset
         if (available < MessageCodec.HEADER_SIZE) return null
@@ -357,7 +357,7 @@ class MessageDecoder(initialCapacity: Int = 256 * 1024) {
         }
 
         if (length < 0 || length > MessageCodec.MAX_PAYLOAD_LENGTH) {
-            throw ProtocolException("payload de $length octets, au dessus de la borne")
+            throw ProtocolException("payload of $length bytes, over the limit")
         }
 
         val total = MessageCodec.HEADER_SIZE + length

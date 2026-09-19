@@ -90,6 +90,10 @@ final class DeviceSession {
     /// Quarter turns clockwise to apply to the camera picture, from CAMERA_CONFIG.
     private(set) var cameraRotation: Int = 0
 
+    /// Set when CAMERA_START brought nothing back. The tablet has no way to say why, so
+    /// this names the likely reason rather than leave the user with a black window.
+    private(set) var cameraProblem: String?
+
     @ObservationIgnored
     let pairing = PairingValidator()
 
@@ -140,6 +144,8 @@ final class DeviceSession {
     private var cameraDecoder: CameraDecoder?
     @ObservationIgnored
     private var cameraTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var cameraWatchdog: Task<Void, Never>?
     /// What is needed to start or stop the screen stream after the fact, once the link is
     /// up. Set the moment the device is identified and paired.
     @ObservationIgnored
@@ -199,6 +205,7 @@ final class DeviceSession {
             return "confirm code \(code) on the tablet"
         case .connected:
             if sharesScreen { return "connected, preparing the stream" }
+            if let cameraProblem { return cameraProblem }
             if activeCamera != nil {
                 return [cameraDescription, "camera"].compactMap { $0 }.joined(separator: ", ")
             }
@@ -221,6 +228,7 @@ final class DeviceSession {
             if needsAccessibilityPermission {
                 parts.append("Accessibility refused, touch is ignored")
             }
+            if let cameraProblem { parts.append(cameraProblem) }
             return parts.joined(separator: ", ")
         case let .stopped(reason), let .failed(reason):
             return reason
@@ -620,6 +628,8 @@ final class DeviceSession {
         guard let session else { return }
         wantedCamera = .id(camera.id)
         activeCamera = camera
+        cameraProblem = nil
+        armCameraWatchdog()
         log.info("CAMERA_START \(camera.label, privacy: .public)")
         Task {
             try? await session.send(
@@ -636,6 +646,9 @@ final class DeviceSession {
 
     func stopCamera() {
         wantedCamera = nil
+        cameraWatchdog?.cancel()
+        cameraWatchdog = nil
+        cameraProblem = nil
         guard activeCamera != nil else { return }
         log.info("CAMERA_STOP")
         let session = self.session
@@ -671,6 +684,7 @@ final class DeviceSession {
             current.parameterSets == parameterSets
         {
             cameraRotation = rotation
+            cameraProblem = nil
             cameraDescription = Self.describe(width: width, height: height, rotation: rotation)
             log.info("camera rotation now \(rotation * 90) degrees")
             return
@@ -692,6 +706,9 @@ final class DeviceSession {
             return
         }
 
+        cameraWatchdog?.cancel()
+        cameraWatchdog = nil
+        cameraProblem = nil
         cameraDecoder = decoder
         cameraSetup = (width, height, codec, parameterSets)
         cameraRotation = rotation
@@ -710,6 +727,24 @@ final class DeviceSession {
                 // to check the picture actually arrives when no screen is available.
                 if seen == 10 { Self.dumpIfRequested(frame) }
             }
+        }
+    }
+
+    /// Says something when CAMERA_START produces no picture.
+    ///
+    /// The tablet cannot report it: the protocol has no way to answer a CAMERA_START, and
+    /// the usual cause is a permission dialog waiting on a phone nobody is looking at. So
+    /// the Mac waits, then names the likely reason rather than show a black window with no
+    /// explanation.
+    private func armCameraWatchdog() {
+        cameraWatchdog?.cancel()
+        cameraWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, !Task.isCancelled else { return }
+            guard self.activeCamera != nil, self.cameraSetup == nil else { return }
+            self.cameraProblem =
+                "no picture, the tablet may be asking to allow its camera"
+            self.log.error("no CAMERA_CONFIG 8 s after CAMERA_START")
         }
     }
 

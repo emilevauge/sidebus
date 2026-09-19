@@ -33,8 +33,8 @@ class ServiceAdvertiser(private val context: Context) {
             setAttribute("h", info.height.toString())
             setAttribute("d", info.density.toString())
             setAttribute("c", info.codecs.toString())
-            // Lets the Mac recognise an already paired tablet before it even
-            // d'ouvrir la connexion.
+            // Lets the Mac recognise an already paired tablet before it even opens the
+            // connection.
             setAttribute("fp", DeviceIdentity.fingerprintPrefix())
         }
 

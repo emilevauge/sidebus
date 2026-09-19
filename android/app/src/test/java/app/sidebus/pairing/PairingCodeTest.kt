@@ -7,7 +7,7 @@ import org.junit.Test
 class PairingCodeTest {
 
     @Test
-    fun codeDeriveDesQuatrePremiersOctets() {
+    fun codeComesFromTheFirstFourBytes() {
         // 0x00 0x0F 0x42 0x40 = 1,000,000 -> 000000 after the modulo.
         assertEquals("000000", DeviceIdentity.pairingCode(byteArrayOf(0x00, 0x0F, 0x42, 0x40, -1)))
         // 0x00 0x00 0x30 0x39 = 12 345.

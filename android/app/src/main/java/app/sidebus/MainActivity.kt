@@ -131,12 +131,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         startServer()
     }
 
+    /**
+     * Advertising follows visibility, not focus.
+     *
+     * A system dialog laid over the activity, the camera permission prompt above all, pauses
+     * it without hiding it. Tying the advertisement to `onResume` withdrew it the moment the
+     * question appeared, the Mac saw the tablet vanish from discovery, and it dropped the
+     * device while the socket was still perfectly alive.
+     */
+    override fun onStart() {
+        super.onStart()
+        advertiser.start(TransportServer.DEFAULT_PORT, DeviceDescriptor.deviceInfo(this))
+    }
+
     override fun onResume() {
         super.onResume()
         // Read again on every return to the foreground: the setting can be changed over adb
         // without restarting the app.
         overlay.visibility = if (overlayRequested()) View.VISIBLE else View.GONE
-        advertiser.start(TransportServer.DEFAULT_PORT, DeviceDescriptor.deviceInfo(this))
     }
 
     /**
@@ -149,9 +161,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun overlayRequested(): Boolean =
         Settings.Global.getString(contentResolver, "sidebus_overlay") == "1"
 
-    override fun onPause() {
+    override fun onStop() {
         advertiser.stop()
-        super.onPause()
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -359,8 +371,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         pendingCameraStart = null
         val connection = this.connection
 
-        if (!granted || request == null || connection == null) {
-            Log.i(TAG, "camera permission refused or request gone")
+        if (!granted) {
+            // A second refusal is permanent: Android answers on the spot from then on and
+            // never shows the dialog again. Say so, otherwise the Mac just waits on a
+            // camera that will never open.
+            Log.i(TAG, "camera permission refused")
+            Toast.makeText(
+                this,
+                "Camera refused. Allow it in Android settings to use it as a webcam.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        if (request == null || connection == null) {
+            Log.i(TAG, "camera permission granted but the request is gone")
             return
         }
         scope.launch { startCamera(request, connection) }

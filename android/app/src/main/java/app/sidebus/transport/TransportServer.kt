@@ -110,7 +110,7 @@ class TransportServer(
                 } catch (timeout: java.net.SocketTimeoutException) {
                     "silent for more than ${READ_TIMEOUT_MS / 1000} s"
                 } catch (error: Exception) {
-                    Log.w(TAG, "connexion interrompue", error)
+                    Log.w(TAG, "connection interrupted", error)
                     error.message ?: error.javaClass.simpleName
                 } finally {
                     connection.close()
@@ -156,8 +156,8 @@ class TransportServer(
         const val DEFAULT_PORT = 27183
 
         /**
-         * Le Mac envoie un PING par seconde : plus de dix secondes de silence veut dire
-         * que le lien est mort, quoi qu'en dise le socket.
+         * The Mac sends a PING every second, so more than ten seconds of silence means the
+         * link is dead, whatever the socket claims.
          */
         private const val READ_TIMEOUT_MS = 10_000
 

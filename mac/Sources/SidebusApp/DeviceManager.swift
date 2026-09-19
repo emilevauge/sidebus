@@ -293,7 +293,7 @@ final class DeviceManager {
         if let usb { registry.usbPeers = usb }
         if let wifi {
             if wifi.map(\.id) != registry.wifiPeers.map(\.id) {
-                log.info("annonces Wi-Fi : \(wifi.map(\.name).joined(separator: ", "), privacy: .public)")
+                log.info("Wi-Fi advertisements: \(wifi.map(\.name).joined(separator: ", "), privacy: .public)")
             }
             registry.wifiPeers = wifi
         }
@@ -604,8 +604,16 @@ final class DeviceManager {
 
         var rows: [DeviceEntry] = []
 
-        for (key, peers) in visible {
-            let peer = peers[0]
+        // A device holding a live session counts as online even when discovery has just
+        // lost it. Android withdraws its mDNS advertisement whenever the activity stops,
+        // and a socket that is still carrying frames says more than an advertisement that
+        // blinked.
+        var online: [String: Peer] = visible.compactMapValues(\.first)
+        for (key, session) in running where online[key] == nil {
+            online[key] = session.peer
+        }
+
+        for (key, peer) in online {
             let session = running[key]
             let record = paired[key]
             let cameras = session.map { $0.cameras.isEmpty ? (record?.cameras ?? []) : $0.cameras }
@@ -624,7 +632,7 @@ final class DeviceManager {
             )
         }
 
-        for device in paired.values where visible[device.deviceID] == nil {
+        for device in paired.values where online[device.deviceID] == nil {
             rows.append(
                 DeviceEntry(
                     id: device.deviceID,
