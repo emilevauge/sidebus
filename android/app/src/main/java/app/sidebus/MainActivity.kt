@@ -15,6 +15,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
+import app.sidebus.camera.CameraSource
 import app.sidebus.decoder.VideoDecoder
 import app.sidebus.input.TouchSender
 import app.sidebus.pairing.DeviceIdentity
@@ -58,8 +59,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     /** Name of the Mac announced in HELLO, shown in the pairing prompt. */
     @Volatile private var peerName = "ce Mac"
     private var pairingDialog: AlertDialog? = null
+    /** CAMERA_START held back while the permission dialog is up. */
+    private var pendingCameraStart: Message.CameraStart? = null
     private lateinit var touch: TouchSender
     private lateinit var advertiser: ServiceAdvertiser
+    private lateinit var camera: CameraSource
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,6 +125,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
 
         advertiser = ServiceAdvertiser(this)
+        camera = CameraSource(this)
 
         show("Starting")
         startServer()
@@ -150,6 +155,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        camera.stop()
         scope.coroutineContext[Job]?.cancel()
         decoder?.shutdown()
         connection?.close()
@@ -203,6 +209,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                             decoder = null
                         }
                         parameterSets = null
+                        camera.stop()
                         // Never go INVISIBLE: that destroys the surface, which is then never
                         // recreated, and the decoder cannot restart on the next connection.
                         runOnUiThread {
@@ -235,7 +242,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 Log.i(TAG, "HELLO from ${message.name}, protocol ${message.version}")
                 peerName = message.name
                 show("Connected to ${message.name}", "waiting for the stream")
-                withContext(Dispatchers.IO) { connection.send(info) }
+                withContext(Dispatchers.IO) {
+                    connection.send(info)
+                    // Unsolicited, right after DEVICE_INFO, as the protocol says. A Mac that
+                    // does not care about cameras ignores it.
+                    connection.send(Message.CameraList(camera.available()))
+                }
             }
 
             is Message.DisplayConfig -> {
@@ -277,6 +289,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
             is Message.PairRequest -> askPairing(message.code, connection)
 
+            is Message.CameraStart -> startCamera(message, connection)
+
+            is Message.CameraStop -> {
+                Log.i(TAG, "CAMERA_STOP")
+                camera.stop()
+            }
+
             is Message.Bye -> Log.i(TAG, "BYE, reason ${message.reason}")
 
             is Message.Unknown ->
@@ -284,6 +303,66 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
             else -> Log.d(TAG, "received ${message::class.simpleName}")
         }
+    }
+
+    /**
+     * Opens the camera the Mac asked for and starts pushing CAMERA_FRAME.
+     *
+     * The permission is requested here rather than at launch: a tablet used only as a second
+     * display never needs the camera, and asking for it up front would look like overreach.
+     * The request is asynchronous, so the first CAMERA_START after a refusal simply does
+     * nothing and the Mac sees no frames.
+     */
+    private fun startCamera(request: Message.CameraStart, connection: Connection) {
+        Log.i(
+            TAG,
+            "CAMERA_START id=${request.id} ${request.width}x${request.height} @${request.fps}",
+        )
+
+        if (!camera.hasPermission()) {
+            Log.i(TAG, "camera permission missing, asking")
+            runOnUiThread {
+                requestPermissions(arrayOf(android.Manifest.permission.CAMERA), CAMERA_PERMISSION)
+            }
+            pendingCameraStart = request
+            return
+        }
+
+        camera.onConfig = { width, height, codec, parameterSets ->
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    connection.send(Message.CameraConfig(width, height, codec, parameterSets))
+                }
+            }
+        }
+        camera.onFrame = { data, timestamp, isKeyframe ->
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    connection.send(Message.CameraFrame(timestamp, isKeyframe, data))
+                }
+            }
+        }
+        camera.start(request.id, request.width, request.height, request.fps, request.codec)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != CAMERA_PERMISSION) return
+
+        val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val request = pendingCameraStart
+        pendingCameraStart = null
+        val connection = this.connection
+
+        if (!granted || request == null || connection == null) {
+            Log.i(TAG, "camera permission refused or request gone")
+            return
+        }
+        scope.launch { startCamera(request, connection) }
     }
 
     /**
@@ -444,5 +523,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     companion object {
         private const val TAG = "Sidebus"
         private const val STATS_INTERVAL_MS = 2_000L
+        private const val CAMERA_PERMISSION = 1
     }
 }

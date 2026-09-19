@@ -4,6 +4,11 @@
     <!-- The Mac connects to the tablet, so we listen on the local network. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Sharing a camera as a webcam. Asked for at the moment the Mac requests it, not at
+         launch: a tablet used only as a second display never needs it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

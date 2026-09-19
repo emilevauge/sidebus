@@ -7,9 +7,9 @@ import Foundation
 /// The `CVImageBuffer` is backed by an `IOSurface` in GPU memory. It goes to VideoToolbox
 /// as is: no copy, no pixel access from the CPU.
 ///
-/// `@unchecked Sendable` parce que `CVImageBuffer` est un type CoreFoundation que le
-/// compiler cannot check. The buffer is neither mutated nor shared, it crosses the
-/// pipeline en lecture seule.
+/// `@unchecked Sendable` because `CVImageBuffer` is a CoreFoundation type the compiler
+/// cannot check. The buffer is neither mutated nor shared, it crosses the pipeline read
+/// only.
 public struct CapturedFrame: @unchecked Sendable {
     public let imageBuffer: CVImageBuffer
     public let presentationTime: CMTime

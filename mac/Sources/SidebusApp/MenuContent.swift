@@ -1,4 +1,5 @@
 import AppKit
+import SidebusCore
 import SwiftUI
 
 struct MenuContent: View {
@@ -39,6 +40,32 @@ struct MenuContent: View {
             }
         }
 
+        let cameras = devices.sessions.filter { !$0.cameras.isEmpty }
+        if !cameras.isEmpty {
+            Divider()
+
+            Section("Cameras") {
+                ForEach(cameras, id: \.key) { session in
+                    ForEach(session.cameras, id: \.id) { camera in
+                        Button {
+                            if session.activeCamera == camera {
+                                session.stopCamera()
+                            } else {
+                                session.startCamera(camera)
+                                openWindow(id: "camera")
+                            }
+                        } label: {
+                            Label(
+                                cameraLabel(camera, on: session),
+                                systemImage: session.activeCamera == camera
+                                    ? "stop.circle.fill" : "web.camera"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         Divider()
 
         Button("Settings…") {
@@ -54,6 +81,15 @@ struct MenuContent: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    private func cameraLabel(_ camera: CameraDescription, on session: DeviceSession) -> String {
+        var text = camera.label
+        if let name = session.deviceName { text += " (\(name))" }
+        if session.activeCamera == camera, let description = session.cameraDescription {
+            text += "\n\(description)"
+        }
+        return text
     }
 
     /// Name, transport, then the state on a second line when there is something to say. A

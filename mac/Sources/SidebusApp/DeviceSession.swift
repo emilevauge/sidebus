@@ -56,6 +56,18 @@ final class DeviceSession {
     /// nothing.
     private(set) var needsAccessibilityPermission = false
 
+    /// Cameras the tablet announced, from CAMERA_LIST. Empty until it says otherwise.
+    private(set) var cameras: [CameraDescription] = []
+
+    /// Camera currently being received, if any.
+    private(set) var activeCamera: CameraDescription?
+
+    /// Last decoded camera frame, for the preview window.
+    private(set) var cameraFrame: CapturedFrame?
+
+    /// Description of the camera stream, for the preview window's title.
+    private(set) var cameraDescription: String?
+
     @ObservationIgnored
     let pairing = PairingValidator()
 
@@ -98,6 +110,10 @@ final class DeviceSession {
     private var pendingDevice: PeerSession.DeviceDescription?
     @ObservationIgnored
     private var pairingTimeout: Task<Void, Never>?
+    @ObservationIgnored
+    private var cameraDecoder: CameraDecoder?
+    @ObservationIgnored
+    private var cameraTask: Task<Void, Never>?
 
     @ObservationIgnored
     private let log = Logger(subsystem: "app.sidebus", category: "session")
@@ -190,6 +206,7 @@ final class DeviceSession {
         pairingTimeout?.cancel()
         pairingTimeout = nil
         pendingDevice = nil
+        stopCamera()
         await stopStreaming()
         phase = .stopped(status)
     }
@@ -359,6 +376,21 @@ final class DeviceSession {
         case let .pairResult(accepted):
             await completePairing(accepted: accepted, session: session, peer: peer)
 
+        case let .cameraList(list):
+            cameras = list
+            log.info("tablet offers \(list.count) camera(s)")
+
+        case let .cameraConfig(width, height, codec, parameterSets):
+            await startCameraDecoder(
+                width: Int(width),
+                height: Int(height),
+                codec: codec,
+                parameterSets: parameterSets
+            )
+
+        case let .cameraFrame(timestamp, _, data):
+            try? await cameraDecoder?.decode(data, timestamp: timestamp)
+
         default:
             log.debug("message \(message.type) received")
         }
@@ -454,6 +486,82 @@ final class DeviceSession {
             return
         }
         await startStreaming(to: device, session: session, peer: peer)
+    }
+
+    // MARK: - Camera
+
+    /// Asks the tablet to open one of its cameras and send it back.
+    ///
+    /// The opposite direction from the screen stream, on the same socket. A tablet propped
+    /// up as a display rarely points at anything worth filming, so this is meant for a
+    /// second device rather than the one showing the screen.
+    func startCamera(_ camera: CameraDescription, width: Int = 1280, height: Int = 720, fps: Int = 30) {
+        guard let session else { return }
+        activeCamera = camera
+        log.info("CAMERA_START \(camera.label, privacy: .public)")
+        Task {
+            try? await session.send(
+                .cameraStart(
+                    id: camera.id,
+                    width: UInt16(width),
+                    height: UInt16(height),
+                    fps: UInt8(fps),
+                    codec: .h264
+                )
+            )
+        }
+    }
+
+    func stopCamera() {
+        guard activeCamera != nil else { return }
+        log.info("CAMERA_STOP")
+        let session = self.session
+        activeCamera = nil
+        cameraFrame = nil
+        cameraDescription = nil
+        cameraTask?.cancel()
+        cameraTask = nil
+        let decoder = cameraDecoder
+        cameraDecoder = nil
+        Task {
+            try? await session?.send(.cameraStop)
+            await decoder?.stop()
+        }
+    }
+
+    private func startCameraDecoder(
+        width: Int,
+        height: Int,
+        codec: Codec,
+        parameterSets: Data
+    ) async {
+        cameraTask?.cancel()
+        await cameraDecoder?.stop()
+
+        let decoder = CameraDecoder()
+        do {
+            try await decoder.configure(
+                width: width,
+                height: height,
+                codec: codec,
+                parameterSets: parameterSets
+            )
+        } catch {
+            log.error("camera decoder refused the configuration: \(String(describing: error), privacy: .public)")
+            return
+        }
+
+        cameraDecoder = decoder
+        cameraDescription = "\(width) × \(height)"
+        log.info("camera stream \(width)×\(height)")
+
+        let frames = decoder.frames
+        cameraTask = Task { [weak self] in
+            for await frame in frames {
+                guard let self, !Task.isCancelled else { return }
+                self.cameraFrame = frame
+            }
+        }
     }
 
     // MARK: - Streaming

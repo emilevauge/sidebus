@@ -155,6 +155,73 @@ public enum AnnexB {
         return output
     }
 
+    /// Splits an Annex B blob into its NAL units, dropping the start codes.
+    ///
+    /// Used on the receiving side: CoreMedia builds a format description from the parameter
+    /// sets as separate buffers, not as one concatenated blob.
+    public static func split(_ data: Data) -> [Data] {
+        var units: [Data] = []
+        var index = data.startIndex
+        var unitStart: Int?
+
+        while index < data.endIndex {
+            let length = startCodeLength(in: data, at: index)
+            if length > 0 {
+                if let start = unitStart, index > start {
+                    units.append(data.subdata(in: start..<index))
+                }
+                index += length
+                unitStart = index
+                continue
+            }
+            index += 1
+        }
+        if let start = unitStart, start < data.endIndex {
+            units.append(data.subdata(in: start..<data.endIndex))
+        }
+        return units
+    }
+
+    /// Rewrites Annex B start codes as four byte length prefixes, in place.
+    ///
+    /// The exact opposite of `convertInPlace`, and just as free: both markers are four bytes
+    /// wide, so only those four bytes change and nothing is reallocated. VideoToolbox wants
+    /// AVCC on the way in, `MediaCodec` wants Annex B on the way out.
+    public static func convertToLengthPrefixed(_ data: inout Data) {
+        var boundaries: [Int] = []
+        var index = data.startIndex
+        while index < data.endIndex {
+            let length = startCodeLength(in: data, at: index)
+            if length == 4 {
+                boundaries.append(index)
+                index += 4
+                continue
+            }
+            index += 1
+        }
+        guard !boundaries.isEmpty else { return }
+
+        for (position, start) in boundaries.enumerated() {
+            let end = position + 1 < boundaries.count ? boundaries[position + 1] : data.endIndex
+            let payload = UInt32(end - start - 4)
+            data[start] = UInt8((payload >> 24) & 0xFF)
+            data[start + 1] = UInt8((payload >> 16) & 0xFF)
+            data[start + 2] = UInt8((payload >> 8) & 0xFF)
+            data[start + 3] = UInt8(payload & 0xFF)
+        }
+    }
+
+    /// Length of the start code at `index`, or 0 when there is none. Both the three byte and
+    /// the four byte forms exist in the wild.
+    private static func startCodeLength(in data: Data, at index: Int) -> Int {
+        guard index + 2 < data.endIndex else { return 0 }
+        if data[index] == 0, data[index + 1] == 0 {
+            if data[index + 2] == 1 { return 3 }
+            if index + 3 < data.endIndex, data[index + 2] == 0, data[index + 3] == 1 { return 4 }
+        }
+        return 0
+    }
+
     /// Length prefix size announced by the format description.
     public static func nalLengthSize(of formatDescription: CMFormatDescription) -> Int {
         var nalLength: Int32 = 4

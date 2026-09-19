@@ -21,6 +21,10 @@ struct SidebusApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("Camera", id: "camera") {
+            CameraWindow(devices: devices)
+        }
+
         // Custom label: MenuBarExtra then requires the
         // `MenuBarExtra { content } label: { ... }` shape.
         MenuBarExtra {

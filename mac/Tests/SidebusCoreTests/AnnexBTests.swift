@@ -94,4 +94,63 @@ final class AnnexBInPlaceTests: XCTestCase {
         try AnnexB.convertInPlace(&data, nalLengthSize: 2)
         XCTAssertEqual(data, Data([0x00, 0x00, 0x00, 0x01, 0x41, 0x9A]))
     }
+
+}
+
+/// The receiving direction: what `CameraDecoder` needs to hand VideoToolbox.
+final class AnnexBReceiveTests: XCTestCase {
+
+    func testSplitYieldsOneEntryPerNalUnit() {
+        let data = Data([
+            0, 0, 0, 1, 0x67, 0x42, 0x00,
+            0, 0, 0, 1, 0x68, 0xCE,
+        ])
+        let units = AnnexB.split(data)
+        XCTAssertEqual(units.count, 2)
+        XCTAssertEqual(units[0], Data([0x67, 0x42, 0x00]))
+        XCTAssertEqual(units[1], Data([0x68, 0xCE]))
+    }
+
+    /// Three byte start codes turn up in the wild, `MediaCodec` emits them among the four
+    /// byte ones.
+    func testSplitAcceptsThreeByteStartCodes() {
+        let data = Data([0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x68])
+        XCTAssertEqual(AnnexB.split(data), [Data([0x67, 0x42]), Data([0x68])])
+    }
+
+    func testSplitOfEmptyIsEmpty() {
+        XCTAssertTrue(AnnexB.split(Data()).isEmpty)
+    }
+
+    func testConvertToLengthPrefixedRewritesInPlace() {
+        var data = Data([
+            0, 0, 0, 1, 0x65, 0x11, 0x22,
+            0, 0, 0, 1, 0x41, 0x33,
+        ])
+        let before = data.count
+        AnnexB.convertToLengthPrefixed(&data)
+
+        XCTAssertEqual(data.count, before, "the conversion must not reallocate")
+        XCTAssertEqual(Array(data.prefix(4)), [0, 0, 0, 3])
+        XCTAssertEqual(Array(data[7..<11]), [0, 0, 0, 2])
+    }
+
+    /// The two conversions are each other's inverse. That is what lets a frame travel out
+    /// as Annex B and come back into VideoToolbox as AVCC with no copy either way.
+    func testRoundTrip() throws {
+        let original = Data([
+            0, 0, 0, 1, 0x65, 0x11, 0x22, 0x33,
+            0, 0, 0, 1, 0x41, 0x44,
+        ])
+        var data = original
+        AnnexB.convertToLengthPrefixed(&data)
+        try AnnexB.convertInPlace(&data, nalLengthSize: 4)
+        XCTAssertEqual(data, original)
+    }
+
+    func testConvertWithoutStartCodeLeavesTheBufferAlone() {
+        var data = Data([0x01, 0x02, 0x03])
+        AnnexB.convertToLengthPrefixed(&data)
+        XCTAssertEqual(data, Data([0x01, 0x02, 0x03]))
+    }
 }

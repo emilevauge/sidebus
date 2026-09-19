@@ -109,7 +109,7 @@ final class DeviceManager {
     @ObservationIgnored
     private let directory = DeviceDirectory.shared
     @ObservationIgnored
-    private var sessions: [String: DeviceSession] = [:]
+    private var running: [String: DeviceSession] = [:]
     @ObservationIgnored
     private var watchTask: Task<Void, Never>?
     @ObservationIgnored
@@ -162,6 +162,10 @@ final class DeviceManager {
     /// Number of shares in progress. Stored rather than computed: `sessions` is not
     /// observed, and the menu bar has to change its icon when this moves.
     private(set) var sharingCount = 0
+
+    /// Live sessions, for the camera window. Rebuilt on every list refresh so SwiftUI sees
+    /// a session appear and disappear.
+    private(set) var sessions: [DeviceSession] = []
 
     /// One line summary for the top of the menu.
     var summary: String {
@@ -227,10 +231,10 @@ final class DeviceManager {
         watchTask = nil
         browseTask?.cancel()
         browseTask = nil
-        let running = Array(sessions.values)
-        sessions.removeAll()
+        let live = Array(running.values)
+        running.removeAll()
         Task { [watcher, browser] in
-            for session in running {
+            for session in live {
                 await session.stop(bye: .normal, status: "Sidebus shutting down")
             }
             await watcher.stop()
@@ -339,11 +343,11 @@ final class DeviceManager {
 
     /// Opens a link long enough to pair, then hangs up. Sharing stays a separate gesture.
     func pair(_ key: String) {
-        guard sessions[key] == nil, let peer = bestPeer(for: key) else { return }
+        guard running[key] == nil, let peer = bestPeer(for: key) else { return }
         lastRefusal = nil
         log.info("pairing with \(peer.name, privacy: .public)")
-        sessions[key] = makeSession(key: key, mode: .pairing, peer: peer)
-        sessions[key]?.start()
+        running[key] = makeSession(key: key, mode: .pairing, peer: peer)
+        running[key]?.start()
         refreshEntries()
     }
 
@@ -357,7 +361,7 @@ final class DeviceManager {
     func stopSharing(_ key: String) {
         sharingIntent.remove(key)
         directory.setResumesSharing(false, for: key)
-        guard let session = sessions.removeValue(forKey: key) else {
+        guard let session = running.removeValue(forKey: key) else {
             refreshEntries()
             return
         }
@@ -402,10 +406,10 @@ final class DeviceManager {
         for key in sharingIntent where directory.contains(key) {
             guard let peer = visible[key]?.first else { continue }
 
-            guard let session = sessions[key] else {
+            guard let session = running[key] else {
                 log.info("sharing to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
                 let session = makeSession(key: key, mode: .sharing, peer: peer)
-                sessions[key] = session
+                running[key] = session
                 session.start()
                 continue
             }
@@ -415,7 +419,7 @@ final class DeviceManager {
             // and a 200 ms cut when the cable goes in passes unnoticed.
             if session.mode == .sharing, session.peer.kind == .wifi, peer.kind == .usb {
                 log.info("switching Wi-Fi to USB for \(peer.name, privacy: .public)")
-                sessions.removeValue(forKey: key)
+                running.removeValue(forKey: key)
                 Task {
                     await session.stop(bye: .transportSwitch, status: "transport switch")
                     self.reconcile()
@@ -464,12 +468,12 @@ final class DeviceManager {
         // The session was running under a provisional key taken from the adb serial. It now
         // takes the device's own, otherwise the list would show two rows for one tablet.
         let identifier = uuid.uuidString
-        if let (oldKey, session) = sessions.first(
+        if let (oldKey, session) = running.first(
             where: { $0.key != identifier && $0.value.peer.id == peer.id }
         ) {
-            sessions.removeValue(forKey: oldKey)
+            running.removeValue(forKey: oldKey)
             session.adopt(key: identifier)
-            sessions[identifier] = session
+            running[identifier] = session
             if sharingIntent.remove(oldKey) != nil {
                 sharingIntent.insert(identifier)
                 directory.setResumesSharing(true, for: identifier)
@@ -479,8 +483,8 @@ final class DeviceManager {
     }
 
     private func finished(_ session: DeviceSession) {
-        if sessions[session.key] === session {
-            sessions.removeValue(forKey: session.key)
+        if running[session.key] === session {
+            running.removeValue(forKey: session.key)
         }
         if let refusal = session.pairing.lastRefusal {
             lastRefusal = refusal
@@ -503,7 +507,7 @@ final class DeviceManager {
 
         for (key, peers) in visible {
             let peer = peers[0]
-            let session = sessions[key]
+            let session = running[key]
             let record = paired[key]
             rows.append(
                 DeviceEntry(
@@ -532,7 +536,8 @@ final class DeviceManager {
             )
         }
 
-        sharingCount = sessions.values.count { $0.mode == .sharing }
+        sharingCount = running.values.count { $0.mode == .sharing }
+        sessions = Array(running.values)
         pairedDevices = directory.all()
         entries = rows.sorted {
             if $0.isOnline != $1.isOnline { return $0.isOnline }
