@@ -21,8 +21,15 @@ final class PairingValidator: CertificateValidator {
 
     nonisolated init() {}
 
+    /// Les accès au stockage se font hors du main actor : un dialogue système ouvert par
+    /// le trousseau bloquerait sinon toute l'application au milieu du handshake.
+    private func storeAccess<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await Task.detached(priority: .userInitiated) { work() }.value
+    }
+
     func shouldAccept(fingerprint: Data, expectedDeviceID: String?) async -> Bool {
-        if let expectedDeviceID, let known = PairingStore.shared.fingerprint(forDeviceID: expectedDeviceID) {
+        if let expectedDeviceID,
+            let known = await storeAccess({ PairingStore.shared.fingerprint(forDeviceID: expectedDeviceID) }) {
             guard known == fingerprint else {
                 lastRefusal = """
                     L'empreinte de « \(expectedDeviceID) » a changé. Connexion refusée.
@@ -37,7 +44,7 @@ final class PairingValidator: CertificateValidator {
 
         // En USB, l'identifiant n'arrive qu'après le handshake : on reconnaît l'appareil
         // à son empreinte seule.
-        if expectedDeviceID == nil, PairingStore.shared.isKnown(fingerprint) {
+        if expectedDeviceID == nil, await storeAccess({ PairingStore.shared.isKnown(fingerprint) }) {
             lastAcceptedFingerprint = fingerprint
             return true
         }
@@ -51,7 +58,7 @@ final class PairingValidator: CertificateValidator {
         // L'identifiant réel remplacera cette clé provisoire dès DEVICE_INFO.
         let key = expectedDeviceID ?? Self.provisionalKey(for: fingerprint)
         do {
-            try PairingStore.shared.save(fingerprint, forDeviceID: key)
+            try await storeAccess({ Result { try PairingStore.shared.save(fingerprint, forDeviceID: key) } }).get()
             lastAcceptedFingerprint = fingerprint
             lastRefusal = nil
             log.info("appareil appairé sous la clé \(key, privacy: .public)")

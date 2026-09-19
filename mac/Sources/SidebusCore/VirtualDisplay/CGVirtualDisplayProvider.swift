@@ -128,6 +128,11 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
             throw VirtualDisplayError.creationFailed
         }
 
+        // L'écran propose bien un mode HiDPI, mais macOS retient par défaut celui qui a
+        // le plus de points, donc le 1x. Sur une dalle dense, l'interface serait
+        // minuscule : on sélectionne le mode 2x nous mêmes.
+        selectHiDPIMode(for: display.displayID)
+
         self.display = display
         log.info(
             """
@@ -136,6 +141,32 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
             """
         )
         return display.displayID
+    }
+
+    /// Bascule l'écran sur son mode 2x, s'il en propose un à la bonne définition.
+    private func selectHiDPIMode(for id: CGDirectDisplayID) {
+        guard configuration.pointSize.width != configuration.width else { return }
+
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode] else {
+            return
+        }
+
+        let target = modes.first {
+            $0.pixelWidth == configuration.width
+                && $0.pixelHeight == configuration.height
+                && $0.width * 2 == $0.pixelWidth
+        }
+        guard let target else {
+            log.error("aucun mode HiDPI offert par l'écran virtuel, affichage en 1x")
+            return
+        }
+
+        var handle: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&handle) == .success else { return }
+        CGConfigureDisplayWithDisplayMode(handle, id, target, nil)
+        // `forSession` : l'écran est éphémère, inutile d'écrire une préférence durable.
+        CGCompleteDisplayConfiguration(handle, .forSession)
     }
 
     public func release() async {

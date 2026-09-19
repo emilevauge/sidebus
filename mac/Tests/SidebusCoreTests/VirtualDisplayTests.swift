@@ -57,8 +57,13 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
         XCTAssertTrue(during.contains(id), "l'écran virtuel n'est pas actif")
         XCTAssertEqual(during.count, before.count + 1)
 
+        // Le mode HiDPI doit avoir été sélectionné : macOS retient sinon le 1x, qui
+        // donne une interface minuscule sur une dalle dense.
         let bounds = CGDisplayBounds(id)
         XCTAssertEqual(bounds.width, 1280, "mode HiDPI attendu, donc 1280 points")
+        let mode = CGDisplayCopyDisplayMode(id)
+        XCTAssertEqual(mode?.pixelWidth, 2560)
+        XCTAssertEqual(mode?.pixelHeight, 1600)
 
         await provider.release()
         try await Task.sleep(for: .milliseconds(500))
