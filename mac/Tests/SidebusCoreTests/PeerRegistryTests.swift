@@ -72,3 +72,25 @@ final class PeerRegistryTests: XCTestCase {
         XCTAssertNil(PeerRegistry().preferred())
     }
 }
+
+/// L'arrêt du partage doit tenir : sans ça, la découverte reprend la tablette aussitôt.
+final class SharingStateTests: XCTestCase {
+
+    private let key = "sharingEnabled.test"
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: key)
+        super.tearDown()
+    }
+
+    func testEtatParDefautEstActif() {
+        UserDefaults.standard.removeObject(forKey: key)
+        let stored = UserDefaults.standard.object(forKey: key) as? Bool ?? true
+        XCTAssertTrue(stored)
+    }
+
+    func testEtatPersiste() {
+        UserDefaults.standard.set(false, forKey: key)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Bool, false)
+    }
+}

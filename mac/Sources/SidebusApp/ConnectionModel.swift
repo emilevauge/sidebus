@@ -63,6 +63,58 @@ final class ConnectionModel {
     /// Réglage de résolution : 1.0, 0.75 ou 0.5.
     static let resolutionScaleKey = "resolutionScale"
 
+    /// Partage actif ou non. Persisté : arrêter le partage doit tenir au relancement,
+    /// sinon le geste ne veut rien dire.
+    static let sharingEnabledKey = "sharingEnabled"
+
+    private(set) var isSharingEnabled =
+        UserDefaults.standard.object(forKey: "sharingEnabled") as? Bool ?? true
+
+    var sharingLabel: String {
+        isSharingEnabled ? "Arrêter le partage" : "Reprendre le partage"
+    }
+
+    func toggleSharing() {
+        setSharing(!isSharingEnabled)
+    }
+
+    /// Arrête ou reprend le partage.
+    ///
+    /// Arrêter ferme la session avec un BYE, libère l'écran virtuel, et surtout empêche la
+    /// reconnexion automatique : sans ça la tablette serait reprise dans la seconde.
+    func setSharing(_ enabled: Bool) {
+        guard enabled != isSharingEnabled else { return }
+        isSharingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.sharingEnabledKey)
+
+        if enabled {
+            log.info("partage repris")
+            status = "en attente d'une tablette"
+            reconcile()
+            return
+        }
+
+        log.info("partage arrêté")
+        let previous = session
+        sessionTask?.cancel()
+        sessionTask = nil
+        session = nil
+        currentPeer = nil
+        isConnected = false
+        deviceName = nil
+        roundTripMilliseconds = nil
+        streamDescription = nil
+        status = "partage arrêté"
+
+        Task {
+            if let previous {
+                try? await previous.send(.bye(reason: .normal))
+                await previous.stop(reason: "partage arrêté")
+            }
+            await self.stopStreaming()
+        }
+    }
+
     @ObservationIgnored
     private var bitrateController = BitrateController(profile: .usb)
     @ObservationIgnored
@@ -137,7 +189,7 @@ final class ConnectionModel {
 
     func start() {
         registry.serialToDevice = Self.loadKnownSerials()
-        status = "en attente d'une tablette"
+        status = isSharingEnabled ? "en attente d'une tablette" : "partage arrêté"
 
         // Crochet de développement : permet d'exercer la branche Wi-Fi sur une machine où
         // la tablette n'est visible qu'en USB.
@@ -245,6 +297,8 @@ final class ConnectionModel {
     /// Décide quoi faire de l'état courant : se connecter, basculer, ou constater une
     /// disparition.
     private func reconcile() {
+        guard isSharingEnabled else { return }
+
         let visible = registry.resolved() + manualPeers
         let preferred = registry.preferred() ?? manualPeers.first
 
@@ -321,6 +375,7 @@ final class ConnectionModel {
 
 
     private func connect(to peer: Peer, mayLaunchApp: Bool = true) async {
+        guard isSharingEnabled else { return }
         var sawDeviceInfo = false
         log.info("connexion à \(peer.name, privacy: .public) en \(peer.kind.rawValue, privacy: .public)")
 
@@ -625,7 +680,16 @@ final class ConnectionModel {
                         return
                     }
                 }
+                // La capture s'est arrêtée alors que le lien tient : c'est macOS qui l'a
+                // coupée, par exemple depuis son propre indicateur d'enregistrement.
+                //
+                // Sauf si la tâche a été annulée : dans ce cas une autre diffusion a déjà
+                // pris la place, et démonter ici tuerait la session suivante.
                 log.info("flux d'encodage terminé après \(sent) frames")
+                if !Task.isCancelled, self.isConnected, self.isSharingEnabled {
+                    self.status = "capture arrêtée par le système"
+                    await self.stopStreaming()
+                }
             }
         } catch {
             log.error("diffusion impossible : \(String(describing: error), privacy: .public)")

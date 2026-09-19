@@ -87,9 +87,14 @@ final class DisplayMenuModel {
     private var consumer: Task<Void, Never>?
 
     var captureLabel: String {
-        guard isCapturing else { return "Démarrer la capture" }
+        // Enregistrement local, à ne pas confondre avec le partage vers la tablette.
+        guard isCapturing else { return "Enregistrer le flux dans un fichier" }
         let megabytes = Double(byteCount) / 1_000_000
-        return String(format: "Arrêter la capture (%d frames, %.1f Mo)", frameCount, megabytes)
+        return String(
+            format: "Arrêter l'enregistrement (%d frames, %.1f Mo)",
+            frameCount,
+            megabytes
+        )
     }
 
     func toggleCapture() {

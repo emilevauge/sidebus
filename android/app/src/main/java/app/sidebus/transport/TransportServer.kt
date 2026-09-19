@@ -75,6 +75,11 @@ class TransportServer(
                 }
 
                 socket.tcpNoDelay = true
+                // Sans délai de lecture, un Mac qui disparaît sans fermer proprement,
+                // coupure Wi-Fi ou veille, laisse la boucle bloquée pour toujours. Le
+                // serveur n'accepte alors plus personne, puisqu'il ne tient qu'une
+                // connexion à la fois.
+                socket.soTimeout = READ_TIMEOUT_MS
                 if (socket is javax.net.ssl.SSLSocket) {
                     try {
                         socket.startHandshake()
@@ -99,6 +104,8 @@ class TransportServer(
                 val reason = try {
                     readLoop(socket, connection, onEvent)
                     "fermée par le pair"
+                } catch (timeout: java.net.SocketTimeoutException) {
+                    "silence de plus de ${READ_TIMEOUT_MS / 1000} s"
                 } catch (error: Exception) {
                     Log.w(TAG, "connexion interrompue", error)
                     error.message ?: error.javaClass.simpleName
@@ -144,6 +151,13 @@ class TransportServer(
 
     companion object {
         const val DEFAULT_PORT = 27183
+
+        /**
+         * Le Mac envoie un PING par seconde : plus de dix secondes de silence veut dire
+         * que le lien est mort, quoi qu'en dise le socket.
+         */
+        private const val READ_TIMEOUT_MS = 10_000
+
         private const val TAG = "Sidebus"
     }
 }

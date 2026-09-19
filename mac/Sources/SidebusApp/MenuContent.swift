@@ -43,6 +43,10 @@ struct MenuContent: View {
         }
         .pickerStyle(.inline)
 
+        Button(connection.sharingLabel) {
+            connection.toggleSharing()
+        }
+
         Button("Connexion par adresse IP…") {
             askForAddress()
         }
