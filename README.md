@@ -115,7 +115,8 @@ L'état et la latence s'affichent dans le menu. Pour les suivre en détail :
 log stream --predicate 'subsystem == "app.sidebus"' --level debug --style compact
 ```
 
-Crochets de développement : `SIDEBUS_AUTO_PAIR=1` accepte l'appairage sans dialogue,
+Crochets de développement : `SIDEBUS_TEST_HOOKS=1` permet de basculer le partage depuis un
+script, `SIDEBUS_AUTO_PAIR=1` accepte l'appairage sans dialogue,
 `SIDEBUS_DISABLE_USB=1` force la branche Wi-Fi, `SIDEBUS_MANUAL_PEER=hôte:port` préremplit
 une adresse.
 

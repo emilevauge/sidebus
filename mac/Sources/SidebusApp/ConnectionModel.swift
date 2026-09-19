@@ -89,6 +89,12 @@ final class ConnectionModel {
 
         if enabled {
             log.info("partage repris")
+            // Rien n'est connecté à cet instant : repartir d'un état propre, quoi qu'ait
+            // laissé la session précédente.
+            currentPeer = nil
+            sessionTask = nil
+            session = nil
+            failureCount = 0
             status = "en attente d'une tablette"
             reconcile()
             return
@@ -148,6 +154,22 @@ final class ConnectionModel {
 
     init() {
         start()
+        installTestHook()
+    }
+
+    /// Permet de déclencher le basculement du partage depuis un script, pour reproduire
+    /// et vérifier le comportement sans cliquer dans le menu. Actif uniquement sous
+    /// `SIDEBUS_TEST_HOOKS=1`.
+    private func installTestHook() {
+        guard ProcessInfo.processInfo.environment["SIDEBUS_TEST_HOOKS"] == "1" else { return }
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("app.sidebus.test.toggleSharing"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.toggleSharing() }
+        }
+        log.info("crochet de test du partage actif")
     }
 
     private var macName: String {
@@ -375,7 +397,13 @@ final class ConnectionModel {
 
 
     private func connect(to peer: Peer, mayLaunchApp: Bool = true) async {
-        guard isSharingEnabled else { return }
+        // Renoncer sans laisser `currentPeer` renseigné : sinon la reprise croit qu'une
+        // connexion est déjà en cours et ne fait rien.
+        guard isSharingEnabled, !Task.isCancelled else {
+            currentPeer = nil
+            sessionTask = nil
+            return
+        }
         var sawDeviceInfo = false
         log.info("connexion à \(peer.name, privacy: .public) en \(peer.kind.rawValue, privacy: .public)")
 
@@ -512,9 +540,12 @@ final class ConnectionModel {
             return
         }
 
+        // Partage arrêté ou tâche annulée : surtout ne pas programmer de reconnexion,
+        // c'est elle qui laissait l'état incohérent.
+        guard isSharingEnabled, !Task.isCancelled else { return }
+
         // La tablette est toujours là : la session est tombée, pas le lien physique.
-        // Reconnexion avec une pause qui s'allonge si ça échoue en boucle. Le vrai
-        // backoff exponentiel arrive en phase 8.
+        // Reconnexion avec une pause qui s'allonge si ça échoue en boucle.
         // Backoff exponentiel, plafonné : une tablette éteinte ne doit pas faire tourner
         // une boucle de reconnexion à vide. L'appairage, lui, n'est jamais redemandé.
         failureCount = sawDeviceInfo ? 0 : failureCount + 1
