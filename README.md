@@ -157,11 +157,13 @@ immédiatement la dernière image, sans quoi un écran immobile laisserait la ta
 corrompue jusqu'au prochain mouvement. L'intervalle maximal entre keyframes est exprimé en
 secondes et non en frames : 300 frames à 7 fps font 43 secondes d'image cassée.
 
-**HEVC n'est pas activé par défaut.** Il vaut 30 à 40 % de débit en moins, mais le seul
-décodeur sur lequel il a pu être essayé, celui de l'émulateur, rend une image aux chromas
-cassées là où H.264 est parfaitement propre sur le même montage. Le code négocie le codec
-normalement ; `SIDEBUS_CODEC=hevc` force l'essai, à valider sur du matériel réel avant d'en
-faire le défaut.
+**HEVC est retenu dès que la tablette l'annonce.** Mesuré sur un Xiaomi 15, décodeur
+matériel Qualcomm : 0,5 Mbit/s contre 1,4 en H.264 sur le même contenu, à 57 et 60 fps,
+décodage 6 à 7 ms, sans frame perdue.
+
+Attention aux décodeurs logiciels. Celui de l'émulateur Android rend des chromas cassées en
+HEVC, blocs verts et magenta, là où H.264 passe parfaitement sur le même montage.
+`SIDEBUS_CODEC=h264` force le repli.
 
 ## Rendu côté tablette
 

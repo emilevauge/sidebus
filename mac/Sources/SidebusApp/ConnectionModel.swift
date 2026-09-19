@@ -538,12 +538,14 @@ final class ConnectionModel {
             ?? defaultScale
         let fps = environment["SIDEBUS_FPS"].flatMap(Int.init) ?? 60
 
-        // HEVC vaut 30 à 40 % de débit en moins, mais il n'est pas encore activé par
-        // défaut : le seul décodeur sur lequel il a pu être essayé rend une image aux
-        // chromas cassées, blocs verts et magenta. À forcer avec SIDEBUS_CODEC=hevc pour
-        // l'éprouver sur du matériel réel.
+        // HEVC dès que la tablette l'annonce : mesuré à 0,5 Mbit/s contre 1,4 en H.264
+        // sur le même contenu, décodé en matériel sans une frame perdue.
+        //
+        // Attention aux décodeurs logiciels, celui de l'émulateur Android en particulier :
+        // il rend des chromas cassées, blocs verts et magenta, là où H.264 passe. D'où
+        // SIDEBUS_CODEC=h264, qui force le repli.
         let requested = environment["SIDEBUS_CODEC"]
-        let codec: Codec = (requested == "hevc" && device.supportsHEVC) ? .hevc : .h264
+        let codec: Codec = (requested != "h264" && device.supportsHEVC) ? .hevc : .h264
         let profile: BitrateController.Profile = currentPeer?.kind == .usb ? .usb : .wifi
         bitrateController = BitrateController(profile: profile)
         currentFrameRate = fps
