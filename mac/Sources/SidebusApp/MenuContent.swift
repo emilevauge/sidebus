@@ -32,16 +32,6 @@ struct MenuContent: View {
 
         Divider()
 
-        Button("Connexion par adresse IP…") {
-            askForAddress()
-        }
-
-        if !devices.manualPeers.isEmpty {
-            Button("Oublier les adresses saisies") {
-                devices.removeManualPeers()
-            }
-        }
-
         Button("Réglages…") {
             NSApp.activate(ignoringOtherApps: true)
             permissions.refresh()
@@ -64,27 +54,5 @@ struct MenuContent: View {
         if entry.isOnline { text += " (\(entry.transportLabel))" }
         if let detail = entry.detail, !detail.isEmpty { text += "\n\(detail)" }
         return text
-    }
-
-    /// Saisie manuelle de l'adresse. Indispensable sur les réseaux qui bloquent le
-    /// multicast ou qui isolent les clients entre eux : aucun code ne peut contourner ça.
-    private func askForAddress() {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.messageText = "Connexion par adresse IP"
-        alert.informativeText =
-            "Saisissez l'adresse affichée sur la tablette, éventuellement suivie de « : » et du port."
-        alert.addButton(withTitle: "Connecter")
-        alert.addButton(withTitle: "Annuler")
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        field.placeholderString = "192.168.1.20"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            devices.addManualPeer(address: field.stringValue)
-        }
     }
 }

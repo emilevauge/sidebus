@@ -24,6 +24,9 @@ struct DeviceEntry: Identifiable {
     /// Texte affiché pour un appareil appairé mais hors ligne.
     let offlineDetail: String?
 
+    /// Vrai pour une adresse saisie à la main : elle s'oublie, elle ne se désappaire pas.
+    let isManual: Bool
+
     var isOnline: Bool { transport != nil }
 
     /// Vrai dès qu'un partage est demandé pour cet appareil, même avant la première frame.
@@ -151,7 +154,11 @@ final class DeviceManager {
     }
 
     /// Appareils appairés, y compris hors ligne, pour la fenêtre de réglages.
-    var pairedDevices: [PairedDevice] { directory.all() }
+    ///
+    /// Stocké, pas calculé depuis l'annuaire : une propriété calculée qui lit les
+    /// préférences ne se signale pas à SwiftUI, et la fenêtre gardait à l'écran un appareil
+    /// qu'on venait de désappairer.
+    private(set) var pairedDevices: [PairedDevice] = []
 
     /// Nombre de partages en cours. Stocké plutôt que calculé : `sessions` n'est pas
     /// observé, et la barre de menus doit changer d'icône quand il bouge.
@@ -247,6 +254,17 @@ final class DeviceManager {
         manualPeers.append(peer)
         log.info("tablette ajoutée à la main : \(host, privacy: .public):\(port)")
         reconcile()
+    }
+
+    func removeManualPeer(id: String) {
+        log.info("adresse saisie oubliée : \(id, privacy: .public)")
+        manualPeers.removeAll { $0.id == id }
+        reconcile()
+    }
+
+    /// Identifiant du pair saisi à la main qui se cache derrière une clé d'appareil.
+    func manualPeerID(forKey key: String) -> String? {
+        manualPeers.first { self.key(for: $0) == key }?.id
     }
 
     func removeManualPeers() {
@@ -358,6 +376,7 @@ final class DeviceManager {
         log.info("désappairage de \(key, privacy: .public)")
         stopSharing(key)
         directory.remove(key)
+        refreshEntries()
         Task {
             await Task.detached { PairingStore.shared.remove(deviceID: key) }.value
             self.refreshEntries()
@@ -368,6 +387,7 @@ final class DeviceManager {
         log.info("tous les appareils oubliés")
         for key in sharingIntent { stopSharing(key) }
         directory.removeAll()
+        refreshEntries()
         Task {
             await Task.detached { PairingStore.shared.removeAll() }.value
             self.refreshEntries()
@@ -480,6 +500,7 @@ final class DeviceManager {
     private func refreshEntries() {
         let visible = visiblePeers()
         let paired = Dictionary(uniqueKeysWithValues: directory.all().map { ($0.deviceID, $0) })
+        let manualKeys = Set(manualPeers.map(key(for:)))
 
         var rows: [DeviceEntry] = []
 
@@ -494,7 +515,8 @@ final class DeviceManager {
                     isPaired: record != nil,
                     transport: peer.kind,
                     session: session,
-                    offlineDetail: nil
+                    offlineDetail: nil,
+                    isManual: manualKeys.contains(key)
                 )
             )
         }
@@ -507,12 +529,14 @@ final class DeviceManager {
                     isPaired: true,
                     transport: nil,
                     session: nil,
-                    offlineDetail: "vu en \(Self.describe(device.lastTransport)), \(Self.ago(device.lastSeen))"
+                    offlineDetail: "vu en \(Self.describe(device.lastTransport)), \(Self.ago(device.lastSeen))",
+                    isManual: false
                 )
             )
         }
 
         sharingCount = sessions.values.count { $0.mode == .sharing }
+        pairedDevices = directory.all()
         entries = rows.sorted {
             if $0.isOnline != $1.isOnline { return $0.isOnline }
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending

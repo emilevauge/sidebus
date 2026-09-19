@@ -33,32 +33,44 @@ private struct DeviceSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Appareils appairés")
+            Text("Appareils")
                 .font(.title3.bold())
 
             Text(
                 """
-                Désappairer efface l'empreinte du certificat de la tablette. La prochaine \
-                connexion redemandera un code, des deux côtés.
+                Les tablettes visibles et celles déjà appairées, y compris hors ligne. \
+                Désappairer efface l'empreinte du certificat : la prochaine connexion \
+                redemandera un code, des deux côtés.
                 """
             )
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            if devices.pairedDevices.isEmpty {
+            if devices.entries.isEmpty {
                 Spacer()
-                Text("Aucun appareil appairé. Cliquez sur une tablette dans le menu Sidebus.")
+                Text("Aucun appareil. Branchez une tablette, ou ajoutez son adresse ci dessous.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                 Spacer()
             } else {
-                List(devices.pairedDevices) { device in
-                    DeviceRow(device: device, devices: devices)
+                // Une pile défilante plutôt qu'une `List` : celle ci calcule une hauteur de
+                // rangée trop courte pour deux lignes de texte et rogne la première. Et
+                // avec un seul appareil elle dessine des bandes vides sous la ligne, qu'on
+                // prend pour des entrées en cours de chargement.
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(devices.entries.enumerated()), id: \.element.id) { index, entry in
+                            if index > 0 { Divider() }
+                            DeviceRow(entry: entry, devices: devices)
+                        }
+                    }
                 }
-                // Pas de fond alterné : avec un seul appareil il dessine quatre bandes
-                // vides sous la ligne, et on croit à des entrées en cours de chargement.
-                .listStyle(.inset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+
+            Divider()
+
+            ManualAddress(devices: devices)
 
             HStack {
                 Spacer()
@@ -79,24 +91,58 @@ private struct DeviceSettings: View {
     }
 }
 
-private struct DeviceRow: View {
-    let device: PairedDevice
+/// Saisie manuelle de l'adresse. Indispensable sur les réseaux qui bloquent le multicast ou
+/// qui isolent les clients entre eux : aucun code ne peut contourner ça, seule l'adresse
+/// donnée à la main permet d'atteindre la tablette.
+private struct ManualAddress: View {
     let devices: DeviceManager
+    @State private var address = ""
 
-    /// Ligne correspondante dans la liste vivante, quand l'appareil est visible.
-    private var entry: DeviceEntry? {
-        devices.entries.first { $0.id == device.deviceID }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Connexion par adresse IP")
+                .font(.headline)
+
+            Text(
+                """
+                Utile quand la tablette n'apparaît pas toute seule, sur un réseau qui bloque \
+                le multicast. L'adresse est affichée sur la tablette, éventuellement suivie \
+                de « : » et du port. Elle rejoint ensuite la liste ci dessus.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                TextField("192.168.1.20", text: $address)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                Button("Ajouter", action: add)
+                    .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
     }
+
+    private func add() {
+        devices.addManualPeer(address: address)
+        address = ""
+    }
+}
+
+private struct DeviceRow: View {
+    let entry: DeviceEntry
+    let devices: DeviceManager
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: entry?.symbol ?? "ipad.slash")
+            Image(systemName: entry.symbol)
                 .font(.title3)
-                .foregroundStyle(entry?.isOnline == true ? .primary : .secondary)
+                .foregroundStyle(entry.isOnline ? .primary : .secondary)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(device.name)
+                Text(entry.name)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -104,35 +150,37 @@ private struct DeviceRow: View {
 
             Spacer()
 
-            if let entry, entry.isOnline {
-                Button(entry.isSharing ? "Arrêter" : "Partager") {
-                    devices.perform(entry)
-                }
+            if entry.isOnline {
+                Button(actionLabel) { devices.perform(entry) }
             }
 
-            Button("Désappairer") {
-                devices.unpair(device.deviceID)
+            if entry.isPaired {
+                Button("Désappairer") { devices.unpair(entry.id) }
+            }
+
+            if entry.isManual, let identifier = devices.manualPeerID(forKey: entry.id) {
+                Button("Oublier l'adresse") { devices.removeManualPeer(id: identifier) }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var actionLabel: String {
+        switch entry.action {
+        case .pair: return "Appairer"
+        case .startSharing: return "Partager"
+        case .stopSharing: return "Arrêter"
+        case .none: return "—"
+        }
     }
 
     private var subtitle: String {
-        guard let entry, entry.isOnline else {
-            return "hors ligne, vu en \(Self.transport(device.lastTransport))"
-        }
-        if let detail = entry.detail, !detail.isEmpty {
-            return "\(entry.transportLabel), \(detail)"
-        }
-        return entry.transportLabel
-    }
-
-    private static func transport(_ kind: TransportKind?) -> String {
-        switch kind {
-        case .usb: return "USB"
-        case .wifi: return "Wi-Fi"
-        case nil: return "transport inconnu"
-        }
+        var parts = [entry.transportLabel]
+        if entry.isManual { parts.append("adresse saisie") }
+        if !entry.isPaired, entry.isOnline { parts.append("non appairé") }
+        if let detail = entry.detail, !detail.isEmpty { parts.append(detail) }
+        return parts.joined(separator: ", ")
     }
 }
 
