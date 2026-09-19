@@ -150,9 +150,18 @@ Profils différents par transport, généreux en USB, prudent en Wi-Fi. Si le d�
 ne suffit toujours pas, c'est le décodeur ou la chaleur qui limitent, pas le réseau : la
 cadence tombe alors à 30 fps.
 
-Quand la tablette perd le fil, elle demande une keyframe plutôt que d'attendre la suivante,
-qui peut être à cinq secondes. HEVC est retenu dès que la tablette annonce savoir le
-décoder : 30 à 40 % de débit en moins.
+Quand la tablette perd le fil, elle demande une keyframe et **cesse d'alimenter son
+décodeur** en attendant : continuer à lui donner des frames intermédiaires sans leur
+référence produit des blocs verts et magenta qui persistent. Le Mac répond en réencodant
+immédiatement la dernière image, sans quoi un écran immobile laisserait la tablette
+corrompue jusqu'au prochain mouvement. L'intervalle maximal entre keyframes est exprimé en
+secondes et non en frames : 300 frames à 7 fps font 43 secondes d'image cassée.
+
+**HEVC n'est pas activé par défaut.** Il vaut 30 à 40 % de débit en moins, mais le seul
+décodeur sur lequel il a pu être essayé, celui de l'émulateur, rend une image aux chromas
+cassées là où H.264 est parfaitement propre sur le même montage. Le code négocie le codec
+normalement ; `SIDEBUS_CODEC=hevc` force l'essai, à valider sur du matériel réel avant d'en
+faire le défaut.
 
 ## Rendu côté tablette
 

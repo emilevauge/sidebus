@@ -9,6 +9,12 @@ public struct VideoEncoderConfiguration: Sendable {
     public var fps: Int
     public var bitrate: Int
     public var maxKeyFrameInterval: Int
+    /// Intervalle maximal entre deux keyframes, en secondes.
+    ///
+    /// Un intervalle exprimé en nombre de frames ne protège de rien quand la cadence
+    /// tombe : 300 frames à 7 fps font 43 secondes d'image corrompue après la moindre
+    /// perte. Une borne temporelle tient quelle que soit la cadence.
+    public var maxKeyFrameIntervalSeconds: Double
     /// HEVC coûte 30 à 40 % de débit en moins, ce qui compte beaucoup en Wi-Fi. Retenu
     /// seulement si la tablette annonce savoir le décoder.
     public var codec: Codec
@@ -19,6 +25,7 @@ public struct VideoEncoderConfiguration: Sendable {
         fps: Int = 60,
         bitrate: Int = 15_000_000,
         maxKeyFrameInterval: Int = 300,
+        maxKeyFrameIntervalSeconds: Double = 2,
         codec: Codec = .h264
     ) {
         self.width = width
@@ -26,6 +33,7 @@ public struct VideoEncoderConfiguration: Sendable {
         self.fps = fps
         self.bitrate = bitrate
         self.maxKeyFrameInterval = maxKeyFrameInterval
+        self.maxKeyFrameIntervalSeconds = maxKeyFrameIntervalSeconds
         self.codec = codec
     }
 }
@@ -110,6 +118,11 @@ public actor VideoEncoder {
             kVTCompressionPropertyKey_MaxKeyFrameInterval,
             configuration.maxKeyFrameInterval
         )
+        try Self.set(
+            session,
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+            configuration.maxKeyFrameIntervalSeconds
+        )
         try Self.set(session, kVTCompressionPropertyKey_AverageBitRate, configuration.bitrate)
         try Self.set(session, kVTCompressionPropertyKey_ExpectedFrameRate, configuration.fps)
 
@@ -182,6 +195,15 @@ public actor VideoEncoder {
         _ value: Bool
     ) throws {
         let status = VTSessionSetProperty(session, key: key, value: (value ? kCFBooleanTrue : kCFBooleanFalse))
+        guard status == noErr else { throw EncoderError.propertyFailed(key as String, status) }
+    }
+
+    private static func set(
+        _ session: VTCompressionSession,
+        _ key: CFString,
+        _ value: Double
+    ) throws {
+        let status = VTSessionSetProperty(session, key: key, value: value as CFNumber)
         guard status == noErr else { throw EncoderError.propertyFailed(key as String, status) }
     }
 

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreMedia
 import Foundation
 
 /// Chaîne complète capture vers encodage : acquiert l'écran auprès d'un
@@ -31,6 +32,9 @@ public actor CaptureSession {
     private var provider: (any VirtualDisplayProvider)?
     private var encoder: VideoEncoder?
     private var pump: Task<Void, Never>?
+    /// Dernière frame capturée, conservée pour pouvoir répondre à une demande de keyframe
+    /// même quand l'écran ne bouge plus.
+    private var lastFrame: CapturedFrame?
 
     public init() {}
 
@@ -63,6 +67,7 @@ public actor CaptureSession {
         self.encoder = encoder
         pump = Task {
             for await frame in captured {
+                await self.remember(frame)
                 do {
                     try await encoder.encode(frame)
                 } catch {
@@ -88,9 +93,30 @@ public actor CaptureSession {
         await capturer.setFrameRate(fps)
     }
 
+    private func remember(_ frame: CapturedFrame) {
+        lastFrame = frame
+    }
+
     /// Force une keyframe, en réponse à KEYFRAME_REQ.
+    ///
+    /// ScreenCaptureKit ne livre une frame que lorsque le contenu change. Sur un écran
+    /// immobile, se contenter d'armer le drapeau laisserait la tablette corrompue jusqu'au
+    /// prochain mouvement. On réencode donc tout de suite la dernière frame connue.
     public func requestKeyframe() async {
-        await encoder?.requestKeyframe()
+        guard let encoder else { return }
+        await encoder.requestKeyframe()
+
+        guard let lastFrame else { return }
+        let refreshed = CapturedFrame(
+            imageBuffer: lastFrame.imageBuffer,
+            // VideoToolbox exige des horodatages strictement croissants.
+            presentationTime: CMTimeAdd(
+                lastFrame.presentationTime,
+                CMTime(value: 1, timescale: 1000)
+            )
+        )
+        self.lastFrame = refreshed
+        try? await encoder.encode(refreshed)
     }
 
     public func stop() async {

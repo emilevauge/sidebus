@@ -102,8 +102,11 @@ class VideoDecoder(
         val codec = this.codec ?: return false
 
         var index = freeInputBuffers.poll()
-        if (index == null && isKeyframe) {
-            val deadline = System.nanoTime() + KEYFRAME_WAIT_NANOS
+        if (index == null) {
+            // Une courte attente évite la plupart des droppes inutiles, sans construire
+            // de file : quelques millisecondes coûtent moins cher qu'une image cassée.
+            val wait = if (isKeyframe) KEYFRAME_WAIT_NANOS else FRAME_WAIT_NANOS
+            val deadline = System.nanoTime() + wait
             while (index == null && System.nanoTime() < deadline) {
                 Thread.sleep(1)
                 index = freeInputBuffers.poll()
@@ -147,5 +150,8 @@ class VideoDecoder(
 
         /** Attente maximale d'un buffer d'entrée pour une keyframe. */
         private const val KEYFRAME_WAIT_NANOS = 30_000_000L
+
+        /** Idem pour une frame intermédiaire, bien plus courte. */
+        private const val FRAME_WAIT_NANOS = 5_000_000L
     }
 }
