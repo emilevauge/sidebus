@@ -4,10 +4,19 @@ import SwiftUI
 struct MenuContent: View {
     let devices: DeviceManager
     let permissions: PermissionsModel
+    let updates: UpdateChecker
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Text(devices.summary)
+
+        if let release = updates.available {
+            Button {
+                updates.install()
+            } label: {
+                Label("Sidebus \(release.version) is available", systemImage: "arrow.down.circle.fill")
+            }
+        }
 
         if let refusal = devices.lastRefusal {
             Text(refusal)

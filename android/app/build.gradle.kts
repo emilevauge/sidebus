@@ -10,8 +10,10 @@ android {
         applicationId = "app.sidebus"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        // Same VERSION file as the Mac side: one number for both applications, and the
+        // release that ships them carries that number as its tag.
+        versionName = rootProject.file("../VERSION").readText().trim()
+        versionCode = versionName!!.split(".").let { (it[0].toInt() * 10000) + (it[1].toInt() * 100) + it[2].toInt() }
     }
 
     // Release signing read from Gradle properties or the environment: no secret in the

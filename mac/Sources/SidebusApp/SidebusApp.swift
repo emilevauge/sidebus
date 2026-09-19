@@ -8,17 +8,23 @@ struct SidebusApp: App {
     @State private var displays = DisplayMenuModel()
     @State private var devices = DeviceManager()
     @State private var permissions = PermissionsModel()
+    @State private var updates = UpdateChecker()
 
     var body: some Scene {
         Window("Sidebus Settings", id: "settings") {
-            SettingsWindow(devices: devices, displays: displays, permissions: permissions)
+            SettingsWindow(
+                devices: devices,
+                displays: displays,
+                permissions: permissions,
+                updates: updates
+            )
         }
         .windowResizability(.contentSize)
 
         // Custom label: MenuBarExtra then requires the
         // `MenuBarExtra { content } label: { ... }` shape.
         MenuBarExtra {
-            MenuContent(devices: devices, permissions: permissions)
+            MenuContent(devices: devices, permissions: permissions, updates: updates)
         } label: {
             // The icon says at a glance whether anything is streaming.
             Image(nsImage: MenuBarIcon.forSharing(devices.sharingCount > 0))

@@ -9,6 +9,7 @@ struct SettingsWindow: View {
     let devices: DeviceManager
     @Bindable var displays: DisplayMenuModel
     @Bindable var permissions: PermissionsModel
+    let updates: UpdateChecker
 
     var body: some View {
         TabView {
@@ -20,6 +21,9 @@ struct SettingsWindow: View {
 
             PermissionsView(model: permissions)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
+
+            AboutSettings(updates: updates)
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 560, height: 420)
     }
@@ -180,6 +184,85 @@ private struct DeviceRow: View {
         if !entry.isPaired, entry.isOnline { parts.append("not paired") }
         if let detail = entry.detail, !detail.isEmpty { parts.append(detail) }
         return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - About
+
+private struct AboutSettings: View {
+    let updates: UpdateChecker
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Sidebus")
+                .font(.title2.bold())
+
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(updates.currentVersion)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 10) {
+                Button("Check for updates") {
+                    Task { await updates.checkManually() }
+                }
+                .disabled(updates.isChecking)
+
+                if updates.isChecking {
+                    ProgressView().controlSize(.small)
+                }
+
+                if let result = updates.lastManualResult {
+                    resultLabel(result)
+                }
+            }
+
+            if let release = updates.available {
+                HStack(spacing: 10) {
+                    Button("Install \(release.version)") { updates.install() }
+                        .keyboardShortcut(.defaultAction)
+                    Button("Release notes") { updates.openReleasePage() }
+                }
+                Text(
+                    """
+                    Installing downloads the disk image, replaces the application and \
+                    restarts it. Any share in progress stops.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Text("Checked once a day, and again when the Mac wakes up.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func resultLabel(_ result: UpdateChecker.ManualResult) -> some View {
+        switch result {
+        case .upToDate:
+            Label("Up to date", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case let .newer(release):
+            Label("\(release.version) is available", systemImage: "arrow.up.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        case let .failed(reason):
+            Label(reason, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
     }
 }
 

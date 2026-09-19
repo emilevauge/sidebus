@@ -310,6 +310,36 @@ unsigned APK otherwise. No secret lives in the repository.
 Settings > Permissions shows the state of the three TCC permissions, opens the right System
 Settings pane, and can restart the app, since they only take effect on the next launch.
 
+## Releasing
+
+One version number for both applications, in the `VERSION` file at the root.
+`mac/Scripts/bundle.sh` stamps it into the bundle's `CFBundleShortVersionString`, and the
+Gradle build reads the same file for `versionName`.
+
+```sh
+Scripts/publish.sh patch            # 0.1.0 -> 0.1.1
+Scripts/publish.sh minor            # 0.1.0 -> 0.2.0
+Scripts/publish.sh 1.4.2            # an explicit version
+Scripts/publish.sh patch --dry-run  # builds and packages, publishes nothing
+```
+
+The script refuses a dirty tree or a branch other than `main`, runs both test suites,
+builds the bundle and the APK, packages `Sidebus.dmg`, commits the bump, tags `vX.Y.Z` and
+creates the GitHub release with both artifacts attached.
+
+The Mac application asks the GitHub releases API once a day, and again when the Mac wakes
+up, since a `Timer` does not tick while the machine sleeps. A newer version shows up as a
+row in the menu; Settings > About has the current version and a button that checks on
+demand. Installing downloads the disk image and hands over to a detached helper script: the
+application cannot rewrite its own bundle while running, so the helper waits for it to
+exit, swaps the bundle, and relaunches. The old bundle is moved aside rather than deleted,
+and restored if the copy fails, so the user is never left without an application.
+
+The disk image is signed with the local identity, not a Developer ID. The self update path
+works because the helper strips the quarantine flag. A disk image downloaded by hand onto
+another Mac would be refused by Gatekeeper, and needs either `xattr -dr
+com.apple.quarantine` or a properly notarized build through `mac/Scripts/release.sh`.
+
 ## Protocol
 
 `protocol/PROTOCOL.md` describes the wire format, `protocol/testvectors/` holds its binary
