@@ -731,7 +731,7 @@ final class DeviceSession {
             phase = .streaming
             log.info(
                 """
-                diffusion de \(displayName, privacy: .public) en \
+                streaming \(displayName, privacy: .public) at \
                 \(Int(size.width))×\(Int(size.height))
                 """
             )
