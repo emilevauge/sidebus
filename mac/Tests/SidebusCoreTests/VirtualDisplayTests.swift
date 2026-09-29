@@ -9,7 +9,8 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
         let configuration = CGVirtualDisplayProvider.Configuration(
             width: 2560,
             height: 1600,
-            density: 320
+            density: 320,
+            serial: 1
         )
         // 2560 px at 320 dpi = 8 inches = 203.2 mm.
         XCTAssertEqual(configuration.sizeInMillimeters.width, 203.2, accuracy: 0.1)
@@ -17,21 +18,43 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
     }
 
     func testHiDPIModeOnADensePanel() {
-        let dense = CGVirtualDisplayProvider.Configuration(width: 2560, height: 1600, density: 320)
+        let dense = CGVirtualDisplayProvider.Configuration(
+            width: 2560, height: 1600, density: 320, serial: 1
+        )
         XCTAssertEqual(dense.pointSize.width, 1280)
         XCTAssertEqual(dense.pointSize.height, 800)
 
         // A low density panel: no HiDPI, the interface would be enormous otherwise.
-        let coarse = CGVirtualDisplayProvider.Configuration(width: 1920, height: 1200, density: 160)
+        let coarse = CGVirtualDisplayProvider.Configuration(
+            width: 1920, height: 1200, density: 160, serial: 1
+        )
         XCTAssertEqual(coarse.pointSize.width, 1920)
     }
 
+    /// The whole point of the serial: the same tablet has to produce the same number on
+    /// every launch, otherwise macOS files a new display each time and cannot put it back
+    /// where the user dragged it.
+    func testSerialIsStableForOneDevice() {
+        let device = UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!
+        let first = CGVirtualDisplayProvider.Configuration.serial(for: device)
+        let second = CGVirtualDisplayProvider.Configuration.serial(for: device)
+        XCTAssertEqual(first, second)
+        XCTAssertNotEqual(first, 0, "zero reads as the absence of a serial number")
+
+        let other = UUID(uuidString: "550e8400-e29b-41d4-a716-446655440001")!
+        XCTAssertNotEqual(
+            first,
+            CGVirtualDisplayProvider.Configuration.serial(for: other),
+            "two tablets must keep two identities, and two arrangements"
+        )
+    }
+
     func testPrivateApiIsPresent() {
-        // If this test fails on a future macOS release, that is the signal the
-        // bascule sur ExistingDisplayProvider devient le chemin normal.
+        // If this test fails on a future macOS release, that is the signal that falling
+        // back to ExistingDisplayProvider has become the normal path.
         XCTAssertTrue(
             CGVirtualDisplayProvider.isSupported,
-            "les classes CGVirtualDisplay ont disparu de CoreGraphics"
+            "the CGVirtualDisplay classes are gone from CoreGraphics"
         )
     }
 
@@ -53,7 +76,13 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
         try XCTSkipIf(before.isEmpty, "no awake display")
 
         let provider = CGVirtualDisplayProvider(
-            configuration: .init(width: 2560, height: 1600, density: 320, name: "Sidebus test")
+            configuration: .init(
+                width: 2560,
+                height: 1600,
+                density: 320,
+                name: "Sidebus test",
+                serial: CGVirtualDisplayProvider.Configuration.serial(for: UUID())
+            )
         )
 
         let id = try await provider.acquire()

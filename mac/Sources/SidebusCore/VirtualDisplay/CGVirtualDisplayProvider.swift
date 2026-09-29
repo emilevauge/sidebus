@@ -18,7 +18,7 @@ import os
 public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
 
     public struct Configuration: Sendable {
-        /// Dimensions en pixels de la dalle de la tablette.
+        /// Pixel dimensions of the tablet's panel.
         public var width: Int
         public var height: Int
         /// Density announced by the tablet, in dpi.
@@ -26,18 +26,45 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         public var refreshRate: Double
         public var name: String
 
+        /// Serial number declared to the system, and with it the display's identity.
+        ///
+        /// macOS files the arrangement, the position of each screen relative to the others,
+        /// under a UUID derived from the vendor, product and serial triple. A serial that
+        /// changes between two launches produces a display the system has never seen, whose
+        /// position it therefore cannot restore, and one more record in its database every
+        /// time. Derive it from the tablet with `serial(for:)`.
+        public var serial: UInt32
+
         public init(
             width: Int,
             height: Int,
             density: Int,
             refreshRate: Double = 60,
-            name: String = "Sidebus"
+            name: String = "Sidebus",
+            serial: UInt32
         ) {
             self.width = width
             self.height = height
             self.density = density
             self.refreshRate = refreshRate
             self.name = name
+            self.serial = serial
+        }
+
+        /// A stable serial number for one tablet.
+        ///
+        /// FNV-1a over the identifier's bytes. Not Swift's `hashValue`: `Hasher` is seeded
+        /// afresh in every process, so it would give a different answer on the next launch,
+        /// which is exactly the bug this exists to avoid.
+        public static func serial(for deviceID: UUID) -> UInt32 {
+            var hash: UInt32 = 2_166_136_261
+            for byte in withUnsafeBytes(of: deviceID.uuid, Array.init) {
+                hash ^= UInt32(byte)
+                hash = hash &* 16_777_619
+            }
+            // Zero reads as "no serial number" to the system, which lands every display
+            // without one on the same identity.
+            return hash == 0 ? 1 : hash
         }
 
         /// Physical size to declare in order to land on the wanted density.
@@ -105,10 +132,9 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         descriptor.sizeInMillimeters = configuration.sizeInMillimeters
         descriptor.productID = 0x1234
         descriptor.vendorID = 0x5342  // "SB"
-        // Serial number drawn at random on every creation. Reusing the same vendor, product,
-        // serial triple eventually collides with the records the system keeps of earlier
-        // displays.
-        descriptor.serialNum = UInt32.random(in: 1...UInt32.max)
+        // Stable per tablet: that is what lets macOS recognise the display and put it back
+        // where the user dragged it. Two tablets keep two identities, and two arrangements.
+        descriptor.serialNum = configuration.serial
         descriptor.terminationHandler = { _, _ in }
 
         let display = CGVirtualDisplay(descriptor: descriptor)

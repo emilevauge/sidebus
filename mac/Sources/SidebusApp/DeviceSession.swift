@@ -820,7 +820,10 @@ final class DeviceSession {
                         width: Int(device.width),
                         height: Int(device.height),
                         density: Int(device.density),
-                        name: "Sidebus \(device.name)"
+                        name: "Sidebus \(device.name)",
+                        // Tied to the tablet, so macOS recognises the same display from one
+                        // connection to the next and puts it back where it was dragged.
+                        serial: CGVirtualDisplayProvider.Configuration.serial(for: device.uuid)
                     )
                 )
                 displayID = try await virtual.acquire()
