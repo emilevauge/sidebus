@@ -12,6 +12,12 @@
 // on channel 8: channel 1 is refused, channel 8 answers AT+BRSF.
 //
 // The phone must already be paired with the Mac, from System Settings > Bluetooth.
+//
+// Result on macOS 26.6, MacBook Air M-series, Xiaomi 15 on Android 16 (2026-10-12):
+// - control works: service level connection, dial, end, call state, signal, battery
+// - audio does not: during a call the phone sends an eSCO connect request, the Mac
+//   rejects it (HCI reason 0x0D, limited resources), and connectSCO on the Mac side
+//   returns kIOReturnUnsupported. macOS no longer carries SCO for this API.
 
 import CoreAudio
 import Foundation
