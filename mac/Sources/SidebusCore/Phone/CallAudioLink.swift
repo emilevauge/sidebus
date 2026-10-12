@@ -45,6 +45,7 @@ public final class CallAudioLink: @unchecked Sendable {
     /// Starts the audio engine. Needs the microphone permission; throws when the engine
     /// cannot start.
     public func start() throws {
+        borrowInput()
         do {
             try startWithVoiceProcessing()
         } catch {
@@ -99,6 +100,40 @@ public final class CallAudioLink: @unchecked Sendable {
     public func stop() {
         queue.sync { stopped = true }
         stopEngines()
+        returnInput()
+    }
+
+    /// Default input set aside for the call, put back when it ends.
+    private var setAsideInput: AudioDeviceID?
+
+    /// Voice processing builds on the default input, and fails (-10875) when that is an
+    /// aggregate missing a member, a USB microphone unplugged say. With an aggregate it
+    /// takes the built-in microphone anyway, so the call borrows that as the default.
+    private func borrowInput() {
+        guard let current = Self.defaultInput(),
+              Self.transportType(current) == kAudioDeviceTransportTypeAggregate,
+              let builtIn = Self.inputDevices().first(where: { Self.transportType($0) == kAudioDeviceTransportTypeBuiltIn }),
+              Self.setDefaultInput(builtIn)
+        else { return }
+        setAsideInput = current
+        log.info("default input set to the built-in microphone for the call")
+    }
+
+    private func returnInput() {
+        guard let input = setAsideInput else { return }
+        setAsideInput = nil
+        _ = Self.setDefaultInput(input)
+    }
+
+    private static func setDefaultInput(_ device: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value = device
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size), &value) == noErr
     }
 
     private func stopEngines() {
@@ -109,9 +144,8 @@ public final class CallAudioLink: @unchecked Sendable {
         if player.engine != nil { playbackEngine.detach(player) }
     }
 
-    /// The system's default input, unless it is an aggregate device: voice processing fails
-    /// to start on one whose members are not all there (error -10875), as with a wireless
-    /// microphone switched off. The built-in microphone then.
+    /// The system's default input, unless it is an aggregate device, which may miss a
+    /// member. The built-in microphone then.
     static func microphone() -> AudioDeviceID? {
         if let device = defaultInput(), transportType(device) != kAudioDeviceTransportTypeAggregate {
             return device
