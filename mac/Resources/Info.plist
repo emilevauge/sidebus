@@ -26,6 +26,21 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Sidebus looks for your tablet on the local network in order to send it the screen image.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>During a phone call, the other party hears you through the Mac's microphone.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Sidebus places and answers your phone's calls over Bluetooth.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Phone number</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tel</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_sidebus._tcp</string>

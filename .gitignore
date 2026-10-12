@@ -16,3 +16,6 @@ android/.kotlin/
 
 # bundle produit par mac/Scripts/bundle.sh
 mac/build/
+
+# built by android/callbridge/build.sh, from mac/Scripts/bundle.sh
+mac/Sources/SidebusApp/Resources/callbridge.dex

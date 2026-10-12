@@ -7,6 +7,7 @@ import SwiftUI
 /// only the device list and the gestures that go with it.
 struct SettingsWindow: View {
     let devices: DeviceManager
+    let phone: PhoneModel
     @Bindable var displays: DisplayMenuModel
     @Bindable var permissions: PermissionsModel
     let updates: UpdateChecker
@@ -19,6 +20,9 @@ struct SettingsWindow: View {
             VideoSettings(devices: devices, displays: displays)
                 .tabItem { Label("Video", systemImage: "rectangle.on.rectangle") }
 
+            PhoneSettings(phone: phone)
+                .tabItem { Label("Phone", systemImage: "phone") }
+
             PermissionsView(model: permissions)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
 
@@ -26,6 +30,61 @@ struct SettingsWindow: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 560, height: 420)
+    }
+}
+
+// MARK: - Phone
+
+private struct PhoneSettings: View {
+    let phone: PhoneModel
+    @State private var handlesLinks = PhoneSettings.sidebusHandlesLinks()
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Bluetooth", value: phone.isBluetoothConnected
+                    ? "Connected to \(phone.phoneName ?? "the phone")"
+                    : phone.phoneName.map { "\($0), not connected" } ?? "No phone paired")
+                LabeledContent("Call audio", value: phone.summary)
+                LabeledContent("Contacts", value: phone.contactsNeedPermission
+                    ? "Waiting for the permission on the phone"
+                    : "\(phone.contacts.count) numbers")
+            } footer: {
+                Text("""
+                    Pair the phone from System Settings > Bluetooth, and plug it over USB \
+                    with USB debugging on: Bluetooth places and answers calls, USB carries \
+                    their sound. The phone's earpiece keeps playing the call quietly.
+                    """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Phone links") {
+                if handlesLinks {
+                    Text("Sidebus opens tel: links")
+                } else {
+                    Button("Open tel: Links with Sidebus") {
+                        NSWorkspace.shared.setDefaultApplication(
+                            at: Bundle.main.bundleURL, toOpenURLsWithScheme: "tel"
+                        ) { _ in
+                            Task { @MainActor in handlesLinks = PhoneSettings.sidebusHandlesLinks() }
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button("Reload Contacts") { phone.refreshContacts() }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { handlesLinks = Self.sidebusHandlesLinks() }
+    }
+
+    private static func sidebusHandlesLinks() -> Bool {
+        guard let url = URL(string: "tel:0"),
+              let handler = NSWorkspace.shared.urlForApplication(toOpen: url) else { return false }
+        return handler.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL
     }
 }
 

@@ -23,6 +23,10 @@ APP="$MAC_DIR/build/Sidebus.app"
 
 cd "$MAC_DIR"
 
+# The phone half of calls, carried as a resource and pushed to the phone over adb.
+echo "==> android/callbridge"
+"$MAC_DIR/../android/callbridge/build.sh" "$MAC_DIR/Sources/SidebusApp/Resources/callbridge.dex"
+
 echo "==> swift build -c $CONFIG"
 swift build -c "$CONFIG"
 

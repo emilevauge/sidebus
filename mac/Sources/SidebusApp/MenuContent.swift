@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuContent: View {
     let devices: DeviceManager
+    let phone: PhoneModel
     let permissions: PermissionsModel
     let updates: UpdateChecker
     @Environment(\.openWindow) private var openWindow
@@ -36,6 +37,19 @@ struct MenuContent: View {
                     Label(label(for: entry), systemImage: entry.symbol)
                 }
                 .disabled(entry.action == .none)
+            }
+        }
+
+        Divider()
+
+        Section("Phone") {
+            if phone.isInCall {
+                Button("Show Call with \(phone.peer ?? "…")") { DialerPanel.shared.show() }
+                Button("Hang Up") { phone.hangUp() }
+            } else {
+                Button("Call…") { DialerPanel.shared.show() }
+                    .disabled(!phone.isBluetoothConnected)
+                Text(phone.summary)
             }
         }
 
