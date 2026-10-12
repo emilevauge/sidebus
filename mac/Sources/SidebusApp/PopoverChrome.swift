@@ -53,11 +53,26 @@ final class PopoverHost<Content: View>: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        // The content keeps its own height and hangs from the top of a flipped container.
+        // Stretched to a taller popover, NSHostingView centred it: making room for the
+        // keypad dropped everything by half the room, then the keypad's arrival raised it
+        // again, animated.
+        view = FlippedView()
         host.frame = view.bounds
-        host.autoresizingMask = [.width, .height]
+        host.autoresizingMask = [.width]
         view.addSubview(host)
         host.onSizeChange = { [weak self] in self?.scheduleResize() }
+    }
+
+    private final class FlippedView: NSView {
+        override var isFlipped: Bool { true }
+    }
+
+    /// The content at the height it asks for, against the top edge.
+    private func pinHost() {
+        let height = host.intrinsicContentSize.height
+        guard height > 0, host.frame.height != height || host.frame.minY != 0 else { return }
+        host.frame = NSRect(x: 0, y: 0, width: view.bounds.width, height: height)
     }
 
     /// Sets the popover to the content's size at once, before it shows.
@@ -68,6 +83,7 @@ final class PopoverHost<Content: View>: NSViewController {
         guard let popover, size.width > 0, size.height > 0 else { return }
         resizeLog.info("fit \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public)")
         popover.contentSize = size
+        pinHost()
     }
 
     /// Taller at once by `height`, without animation, ahead of content that will fill it.
@@ -93,6 +109,7 @@ final class PopoverHost<Content: View>: NSViewController {
 
     private func resize() {
         guard let popover else { return }
+        pinHost()
         let size = host.intrinsicContentSize
         guard size.width > 0, size.height > 0, size != popover.contentSize else { return }
         resizeLog.info("resize \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public), shown \(popover.isShown, privacy: .public)")
