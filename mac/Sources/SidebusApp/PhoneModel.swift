@@ -105,7 +105,22 @@ final class PhoneModel {
         }
     }
 
+    /// Development hook: SIDEBUS_FAKE_CALL=<number> shows a call under way, without one,
+    /// to work on the call card.
+    private func fakeCall(_ number: String) {
+        callState = .active
+        callOnMac = true
+        peer = number
+        peerNumber = number
+        answeredAt = Date()
+        channelState = .ready(phone: "Phone", over: .wifi, helperRuns: true, contactsReadable: true)
+    }
+
     func start() {
+        if let number = ProcessInfo.processInfo.environment["SIDEBUS_FAKE_CALL"] {
+            fakeCall(number)
+            return
+        }
         link.onChange = { [weak self] in self?.linkChanged() }
         link.start()
 

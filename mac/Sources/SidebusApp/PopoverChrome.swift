@@ -70,14 +70,10 @@ final class PopoverHost<Content: View>: NSViewController {
         popover.contentSize = size
     }
 
-    /// Once per pass: SwiftUI may invalidate several times in a row. Growing goes at
-    /// once, though: content taller than the popover for even one pass is drawn shifted
-    /// up, its top cut off.
+    /// Once per pass, after SwiftUI's update: SwiftUI may invalidate several times in a
+    /// row, and resizing within its update (an animated one, say the keypad opening)
+    /// made it animate every view from positions offset by the change in height.
     private func scheduleResize() {
-        if let popover, host.intrinsicContentSize.height > popover.contentSize.height {
-            resize()
-            return
-        }
         guard !pendingResize else { return }
         pendingResize = true
         DispatchQueue.main.async { [weak self] in
