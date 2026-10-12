@@ -44,7 +44,7 @@ final class SuggestionPanel {
             return
         }
         guard !popover.isShown else { return }
-        popover.show(relativeTo: field.bounds, of: field, preferredEdge: .maxX)
+        popover.show(relativeTo: field.bounds, of: field, preferredEdge: .minX)
         field.window?.makeKey()
     }
 
