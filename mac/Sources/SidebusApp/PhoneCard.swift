@@ -65,10 +65,13 @@ private struct SearchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Call a name or a number", text: $entry.text)
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.large)
-                .focused($focused)
+            HStack(spacing: 8) {
+                Image(systemName: "phone")
+                    .foregroundStyle(.secondary)
+                TextField("Call a name or a number", text: $entry.text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15))
+                    .focused($focused)
                 .onSubmit { call(suggestions.model.selection) }
                 .onKeyPress(.downArrow) { move(1) }
                 .onKeyPress(.upArrow) { move(-1) }
@@ -77,12 +80,24 @@ private struct SearchView: View {
                     entry.text = ""
                     return .handled
                 }
-                .background(AnchorView { field = $0 })
-                .onChange(of: entry.text) { refreshSuggestions(resetSelection: true) }
-                .onChange(of: phone.contacts) { refreshSuggestions(resetSelection: false) }
+                    .onChange(of: entry.text) { refreshSuggestions(resetSelection: true) }
+                    .onChange(of: phone.contacts) { refreshSuggestions(resetSelection: false) }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(AnchorView { field = $0 })
 
-            Text(status).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Circle()
+                    .fill(phone.callsAvailable ? Color.green : Color.orange)
+                    .frame(width: 7, height: 7)
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
         }
         .onAppear {
             focused = true

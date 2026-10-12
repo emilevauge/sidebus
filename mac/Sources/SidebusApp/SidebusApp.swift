@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let updates = UpdateChecker()
     /// What is typed in the call search field, kept across openings.
     let dialer = DialerEntry()
+    let panelState = PanelState()
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -43,6 +44,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         setUpPopover()
         PhoneModel.shared.start()
+
+        // Development hook: opens the panel, or its settings, at launch, to look at them.
+        switch ProcessInfo.processInfo.environment["SIDEBUS_OPEN"] {
+        case "panel":
+            showPanel()
+        case "settings":
+            showPanel()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.panelState.showsSettings = true }
+        default:
+            break
+        }
     }
 
     /// `tel:` links, once Sidebus handles them: the panel opens with the number typed in,
@@ -88,7 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dialer: dialer,
             displays: displays,
             permissions: permissions,
-            updates: updates
+            updates: updates,
+            state: panelState
         ))
         host.popover = popover
         popover.contentViewController = host

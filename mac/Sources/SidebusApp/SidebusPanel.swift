@@ -2,7 +2,14 @@ import AppKit
 import SidebusCore
 import SwiftUI
 
-/// The menu bar popover: the phone, the screens, and a footer with the settings.
+/// What the panel and its footer share: whether the settings popover shows.
+@MainActor
+@Observable
+final class PanelState {
+    var showsSettings = false
+}
+
+/// The menu bar popover: calls on top, the devices below, a footer with the settings.
 struct SidebusPanel: View {
     let devices: DeviceManager
     let phone: PhoneModel
@@ -10,36 +17,29 @@ struct SidebusPanel: View {
     let displays: DisplayMenuModel
     let permissions: PermissionsModel
     let updates: UpdateChecker
+    @Bindable var state: PanelState
 
     static let width: CGFloat = 380
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
-                if let release = updates.available {
-                    Button {
-                        updates.install()
-                    } label: {
-                        Label("Sidebus \(release.version) is available, install it", systemImage: "arrow.down.circle.fill")
-                    }
-                    .buttonStyle(.link)
-                }
-
-                if phone.phoneName != nil || phone.isInCall {
-                    PanelSection(title: "Phone") {
-                        PhoneCard(phone: phone, entry: dialer)
-                    }
-                }
-
-                PanelSection(title: "Devices") {
-                    DeviceList(devices: devices, phone: phone)
-                }
+            if let release = updates.available {
+                UpdateBanner(version: release.version) { updates.install() }
+                Divider()
             }
-            .padding(14)
+
+            if phone.phoneName != nil || phone.isInCall {
+                PhoneCard(phone: phone, entry: dialer)
+                    .padding(14)
+                Divider()
+            }
+
+            DeviceList(devices: devices, phone: phone)
+                .padding(.vertical, 8)
 
             Divider()
 
-            PanelFooter {
+            PanelFooter(state: state) {
                 SettingsView(
                     devices: devices,
                     phone: phone,
@@ -54,22 +54,32 @@ struct SidebusPanel: View {
     }
 }
 
-/// A titled card, as the grouped settings draw their sections.
-struct PanelSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
+private struct UpdateBanner: View {
+    let version: String
+    let install: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 4)
-            content()
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        HStack {
+            Label("Sidebus \(version) is available", systemImage: "arrow.down.circle.fill")
+                .foregroundStyle(.tint)
+            Spacer()
+            Button("Install", action: install).controlSize(.small)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+}
+
+/// A small heading over a group of rows, as Calbar titles its sections.
+struct PanelHeading: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 2)
     }
 }
 
@@ -80,65 +90,92 @@ private struct DeviceList: View {
     let phone: PhoneModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
+            PanelHeading(title: "Devices")
             if let refusal = devices.lastRefusal {
                 Text(refusal).font(.caption).foregroundStyle(.red)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, 14)
             }
             if devices.entries.isEmpty {
-                Text(devices.summary).foregroundStyle(.secondary)
+                Text("Plug a tablet in, or open Sidebus on it.")
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
             }
-            ForEach(Array(devices.entries.enumerated()), id: \.element.id) { index, entry in
-                if index > 0 { Divider().padding(.vertical, 6) }
-                Button {
+            ForEach(devices.entries) { entry in
+                DeviceRow(entry: entry, phone: phone, isPhone: entry.id == phone.phoneDeviceID) {
                     devices.perform(entry)
-                } label: {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.name)
-                            if let subtitle = subtitle(entry) {
-                                Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer()
-                        if isPhone(entry) {
-                            Capability(symbol: "phone.fill", active: phone.callsAvailable)
-                                .help(phone.summary)
-                        }
-                        Capability(symbol: "display", active: entry.isOnline, highlighted: entry.isSharing)
-                            .help(screenHelp(entry))
-                    }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .disabled(entry.action == .none)
             }
         }
     }
+}
 
-    private func isPhone(_ entry: DeviceEntry) -> Bool {
-        entry.id == phone.phoneDeviceID
+private struct DeviceRow: View {
+    let entry: DeviceEntry
+    let phone: PhoneModel
+    let isPhone: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    private var reachable: Bool { entry.isOnline || (isPhone && phone.callsAvailable) }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: isPhone ? "iphone" : "ipad.landscape")
+                    .font(.system(size: 15))
+                    .foregroundStyle(reachable ? .primary : .tertiary)
+                    .frame(width: 30, height: 30)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.name)
+                        .foregroundStyle(reachable ? .primary : .secondary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                if isPhone {
+                    Capability(symbol: "phone.fill", active: phone.callsAvailable)
+                        .help(phone.summary)
+                }
+                Capability(symbol: "display", active: entry.isOnline, highlighted: entry.isSharing)
+                    .help(screenHelp)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                hovered && entry.action != .none ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(entry.action == .none)
+        .onHover { hovered = $0 }
+        .padding(.horizontal, 6)
     }
 
-    private func subtitle(_ entry: DeviceEntry) -> String? {
-        var parts: [String] = []
+    private var subtitle: String {
+        if entry.isSharing { return entry.detail.map { "Sharing · \($0)" } ?? "Sharing" }
+        if let session = entry.session, entry.isBusy { return session.detail ?? "Connecting…" }
         if entry.isOnline {
-            parts.append(entry.transportLabel)
-        } else if isPhone(entry), phone.callsAvailable, case let .ready(_, over, _, _) = phone.channelState {
-            parts.append(over == .usb ? "USB" : "Wi-Fi")
-        } else if isPhone(entry), phone.callsAvailable, case let .resting(_, over, _, _) = phone.channelState {
-            parts.append(over == .usb ? "USB" : "Wi-Fi")
+            return entry.isPaired ? "\(entry.transportLabel) · click to share the screen" : "\(entry.transportLabel) · click to pair"
         }
-        if let detail = entry.detail, !detail.isEmpty, entry.isOnline || !isPhone(entry) || !phone.callsAvailable {
-            parts.append(detail)
+        if isPhone, phone.callsAvailable, let over = phone.channelTransport {
+            return over == .usb ? "USB" : "Wi-Fi"
         }
-        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        return entry.detail ?? "Offline"
     }
 
-    private func screenHelp(_ entry: DeviceEntry) -> String {
+    private var screenHelp: String {
         if entry.isSharing { return "Showing the Mac's screen: click to stop" }
-        if !entry.isOnline { return isPhone(entry) ? "Open Sidebus on the phone to share the Mac's screen" : "Not in sight" }
+        if !entry.isOnline { return isPhone ? "Open Sidebus on the phone to share the screen" : "Not in sight" }
         return entry.isPaired ? "Click to share the Mac's screen" : "Click to pair"
     }
 }
@@ -152,24 +189,24 @@ private struct Capability: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 14))
-            .foregroundStyle(highlighted ? AnyShapeStyle(Color.accentColor) : active ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
-            .frame(width: 22)
+            .font(.system(size: 13))
+            .foregroundStyle(highlighted ? AnyShapeStyle(Color.accentColor) : active ? AnyShapeStyle(Color.green) : AnyShapeStyle(.quaternary))
+            .frame(width: 20)
     }
 }
 
 /// Bottom bar: settings and quit, with Calbar's fixed size buttons.
 private struct PanelFooter<Settings: View>: View {
+    @Bindable var state: PanelState
     @ViewBuilder let settings: () -> Settings
-    @State private var showingSettings = false
 
     var body: some View {
         HStack(spacing: 2) {
             IconButton("gearshape", tooltip: "Settings") {
-                showingSettings.toggle()
+                state.showsSettings.toggle()
             }
             .keyboardShortcut(",")
-            .popover(isPresented: $showingSettings, arrowEdge: .trailing) {
+            .popover(isPresented: $state.showsSettings, arrowEdge: .trailing) {
                 settings()
             }
 

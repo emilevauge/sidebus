@@ -4,7 +4,7 @@ import SidebusCore
 import SwiftUI
 
 /// The settings, in a popover from the panel's gear: one grouped form, a card per subject,
-/// as in Calbar.
+/// as in Calbar. Each card shows what matters and nothing more.
 struct SettingsView: View {
     let devices: DeviceManager
     let phone: PhoneModel
@@ -18,9 +18,8 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            screensSection
-            addressSection
             phoneSection
+            screensSection
             videoSection
             permissionsSection
             aboutSection
@@ -28,6 +27,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .onAppear {
             permissions.refresh()
+            displays.refresh()
             handlesLinks = Self.sidebusHandlesLinks()
         }
         // Bounded height: the grouped form scrolls, so every section stays reachable.
@@ -36,7 +36,7 @@ struct SettingsView: View {
             Button("Forget all", role: .destructive) { devices.unpairAll() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every tablet will ask for a pairing code again on its next connection.")
+            Text("Each device asks for a pairing code again on its next connection.")
         }
     }
 
@@ -46,110 +46,45 @@ struct SettingsView: View {
         return min(560, visible - 120)
     }
 
-    // MARK: - Screens
-
-    private var screensSection: some View {
-        Section {
-            if devices.pairedDevices.isEmpty && devices.entries.isEmpty {
-                Text("No device yet. Plug a tablet in, or add its address below.")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(devices.entries) { entry in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.name)
-                        Text(entry.isOnline ? entry.transportLabel : (entry.detail ?? "offline"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if entry.isManual, let identifier = devices.manualPeerID(forKey: entry.id) {
-                        Button("Forget address") { devices.removeManualPeer(id: identifier) }
-                    }
-                    if entry.isPaired {
-                        Button("Unpair") { devices.unpair(entry.id) }
-                    }
-                }
-            }
-            // Older pairings of a tablet that paired again, which the panel leaves out.
-            ForEach(devices.pairedDevices.filter { device in !devices.entries.contains { $0.id == device.deviceID } }, id: \.deviceID) { device in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(device.name)
-                        Text("older pairing, last seen \(device.lastSeen.formatted(.relative(presentation: .named)))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Unpair") { devices.unpair(device.deviceID) }
-                }
-            }
-            if !devices.pairedDevices.isEmpty {
-                Button("Forget all…", role: .destructive) { confirmingForgetAll = true }
-            }
-        } header: {
-            Text("Screens")
-        } footer: {
-            footnote("Unpairing erases the certificate fingerprint: the next connection asks for a code again, on both sides.")
-        }
-    }
-
-    private var addressSection: some View {
-        Section {
-            HStack {
-                TextField("Address", text: $address, prompt: Text("192.168.1.20"))
-                    .onSubmit(addAddress)
-                Button("Add", action: addAddress)
-                    .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        } header: {
-            Text("Connect by IP address")
-        } footer: {
-            footnote("When a tablet does not show up on its own, on a network that blocks multicast. The tablet shows its address, optionally followed by \":\" and the port.")
-        }
-    }
-
-    private func addAddress() {
-        devices.addManualPeer(address: address)
-        address = ""
-    }
-
     // MARK: - Phone
 
     private var phoneSection: some View {
         Section {
-            LabeledContent("Bluetooth", value: phone.isBluetoothConnected
-                ? "Connected to \(phone.phoneName ?? "the phone")"
-                : phone.phoneName.map { "\($0), not connected" } ?? "No phone paired")
-            LabeledContent("Call audio") {
-                Text(phone.summary).multilineTextAlignment(.trailing)
+            LabeledContent("Phone") {
+                StatusText(
+                    phone.phoneName ?? "None paired",
+                    ok: phone.isBluetoothConnected
+                )
+            }
+            LabeledContent("Sound on the Mac") {
+                StatusText(phone.callsAvailable ? "Ready" : "Plug the phone in once", ok: phone.callsAvailable)
             }
             LabeledContent("Contacts") {
-                HStack {
-                    Text(phone.contactsNeedPermission
-                        ? "Allow on the phone"
-                        : "\(phone.contacts.count) numbers")
+                HStack(spacing: 8) {
+                    Text(phone.contactsNeedPermission ? "Allow on the phone" : "\(phone.contacts.count)")
+                        .foregroundStyle(.secondary)
                     Button("Reload") { phone.refreshContacts() }
                         .controlSize(.small)
                 }
             }
-            if handlesLinks {
-                LabeledContent("Phone links", value: "Opened by Sidebus")
-            } else {
-                LabeledContent("Phone links") {
-                    Button("Open tel: links with Sidebus") {
+            LabeledContent("tel: links") {
+                if handlesLinks {
+                    Text("Sidebus").foregroundStyle(.secondary)
+                } else {
+                    Button("Use Sidebus") {
                         NSWorkspace.shared.setDefaultApplication(
                             at: Bundle.main.bundleURL, toOpenURLsWithScheme: "tel"
                         ) { _ in
                             Task { @MainActor in handlesLinks = SettingsView.sidebusHandlesLinks() }
                         }
                     }
+                    .controlSize(.small)
                 }
             }
         } header: {
             Text("Phone")
         } footer: {
-            footnote("Pair the phone from System Settings > Bluetooth, and with Sidebus. Bluetooth places and answers calls; their sound travels over Wi-Fi or USB. After each restart of the phone, plug it in over USB once, with USB debugging on. Its earpiece keeps playing the call quietly.")
+            Footnote("Pair the phone over Bluetooth in System Settings. After each restart of the phone, plug it in over USB once.")
         }
     }
 
@@ -157,6 +92,59 @@ struct SettingsView: View {
         guard let url = URL(string: "tel:0"),
               let handler = NSWorkspace.shared.urlForApplication(toOpen: url) else { return false }
         return handler.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL
+    }
+
+    // MARK: - Screens
+
+    private var screensSection: some View {
+        Section {
+            ForEach(devices.pairedDevices, id: \.deviceID) { device in
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(device.name)
+                        Text(lastSeen(device))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Unpair") { devices.unpair(device.deviceID) }
+                        .controlSize(.small)
+                }
+            }
+            ForEach(devices.manualPeers) { peer in
+                HStack {
+                    Text(peer.name)
+                    Spacer()
+                    Button("Forget") { devices.removeManualPeer(id: peer.id) }
+                        .controlSize(.small)
+                }
+            }
+            HStack {
+                TextField("Add by address", text: $address, prompt: Text("192.168.1.20"))
+                    .onSubmit(addAddress)
+                Button("Add", action: addAddress)
+                    .controlSize(.small)
+                    .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if !devices.pairedDevices.isEmpty {
+                Button("Forget all devices…", role: .destructive) { confirmingForgetAll = true }
+            }
+        } header: {
+            Text("Paired devices")
+        } footer: {
+            Footnote("Add a tablet by its address when the network hides it.")
+        }
+    }
+
+    private func lastSeen(_ device: PairedDevice) -> String {
+        let online = devices.entries.contains { $0.id == device.deviceID && $0.isOnline }
+        if online { return "In sight" }
+        return "Seen \(device.lastSeen.formatted(.relative(presentation: .named)))"
+    }
+
+    private func addAddress() {
+        devices.addManualPeer(address: address)
+        address = ""
     }
 
     // MARK: - Video
@@ -172,24 +160,18 @@ struct SettingsView: View {
                 Text("50 %").tag(0.5)
             }
             Picker("Display", selection: $displays.selectedID) {
-                Text("Dedicated virtual display").tag(CGDirectDisplayID?.none)
+                Text("A virtual display per tablet").tag(CGDirectDisplayID?.none)
                 ForEach(displays.displays) { display in
-                    Text(display.menuLabel).tag(CGDirectDisplayID?.some(display.id))
+                    Text("Mirror \(display.menuLabel)").tag(CGDirectDisplayID?.some(display.id))
                 }
             }
             if let error = displays.lastError {
                 Text(error).foregroundStyle(.red)
             }
-            HStack {
-                Button("Refresh displays") { displays.refresh() }
-                Spacer()
-                Button(displays.captureLabel) { displays.toggleCapture() }
-                    .disabled(displays.selectedID == nil && !displays.isCapturing)
-            }
         } header: {
-            Text("Video")
+            Text("Screen sharing")
         } footer: {
-            footnote("Resolution applies on the next connection; on Wi-Fi, 75 % is the default. By default each tablet gets a virtual display sized to its panel; naming an existing display mirrors it to every tablet instead.")
+            Footnote("Applies on the next connection.")
         }
     }
 
@@ -197,32 +179,29 @@ struct SettingsView: View {
 
     private var permissionsSection: some View {
         Section {
-            ForEach(permissions.permissions) { permission in
-                HStack {
-                    Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(permission.isGranted ? .green : .secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(permission.title)
-                        if !permission.isGranted {
+            if permissions.allGranted {
+                LabeledContent("Permissions") {
+                    StatusText("All granted", ok: true)
+                }
+            } else {
+                ForEach(permissions.permissions.filter { !$0.isGranted }) { permission in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(permission.title)
                             Text(permission.explanation).font(.caption).foregroundStyle(.secondary)
                         }
-                    }
-                    Spacer()
-                    if !permission.isGranted {
+                        Spacer()
                         Button("Open") {
                             permission.request?()
                             permissions.openSettings(permission)
                         }
+                        .controlSize(.small)
                     }
                 }
-            }
-            if !permissions.allGranted {
                 Button("Restart Sidebus") { Relauncher.relaunch() }
             }
         } header: {
             Text("Permissions")
-        } footer: {
-            footnote("A permission granted in System Settings takes effect on the next launch of Sidebus.")
         }
     }
 
@@ -230,40 +209,71 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section {
-            LabeledContent("Version", value: updates.currentVersion)
-            HStack {
-                Button("Check for updates") { Task { await updates.checkManually() } }
-                    .disabled(updates.isChecking)
-                if updates.isChecking { ProgressView().controlSize(.small) }
-                Spacer()
-                if let result = updates.lastManualResult { resultLabel(result) }
+            LabeledContent("Version") {
+                HStack(spacing: 8) {
+                    Text(updates.currentVersion).foregroundStyle(.secondary).monospacedDigit()
+                    if updates.isChecking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Check") { Task { await updates.checkManually() } }
+                            .controlSize(.small)
+                    }
+                }
             }
             if let release = updates.available {
-                HStack {
-                    Button("Install \(release.version)") { updates.install() }
-                    Button("Release notes") { updates.openReleasePage() }
+                LabeledContent("Sidebus \(release.version)") {
+                    HStack(spacing: 8) {
+                        Button("Notes") { updates.openReleasePage() }.controlSize(.small)
+                        Button("Install") { updates.install() }.controlSize(.small)
+                    }
                 }
+            } else if let result = updates.lastManualResult {
+                resultRow(result)
             }
         } header: {
             Text("About")
-        } footer: {
-            footnote("Checked once a day, and when the Mac wakes up. Installing restarts Sidebus and stops any share in progress.")
         }
     }
 
     @ViewBuilder
-    private func resultLabel(_ result: UpdateChecker.ManualResult) -> some View {
+    private func resultRow(_ result: UpdateChecker.ManualResult) -> some View {
         switch result {
         case .upToDate:
-            Label("Up to date", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            StatusText("Up to date", ok: true)
         case let .newer(release):
-            Label("\(release.version) available", systemImage: "arrow.up.circle.fill").foregroundStyle(.orange)
+            Text("\(release.version) available").foregroundStyle(.orange)
         case let .failed(reason):
-            Label(reason, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            Text(reason).foregroundStyle(.red)
         }
     }
+}
 
-    private func footnote(_ text: String) -> some View {
+/// A short state with a coloured dot: green when fine, orange otherwise.
+private struct StatusText: View {
+    let text: String
+    let ok: Bool
+
+    init(_ text: String, ok: Bool) {
+        self.text = text
+        self.ok = ok
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(ok ? Color.green : Color.orange).frame(width: 7, height: 7)
+            Text(text).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct Footnote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
         Text(text)
             .font(.caption)
             .foregroundStyle(.secondary)

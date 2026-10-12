@@ -52,6 +52,14 @@ final class PhoneModel {
         }
     }
 
+    /// How the phone was last reached for calls.
+    var channelTransport: TransportKind? {
+        switch channelState {
+        case let .ready(_, over, _, _), let .resting(_, over, _, _): return over
+        default: return nil
+        }
+    }
+
     /// True when calls can carry their sound to the Mac right now.
     var audioReady: Bool {
         if case .ready(_, _, true, _) = channelState { return true }
