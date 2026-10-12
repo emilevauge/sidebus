@@ -14,7 +14,10 @@
 // client is connected and a call is active, it sends the downlink and injects what it
 // receives into the uplink, both as 16 kHz mono 16 bit PCM, until the call ends.
 
+import android.content.AttributionSource;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -35,10 +38,11 @@ import java.lang.reflect.Field;
 public final class CallAudioProbe {
     private static final int RATE = 16000;
     private static TelephonyManager telephony;
+    private static Context context;
 
     public static void main(String[] args) throws Exception {
         Looper.prepareMainLooper();
-        Context context = shellContext();
+        context = shellContext();
         AudioManager audio = context.getSystemService(AudioManager.class);
         telephony = context.getSystemService(TelephonyManager.class);
         String command = args.length > 0 ? args[0] : "check";
@@ -158,9 +162,8 @@ public final class CallAudioProbe {
         AudioRecord downlink = (AudioRecord) AudioManager.class
                 .getMethod("getCallDownlinkExtractionAudioRecord", AudioFormat.class)
                 .invoke(audio, in);
-        AudioTrack uplink = (AudioTrack) AudioManager.class
-                .getMethod("getCallUplinkInjectionAudioTrack", AudioFormat.class)
-                .invoke(audio, out);
+        AudioTrack uplink = injectionTrack(out);
+        System.out.println("uplink attribution: " + context.getAttributionSource());
         for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
             if (device.getType() == AudioDeviceInfo.TYPE_TELEPHONY) uplink.setPreferredDevice(device);
         }
@@ -235,6 +238,24 @@ public final class CallAudioProbe {
         }
     }
 
+    // What getCallUplinkInjectionAudioTrack builds, but attributed to the shell package
+    // through an explicit Context: the helper takes its attribution from the process,
+    // which app_process leaves without a package. sparktour's Shizuku SIP gateway hit
+    // the same silent uplink and fixed it this way.
+    private static AudioTrack injectionTrack(AudioFormat format) throws Exception {
+        int pstn = AudioManager.class.getField("CALL_REDIRECT_PSTN").getInt(null);
+        AudioAttributes.Builder attributes = new AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH);
+        AudioAttributes.Builder.class.getMethod("setSystemUsage", int.class)
+                .invoke(attributes, 17); // USAGE_CALL_ASSISTANT, hidden
+        AudioTrack.Builder builder = new AudioTrack.Builder()
+                .setContext(context)
+                .setAudioAttributes(attributes.build())
+                .setAudioFormat(format);
+        AudioTrack.Builder.class.getMethod("setCallRedirectionMode", int.class).invoke(builder, pstn);
+        return builder.build();
+    }
+
     // Logs the RMS of 16 bit PCM every two seconds of audio.
     private static final class Level {
         private final String name;
@@ -289,6 +310,18 @@ public final class CallAudioProbe {
         current.setAccessible(true);
         current.set(null, thread);
         Context system = (Context) threadClass.getDeclaredMethod("getSystemContext").invoke(thread);
-        return system.createPackageContext("com.android.shell", 0);
+        return new ShellContext(system.createPackageContext("com.android.shell", 0));
+    }
+
+    // A package context still hands out the system's attribution ("android"), which
+    // AudioFlinger refuses for uid 2000. This one presents the shell package throughout.
+    private static final class ShellContext extends ContextWrapper {
+        ShellContext(Context base) { super(base); }
+        @Override public String getPackageName() { return "com.android.shell"; }
+        @Override public String getOpPackageName() { return "com.android.shell"; }
+        @Override public AttributionSource getAttributionSource() {
+            return new AttributionSource.Builder(2000).setPackageName("com.android.shell").build();
+        }
+        @Override public Context getApplicationContext() { return this; }
     }
 }
