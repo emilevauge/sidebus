@@ -63,6 +63,7 @@ public final class CallAudioProbe {
             case "down": down(audio, format, seconds); break;
             case "up": up(audio, format, seconds); break;
             case "stream": stream(audio); break;
+            case "reset": routeCall(audio, false); break;
             case "sig":
                 for (Method m : Class.forName("android.media.AudioSystem").getMethods()) {
                     if (m.getName().matches("setStreamVolumeIndexAS|initStreamVolume|setVolumeIndexForAttributes|setVoiceVolume"))
@@ -173,27 +174,15 @@ public final class CallAudioProbe {
         for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
             if (device.getType() == AudioDeviceInfo.TYPE_TELEPHONY) uplink.setPreferredDevice(device);
         }
-        // The Mac's microphone replaces the phone's, and its speakers the earpiece.
-        // Call redirect mode makes the audio policy tear down the patches between the
-        // modem and the earpiece and microphone, while interception keeps working.
-        // Call screening, tried first, left the earpiece playing on HyperOS. The
-        // voice call volume also goes to its minimum in case the mode does not hold.
+        // The Mac's microphone replaces the phone's. The phone's own output is not a
+        // matter of volume or mode, which HyperOS ignores: a Bluetooth headset silences
+        // the earpiece by taking the call's route. The bridge does the same with a
+        // route nobody hears. The remote submix sits in another module than the modem,
+        // which only reaches its own outputs, so the route is the Mac's Bluetooth SCO
+        // output instead: the Mac refuses SCO, so the voice goes nowhere.
         boolean wasMuted = audio.isMicrophoneMute();
-        int volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
         audio.setMicrophoneMute(true);
-        setMode(AudioManager.MODE_CALL_REDIRECT);
-        audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
-                audio.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL), 0);
-        // Volume 1 still leaks out of the earpiece. Muting the voice call stream is
-        // refused to apps, but allowed to holders of MODIFY_PHONE_STATE.
-        audio.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_MUTE, 0);
-        System.out.println("voice call muted: " + audio.isStreamMute(AudioManager.STREAM_VOICE_CALL));
-        // Audio policy still refuses that mute ("unmutable volume group") and keeps
-        // index 1, which the modem plays at 1/11. Below AudioService, the policy takes
-        // index 0 once its minimum allows it, and turns that into a voice volume of 0.
-        try { voiceIndex(0, 0); } catch (Exception e) { System.out.println("index: " + e); }
-        System.out.println("mode now " + audio.getMode() + ", voice call volume "
-                + audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL) + " (was " + volume + ")");
+        routeCall(audio, true);
 
         downlink.startRecording();
         uplink.play();
@@ -241,10 +230,7 @@ public final class CallAudioProbe {
             System.out.println("to Mac: " + e);
         } finally {
             audio.setMicrophoneMute(wasMuted);
-            try { voiceIndex(1, volume); } catch (Exception e) { System.out.println("index: " + e); }
-            audio.adjustStreamVolume(AudioManager.STREAM_VOICE_CALL, AudioManager.ADJUST_UNMUTE, 0);
-            audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, volume, 0);
-            try { setMode(AudioManager.MODE_NORMAL); } catch (Exception e) { System.out.println("mode: " + e); }
+            try { routeCall(audio, false); } catch (Exception e) { System.out.println("route: " + e); }
             downlink.stop();
             downlink.release();
             uplink.stop();
@@ -256,23 +242,40 @@ public final class CallAudioProbe {
         }
     }
 
-    private static final int DEVICE_OUT_EARPIECE = 0x1;
+    // The Mac's Bluetooth address, as the phone sees it once paired.
+    private static final String MAC_ADDRESS = "CC:08:FA:B6:57:17";
 
-    private static void voiceIndex(int min, int index) throws Exception {
-        Class<?> system = Class.forName("android.media.AudioSystem");
-        boolean muted = index == 0;
-        Object init = system.getMethod("initStreamVolume", int.class, int.class, int.class)
-                .invoke(null, AudioManager.STREAM_VOICE_CALL, min, 11);
-        Object set = system.getMethod("setStreamVolumeIndexAS", int.class, int.class, boolean.class, int.class)
-                .invoke(null, AudioManager.STREAM_VOICE_CALL, index, muted, DEVICE_OUT_EARPIECE);
-        // Android 16 also drives volume through groups, keyed by attributes.
+    // setPreferredDeviceForStrategy and its types are system APIs, hence reflection.
+    private static void routeCall(AudioManager audio, boolean away) throws Exception {
+        Class<?> strategyClass = Class.forName("android.media.audiopolicy.AudioProductStrategy");
+        Class<?> deviceClass = Class.forName("android.media.AudioDeviceAttributes");
         android.media.AudioAttributes voice = new android.media.AudioAttributes.Builder()
                 .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION).build();
-        Object group = system.getMethod("setVolumeIndexForAttributes",
-                android.media.AudioAttributes.class, int.class, boolean.class, int.class)
-                .invoke(null, voice, index, muted, DEVICE_OUT_EARPIECE);
-        System.out.println("policy voice index " + index + " (min " + min + "): init " + init
-                + ", stream " + set + ", group " + group);
+        Object strategy = null;
+        for (Object candidate : (java.util.List<?>) strategyClass
+                .getMethod("getAudioProductStrategies").invoke(null)) {
+            if ((boolean) strategyClass.getMethod("supportsAudioAttributes",
+                    android.media.AudioAttributes.class).invoke(candidate, voice)) {
+                strategy = candidate;
+            }
+        }
+        if (strategy == null) {
+            System.out.println("no strategy for voice communication");
+            return;
+        }
+        if (away) {
+            Object sco = deviceClass.getConstructor(int.class, int.class, String.class)
+                    .newInstance(2 /* ROLE_OUTPUT */, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, MAC_ADDRESS);
+            Object result = AudioManager.class
+                    .getMethod("setPreferredDeviceForStrategy", strategyClass, deviceClass)
+                    .invoke(audio, strategy, sco);
+            System.out.println("call routed to the Mac's SCO output: " + result);
+        } else {
+            Object result = AudioManager.class
+                    .getMethod("removePreferredDeviceForStrategy", strategyClass)
+                    .invoke(audio, strategy);
+            System.out.println("call route restored: " + result);
+        }
     }
 
     // Audio service keeps the mode only while this binder lives, so it stays referenced.
