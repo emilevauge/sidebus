@@ -66,59 +66,7 @@ final class PermissionsModel {
     }
 }
 
-struct PermissionsView: View {
-    @Bindable var model: PermissionsModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Permissions")
-                .font(.title2.bold())
-
-            Text(
-                """
-                macOS asks for your agreement on each one. They only take effect on the \
-                next launch of Sidebus.
-                """
-            )
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            ForEach(model.permissions) { permission in
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: permission.isGranted ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(permission.isGranted ? .green : .secondary)
-                        .font(.title3)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(permission.title).font(.headline)
-                        Text(permission.explanation)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer()
-
-                    Button("Open Settings") {
-                        permission.request?()
-                        model.openSettings(permission)
-                    }
-                }
-            }
-
-            Divider()
-
-            HStack {
-                Button("Check again") { model.refresh() }
-                Spacer()
-                Button("Restart Sidebus") { Self.relaunch() }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(24)
-        .frame(width: 520)
-    }
-
+enum Relauncher {
     /// Restarts the app, the only way a granted permission takes effect.
     static func relaunch() {
         let url = Bundle.main.bundleURL

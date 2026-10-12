@@ -316,7 +316,7 @@ private final class IncomingCallNotifier: NSObject, UNUserNotificationCenterDele
             case "answer": onAnswer?()
             case "decline": onDecline?()
             // A click on the banner itself shows the call.
-            default: DialerPanel.shared.show()
+            default: AppDelegate.shared.showPanel()
             }
         }
     }

@@ -2,42 +2,6 @@ import AppKit
 import SidebusCore
 import SwiftUI
 
-/// The small floating window calls are placed and followed from. AppKit rather than a
-/// SwiftUI scene, so that a phone link or a notification can open it from anywhere.
-@MainActor
-final class DialerPanel {
-    static let shared = DialerPanel()
-
-    private var panel: NSPanel?
-    private let entry = DialerEntry()
-
-    /// Shows the dialer, with `number` typed in when a phone link opened it.
-    func show(number: String? = nil) {
-        if let number { entry.text = number }
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func makePanel() -> NSPanel {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 320),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "Call"
-        panel.titlebarAppearsTransparent = true
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        panel.contentView = NSHostingView(rootView: DialerView(phone: .shared, entry: entry))
-        panel.center()
-        return panel
-    }
-}
-
 /// What is typed in the dialer, kept across openings.
 @MainActor
 @Observable
@@ -45,12 +9,13 @@ final class DialerEntry {
     var text = ""
 }
 
-struct DialerView: View {
+/// The phone part of the panel: a search field to place a call, or the call under way.
+struct PhoneCard: View {
     let phone: PhoneModel
     @Bindable var entry: DialerEntry
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if phone.isInCall {
                 CallView(phone: phone)
             } else {
@@ -58,11 +23,9 @@ struct DialerView: View {
             }
             if let problem = phone.problem {
                 Text(problem).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(16)
-        .padding(.top, 12)
-        .frame(width: 360, height: 320, alignment: .top)
     }
 }
 
@@ -92,9 +55,9 @@ private struct SearchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Name or number", text: $entry.text)
+            TextField("Call a name or a number", text: $entry.text)
                 .textFieldStyle(.roundedBorder)
-                .font(.title3)
+                .controlSize(.large)
                 .focused($focused)
                 .onSubmit(callSelection)
                 .onKeyPress(.downArrow) { move(1) }
@@ -119,8 +82,8 @@ private struct SearchView: View {
                 .buttonStyle(.plain)
             }
 
-            Spacer()
             Text(status).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear {
             focused = true
@@ -156,7 +119,7 @@ private struct CallView: View {
     @State private var showsKeypad = false
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Text(phone.peer ?? "").font(.title2).lineLimit(1)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
@@ -178,8 +141,6 @@ private struct CallView: View {
 
             if showsKeypad {
                 Keypad { phone.sendTone($0) }
-            } else {
-                Spacer()
             }
 
             HStack(spacing: 20) {
@@ -197,6 +158,7 @@ private struct CallView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func state(at date: Date) -> String {
