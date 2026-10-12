@@ -18,25 +18,18 @@ struct PhoneCard: View {
         VStack(alignment: .leading, spacing: 10) {
             // Stacked, not one under the other: during the fade both are there, and in a
             // column the card, then the popover, would grow by both for a moment.
-            ZStack(alignment: .top) {
-                if phone.isInCall {
-                    CallView(phone: phone)
-                        .transition(.opacity)
-                } else {
-                    SearchView(phone: phone, entry: entry)
-                        .transition(.opacity)
-                }
+            // Swapped at once, with the popover's size: faded, the two overlapped the
+            // devices below while the popover had already changed size.
+            if phone.isInCall {
+                CallView(phone: phone)
+            } else {
+                SearchView(phone: phone, entry: entry)
             }
             if let problem = phone.problem {
                 Text(problem).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        // One curve for the card and the popover around it, which PopoverHost resizes
-        // with the same timing.
-        .animation(Motion.resize, value: phone.isInCall)
-        .animation(Motion.resize, value: phone.callOnMac)
-        .animation(Motion.resize, value: phone.problem)
     }
 }
 
@@ -106,8 +99,8 @@ private struct SearchView: View {
             }
             .opacity(phone.callsAvailable ? 1 : 0.55)
 
-            // Under the field, in the panel: the popover grows and shrinks around the
-            // list, its content held still (see PopoverHost).
+            // Under the field, in the panel, changed at once with each key, the popover
+            // with it: animated, rows on their way out overlapped the devices.
             if !choices.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
@@ -116,7 +109,6 @@ private struct SearchView: View {
                         }
                     }
                 }
-                .transition(.opacity)
             }
 
             // Only when something is wrong: when all is well, the phone's icons in the
@@ -134,7 +126,6 @@ private struct SearchView: View {
                 .padding(.leading, 2)
             }
         }
-        .animation(Motion.resize, value: choices.count)
         .onAppear {
             focused = true
             if phone.contacts.isEmpty { phone.refreshContacts() }

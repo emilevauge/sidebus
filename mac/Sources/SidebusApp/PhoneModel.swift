@@ -206,15 +206,22 @@ final class PhoneModel {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             guard dialing else { return }
-            dialing = false
             guard audioReady else {
+                dialing = false
                 problem = "\(phoneName ?? "The phone") is not reachable: the call was not placed"
                 callOnMac = false
                 syncChannel()
                 return
             }
             link.dial(dialable)
-            syncAudio()
+            // Placing holds until Bluetooth reports the call, which takes a moment: let go
+            // at once, the search showed again in between.
+            try? await Task.sleep(for: .seconds(5))
+            if dialing, callState == .idle {
+                dialing = false
+                callOnMac = false
+                syncChannel()
+            }
         }
     }
 
@@ -307,6 +314,7 @@ final class PhoneModel {
     private func linkChanged() {
         let previous = callState
         callState = link.state
+        if callState != .idle { dialing = false }
         isBluetoothConnected = link.isConnected
         phoneName = link.phoneName
 
