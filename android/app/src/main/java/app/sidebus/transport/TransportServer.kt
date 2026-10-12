@@ -47,8 +47,6 @@ class TransportServer(
      * test, and the cost of TLS 1.3 is negligible next to video encoding.
      */
     private val serverSocketFactory: SSLServerSocketFactory? = null,
-    /** Silence after which the Mac counts as gone. */
-    private val readTimeoutMs: Int = READ_TIMEOUT_MS,
 ) {
 
     sealed class Event {
@@ -102,7 +100,7 @@ class TransportServer(
                 // without closing cleanly, a Wi-Fi cut or a sleep, leaves the loop blocked
                 // forever, and the server accepts nobody since it holds one connection at a
                 // time.
-                socket.soTimeout = readTimeoutMs
+                socket.soTimeout = READ_TIMEOUT_MS
                 val connection = Connection(socket)
                 onEvent(Event.Connected(connection.remote))
 
@@ -110,7 +108,7 @@ class TransportServer(
                     readLoop(socket, connection, onEvent)
                     "closed by the peer"
                 } catch (timeout: java.net.SocketTimeoutException) {
-                    "silent for more than ${readTimeoutMs / 1000} s"
+                    "silent for more than ${READ_TIMEOUT_MS / 1000} s"
                 } catch (error: Exception) {
                     Log.w(TAG, "connexion interrompue", error)
                     error.message ?: error.javaClass.simpleName

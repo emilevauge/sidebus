@@ -174,6 +174,8 @@ private struct DeviceRow: View {
     }
 
     private var subtitle: String {
+        // For the phone, why calls stay on it comes first.
+        if isPhone, !phone.callsAvailable { return phone.summary }
         if entry.isSharing { return entry.detail.map { "Sharing · \($0)" } ?? "Sharing" }
         if let session = entry.session, entry.isBusy { return session.detail ?? "Connecting…" }
         if entry.isOnline {

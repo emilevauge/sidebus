@@ -107,11 +107,6 @@ public actor PhoneChannel {
         self.inCall = inCall
     }
 
-    /// Drops the link at once, for a new one: the call's sound stopped coming.
-    public func dropLink() async {
-        await session?.stop(reason: "no sound from the phone")
-    }
-
     /// Asks for a check now, contacts included.
     public func checkSoon() {
         checkDue = true

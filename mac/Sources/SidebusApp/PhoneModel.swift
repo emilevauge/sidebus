@@ -23,9 +23,6 @@ final class PhoneModel {
     /// answered from the Mac, or moved to it. A call placed or answered on the phone
     /// stays there.
     private(set) var callOnMac = false
-    /// The link to the phone fell during a call on the Mac: the sound went back to the
-    /// phone until it comes back.
-    private(set) var linkLost = false
     /// Whether the phone passes on who calls, as its call screen shows it.
     private(set) var callerNamesReadable = false
     /// When the current call was answered, for its duration.
@@ -325,7 +322,6 @@ final class PhoneModel {
             answeredAt = nil
             isMuted = false
             callOnMac = false
-            linkLost = false
             phoneCaller = nil
             peerNumber = nil
             if previous != .idle {
@@ -352,8 +348,6 @@ final class PhoneModel {
         case let .contacts(list):
             contacts = list
         case let .audio(pcm):
-            lastAudioAt = .now
-            if linkLost { linkLost = false }
             audio?.play(pcm)
         case let .caller(title, text):
             callerShown(title: title, text: text)
@@ -363,7 +357,6 @@ final class PhoneModel {
             phoneDeviceID = uuid.uuidString
             UserDefaults.standard.set(uuid.uuidString, forKey: "phoneDeviceID")
         case .audioStopped:
-            if streaming, callOnMac, callState == .active { linkLost = true }
             // The phone ended the sound (the call, or the link, is over): CALL_START again
             // if the call goes on over a new link.
             streaming = false
@@ -401,34 +394,10 @@ final class PhoneModel {
         let streamWanted = callOnMac && (callState == .active || callState == .outgoing) && audioReady && audioStarted
         if streamWanted, !streaming {
             streaming = true
-            lastAudioAt = .now
-            watchAudio()
             if let channel { Task { await channel.send(.callStart) } }
         } else if !streamWanted, streaming {
             streaming = false
             if let channel { Task { await channel.send(.callStop) } }
-        }
-    }
-
-    @ObservationIgnored private var lastAudioAt = ContinuousClock.now
-    @ObservationIgnored private var audioWatch: Task<Void, Never>?
-
-    /// While the sound flows, about 50 pieces a second come from the phone: two seconds
-    /// without one mean the link fell, long before its own five second deadline.
-    private func watchAudio() {
-        audioWatch?.cancel()
-        audioWatch = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                guard let self, self.streaming else { return }
-                if ContinuousClock.now - self.lastAudioAt > .seconds(2) {
-                    self.log.info("no sound from the phone for 2 s, dropping the link")
-                    self.linkLost = true
-                    self.streaming = false
-                    if let channel = self.channel { await channel.dropLink() }
-                    return
-                }
-            }
         }
     }
 

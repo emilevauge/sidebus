@@ -96,9 +96,7 @@ class PhoneService : Service() {
 
     private suspend fun serve(info: Message.DeviceInfo) {
         val factory = DeviceIdentity.sslContext().serverSocketFactory as SSLServerSocketFactory
-        // 3 s, not the display's 10: a Mac lost mid call leaves the phone's microphone muted
-        // until then, and the other party hears nothing.
-        TransportServer(port = PORT, serverSocketFactory = factory, readTimeoutMs = 3_000).run { event ->
+        TransportServer(port = PORT, serverSocketFactory = factory).run { event ->
             when (event) {
                 is TransportServer.Event.Received -> handle(event.message, event.connection, info)
                 is TransportServer.Event.Disconnected -> {
