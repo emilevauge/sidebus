@@ -43,7 +43,11 @@ public final class CallAudioProbe {
     public static void main(String[] args) throws Exception {
         Looper.prepareMainLooper();
         context = shellContext();
-        AudioManager audio = context.getSystemService(AudioManager.class);
+        // Built on the shell context itself: the system service hands back one tied to
+        // the package context, whose missing application context breaks setMode.
+        Constructor<AudioManager> audioConstructor = AudioManager.class.getDeclaredConstructor(Context.class);
+        audioConstructor.setAccessible(true);
+        AudioManager audio = audioConstructor.newInstance(context);
         telephony = context.getSystemService(TelephonyManager.class);
         String command = args.length > 0 ? args[0] : "check";
         int seconds = args.length > 1 && args[1].matches("\\d+") ? Integer.parseInt(args[1]) : 5;
@@ -223,8 +227,7 @@ public final class CallAudioProbe {
         try {
             long lastMode = -1;
             Level level = new Level("downlink");
-            // Not the audio mode: the bridge holds it at call redirect itself, so it
-            // would outlive the call.
+            // The call state, not the audio mode, which can outlive the call.
             while (telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
                 if (audio.getMode() != lastMode) {
                     lastMode = audio.getMode();
