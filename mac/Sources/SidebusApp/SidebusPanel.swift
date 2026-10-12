@@ -83,11 +83,16 @@ struct PanelHeading: View {
     }
 }
 
-/// The devices in sight and the paired ones, each with what it can do right now: carry
-/// calls, show the Mac's screen. A click pairs, shares or stops sharing.
+/// The devices in reach, each with what it can do right now: carry calls, show the Mac's
+/// screen. A click pairs, shares or stops sharing. The paired ones out of reach are in the
+/// settings.
 private struct DeviceList: View {
     let devices: DeviceManager
     let phone: PhoneModel
+
+    private var reachable: [DeviceEntry] {
+        devices.entries.filter { $0.isOnline || ($0.id == phone.phoneDeviceID && phone.callsAvailable) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -96,13 +101,13 @@ private struct DeviceList: View {
                 Text(refusal).font(.caption).foregroundStyle(.red)
                     .padding(.horizontal, 14)
             }
-            if devices.entries.isEmpty {
-                Text("Plug a tablet in, or open Sidebus on it.")
+            if reachable.isEmpty {
+                Text("None in reach. Plug a tablet in, or open Sidebus on it.")
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
             }
-            ForEach(devices.entries) { entry in
+            ForEach(reachable) { entry in
                 DeviceRow(entry: entry, phone: phone, isPhone: entry.id == phone.phoneDeviceID) {
                     devices.perform(entry)
                 }

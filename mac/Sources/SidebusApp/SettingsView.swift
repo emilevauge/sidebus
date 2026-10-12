@@ -13,7 +13,6 @@ struct SettingsView: View {
     let updates: UpdateChecker
 
     @State private var address = ""
-    @State private var confirmingForgetAll = false
     @State private var handlesLinks = SettingsView.sidebusHandlesLinks()
 
     var body: some View {
@@ -32,12 +31,6 @@ struct SettingsView: View {
         }
         // Bounded height: the grouped form scrolls, so every section stays reachable.
         .frame(width: SidebusPanel.width, height: Self.height)
-        .confirmationDialog("Forget every paired device?", isPresented: $confirmingForgetAll) {
-            Button("Forget all", role: .destructive) { devices.unpairAll() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Each device asks for a pairing code again on its next connection.")
-        }
     }
 
     /// 560 points, less on a screen too short to show that much.
@@ -125,9 +118,6 @@ struct SettingsView: View {
                 Button("Add", action: addAddress)
                     .controlSize(.small)
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            if !devices.pairedDevices.isEmpty {
-                Button("Forget all devices…", role: .destructive) { confirmingForgetAll = true }
             }
         } header: {
             Text("Paired devices")
