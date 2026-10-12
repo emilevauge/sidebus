@@ -85,16 +85,13 @@ final class PopoverHost<Content: View>: NSViewController {
         let size = host.intrinsicContentSize
         guard size.width > 0, size.height > 0, size != popover.contentSize else { return }
         resizeLog.info("resize \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public), shown \(popover.isShown, privacy: .public)")
-        guard popover.isShown else {
-            popover.contentSize = size
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Motion.duration
-            context.timingFunction = Motion.timing
-            context.allowsImplicitAnimation = true
-            popover.contentSize = size
-        }
+        // One animation only, the content's: the popover takes its new size at once.
+        // Animated too, it ran on its own clock, out of step with the content, and the
+        // top of the panel slid while the two caught up.
+        let animates = popover.animates
+        popover.animates = false
+        popover.contentSize = size
+        popover.animates = animates
     }
 }
 
