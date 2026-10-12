@@ -61,6 +61,9 @@ public actor PhoneBridgeHost {
             if secret == nil || !runs || !current {
                 secret = try await startHelper(on: phone)
             }
+            // HyperOS freezes background apps, foreground service or not, and a frozen app
+            // left the Mac's pings unanswered for seconds: the power whitelist spares it.
+            _ = try? await adb(["-s", phone, "shell", "dumpsys", "deviceidle", "whitelist", "+app.sidebus"])
             // The app proves itself to the helper with this secret. HyperOS also keeps the
             // app's call service from starting on its own at boot: this starts it.
             try await adb([
