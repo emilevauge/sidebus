@@ -136,26 +136,21 @@ private struct CallView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
             }
-            if !phone.callOnMac, phone.callState == .active {
-                Button("Move to the Mac") { phone.moveCall(toMac: true) }
-                    .disabled(!phone.callsAvailable)
-            }
-            if phone.callOnMac, phone.callsAvailable {
-                // Three lines from the start, filled once the engine runs, so the card
-                // does not grow a second into the call.
-                VStack(spacing: 2) {
-                    Label(phone.audioRoute?.microphone ?? "Microphone…", systemImage: "mic")
-                    Label(phone.audioRoute?.speaker ?? "Speakers…", systemImage: "speaker.wave.2")
-                    Text(phone.audioRoute.map { $0.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones" } ?? "Starting the sound…")
+            // Every line is there from the first moment of the call, only its text changes:
+            // lines coming and going while the link comes up resized the popover several
+            // times in a row.
+            VStack(spacing: 2) {
+                if phone.callOnMac {
+                    Label(phone.audioRoute?.microphone ?? "Microphone", systemImage: "mic")
+                    Label(phone.audioRoute?.speaker ?? "Speakers", systemImage: "speaker.wave.2")
+                } else {
+                    Label("On the phone", systemImage: "iphone")
+                    Label("Its earpiece and microphone", systemImage: "ear")
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else if phone.callOnMac {
-                Text("Sound stays on the phone: \(phone.summary)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                Text(soundStatus).lineLimit(1)
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             if showsKeypad {
                 Keypad { phone.sendTone($0) }
@@ -177,12 +172,23 @@ private struct CallView: View {
                     RoundButton(symbol: "phone.down.fill", color: .red, title: "Hang up") { phone.hangUp() }
                 }
             }
-            if phone.callOnMac, phone.callState == .active {
-                Button("Move to the phone") { phone.moveCall(toMac: false) }
-                    .buttonStyle(.link)
+            Button(phone.callOnMac ? "Move to the phone" : "Move to the Mac") {
+                phone.moveCall(toMac: !phone.callOnMac)
             }
+            .buttonStyle(.link)
+            .disabled(phone.callState != .active || (!phone.callOnMac && !phone.callsAvailable))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var soundStatus: String {
+        guard phone.callOnMac else {
+            return phone.callsAvailable ? " " : phone.summary
+        }
+        if let route = phone.audioRoute {
+            return route.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones"
+        }
+        return phone.callsAvailable ? "Starting the sound…" : phone.summary
     }
 
     private func state(at date: Date) -> String {

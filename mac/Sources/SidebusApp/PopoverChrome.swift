@@ -1,5 +1,8 @@
 import AppKit
 import SwiftUI
+import os
+
+private let resizeLog = Logger(subsystem: "app.sidebus", category: "popover")
 
 // The popover chrome, taken from Calbar (same author) so that both menu bar apps look
 // and move alike.
@@ -63,6 +66,7 @@ final class PopoverHost<Content: View>: NSViewController {
         host.layoutSubtreeIfNeeded()
         let size = host.intrinsicContentSize
         guard let popover, size.width > 0, size.height > 0 else { return }
+        resizeLog.info("fit \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public)")
         popover.contentSize = size
     }
 
@@ -80,6 +84,7 @@ final class PopoverHost<Content: View>: NSViewController {
         guard let popover else { return }
         let size = host.intrinsicContentSize
         guard size.width > 0, size.height > 0, size != popover.contentSize else { return }
+        resizeLog.info("resize \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public), shown \(popover.isShown, privacy: .public)")
         guard popover.isShown else {
             popover.contentSize = size
             return
