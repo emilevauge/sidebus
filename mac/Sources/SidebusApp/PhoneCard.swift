@@ -18,14 +18,22 @@ struct PhoneCard: View {
         VStack(alignment: .leading, spacing: 10) {
             if phone.isInCall {
                 CallView(phone: phone)
+                    .transition(.opacity)
             } else {
                 SearchView(phone: phone, entry: entry)
+                    .transition(.opacity)
             }
             if let problem = phone.problem {
                 Text(problem).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        // One curve for the card and the popover around it, which PopoverHost resizes
+        // with the same timing.
+        .animation(Motion.resize, value: phone.isInCall)
+        .animation(Motion.resize, value: phone.callOnMac)
+        .animation(Motion.resize, value: phone.audioRoute)
+        .animation(Motion.resize, value: phone.problem)
     }
 }
 
@@ -128,15 +136,17 @@ private struct CallView: View {
                 Button("Move to the Mac") { phone.moveCall(toMac: true) }
                     .disabled(!phone.callsAvailable)
             }
-            if phone.callOnMac, let route = phone.audioRoute {
+            if phone.callOnMac, phone.callsAvailable {
+                // Three lines from the start, filled once the engine runs, so the card
+                // does not grow a second into the call.
                 VStack(spacing: 2) {
-                    Label(route.microphone, systemImage: "mic")
-                    Label(route.speaker, systemImage: "speaker.wave.2")
-                    Text(route.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones")
+                    Label(phone.audioRoute?.microphone ?? "Microphone…", systemImage: "mic")
+                    Label(phone.audioRoute?.speaker ?? "Speakers…", systemImage: "speaker.wave.2")
+                    Text(phone.audioRoute.map { $0.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones" } ?? "Starting the sound…")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            } else if phone.callOnMac, !phone.audioReady {
+            } else if phone.callOnMac {
                 Text("Sound stays on the phone: \(phone.summary)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
