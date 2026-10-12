@@ -100,7 +100,7 @@ final class UpdateChecker {
         }
         UserDefaults.standard.set(now, forKey: Self.lastCheckedKey)
 
-        guard let release = await fetchLatest(), isNewer(release.version, than: currentVersion)
+        guard let release = try? await fetchLatest().get(), isNewer(release.version, than: currentVersion)
         else { return }
         log.info("update available: \(release.version, privacy: .public)")
         available = release
@@ -112,8 +112,12 @@ final class UpdateChecker {
         lastManualResult = nil
         defer { isChecking = false }
 
-        guard let release = await fetchLatest() else {
-            lastManualResult = .failed("could not reach github.com")
+        let release: Release
+        switch await fetchLatest() {
+        case let .success(found):
+            release = found
+        case let .failure(reason):
+            lastManualResult = .failed(reason.message)
             return
         }
         if isNewer(release.version, than: currentVersion) {
@@ -143,21 +147,35 @@ final class UpdateChecker {
 
     // MARK: - GitHub
 
-    private func fetchLatest() async -> Release? {
+    /// Why no release came back, said as it is: GitHub answering 404 is no network
+    /// trouble (a private repository, say, or no release yet).
+    struct LookupError: Error {
+        let message: String
+    }
+
+    private func fetchLatest() async -> Result<Release, LookupError> {
         let endpoint = "https://api.github.com/repos/\(Self.owner)/\(Self.repo)/releases/latest"
-        guard let url = URL(string: endpoint) else { return nil }
+        guard let url = URL(string: endpoint) else { return .failure(LookupError(message: "bad release address")) }
 
         var request = URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 10)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("Sidebus/\(currentVersion) (macOS)", forHTTPHeaderField: "User-Agent")
 
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-            let http = response as? HTTPURLResponse, http.statusCode == 200,
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let http = response as? HTTPURLResponse
+        else {
+            return .failure(LookupError(message: "could not reach github.com"))
+        }
+        switch http.statusCode {
+        case 200: break
+        case 404: return .failure(LookupError(message: "no release found on GitHub"))
+        case 403, 429: return .failure(LookupError(message: "GitHub limits requests, try again later"))
+        default: return .failure(LookupError(message: "GitHub answered \(http.statusCode)"))
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let tag = object["tag_name"] as? String
         else {
-            log.debug("release lookup failed")
-            return nil
+            return .failure(LookupError(message: "unreadable answer from GitHub"))
         }
 
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
@@ -169,7 +187,7 @@ final class UpdateChecker {
             .flatMap { $0["browser_download_url"] as? String }
             .flatMap(URL.init(string:))
 
-        return Release(version: version, pageURL: page, dmgURL: dmg)
+        return .success(Release(version: version, pageURL: page, dmgURL: dmg))
     }
 
     /// Compares two dotted versions, missing components counting as zero.
