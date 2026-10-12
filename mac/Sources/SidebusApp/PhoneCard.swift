@@ -278,6 +278,7 @@ private struct CallView: View {
     }
 
     private func state(at date: Date) -> String {
+        if phone.dialing { return "Reaching the phone…" }
         switch phone.callState {
         case .incoming: return "Incoming call"
         case .outgoing: return "Calling…"

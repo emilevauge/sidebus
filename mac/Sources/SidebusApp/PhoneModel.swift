@@ -49,7 +49,8 @@ final class PhoneModel {
     @ObservationIgnored private let notifications = IncomingCallNotifier()
     @ObservationIgnored private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
-    var isInCall: Bool { callState != .idle }
+    /// A call is under way, or being placed: the link to the phone is coming up first.
+    var isInCall: Bool { callState != .idle || dialing }
 
     /// True when the last word from the phone is that calls can reach the Mac.
     var callsAvailable: Bool {
@@ -191,31 +192,34 @@ final class PhoneModel {
         guard !dialable.isEmpty, callsAvailable else { return }
         guard !dialing else { return }
         problem = nil
-        // The last check may be stale (a phone that drops its Wi-Fi does not say so), so
-        // the link comes up first and the call goes out only once it has.
+        // The call card shows at once, while the link comes up: the last check may be stale
+        // (a phone that drops its Wi-Fi does not say so), so the call goes out only once
+        // the link is there.
+        peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
+        peerNumber = dialable
+        callOnMac = true
         dialing = true
         syncChannel()
         Task {
             let deadline = ContinuousClock.now + .seconds(4)
-            while !audioReady, ContinuousClock.now < deadline {
+            while !audioReady, dialing, ContinuousClock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(100))
             }
+            guard dialing else { return }
             dialing = false
             guard audioReady else {
                 problem = "\(phoneName ?? "The phone") is not reachable: the call was not placed"
+                callOnMac = false
                 syncChannel()
                 return
             }
-            peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
-            peerNumber = dialable
-            callOnMac = true
             link.dial(dialable)
             syncAudio()
         }
     }
 
     /// Bringing the link up before placing a call.
-    @ObservationIgnored private var dialing = false
+    private(set) var dialing = false
 
     /// A fresh look at the phone, when the panel opens.
     func checkSoon() {
@@ -274,6 +278,13 @@ final class PhoneModel {
     }
 
     func hangUp() {
+        // Not placed yet: called off before it goes out.
+        if dialing {
+            dialing = false
+            callOnMac = false
+            syncChannel()
+            return
+        }
         link.end()
     }
 
