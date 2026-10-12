@@ -112,7 +112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.openedForCall = false
-                SuggestionPanel.shared.hide()
                 self?.stopWatchingOutside()
             }
         }

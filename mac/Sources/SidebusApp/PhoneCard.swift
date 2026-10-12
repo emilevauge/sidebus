@@ -42,12 +42,19 @@ struct PhoneCard: View {
 
 // MARK: - Placing a call
 
+/// One line the call field suggests: a contact's number, or the typed number itself.
+private struct CallChoice: Equatable {
+    let title: String
+    let detail: String
+    let number: String
+    let name: String?
+}
+
 private struct SearchView: View {
     let phone: PhoneModel
     @Bindable var entry: DialerEntry
     @FocusState private var focused: Bool
-    @State private var field: NSView?
-    private let suggestions = SuggestionPanel.shared
+    @State private var selection = 0
 
     /// The typed text, when it reads as a number rather than a name.
     private var typedNumber: String? {
@@ -56,13 +63,15 @@ private struct SearchView: View {
     }
 
     private var choices: [CallChoice] {
+        guard phone.callsAvailable else { return [] }
         var list = typedNumber.map { [CallChoice(title: "Call \(entry.text)", detail: "", number: $0, name: nil)] } ?? []
-        list += ContactBook.search(entry.text, in: phone.contacts, limit: 8)
+        list += ContactBook.search(entry.text, in: phone.contacts, limit: 6)
             .map { CallChoice(title: $0.name, detail: $0.number, number: $0.number, name: $0.name) }
         return list
     }
 
     var body: some View {
+        let choices = self.choices
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "phone")
@@ -72,21 +81,32 @@ private struct SearchView: View {
                     .font(.system(size: 15))
                     .focused($focused)
                     .disabled(!phone.callsAvailable)
-                .onSubmit { call(suggestions.model.selection) }
-                .onKeyPress(.downArrow) { move(1) }
-                .onKeyPress(.upArrow) { move(-1) }
-                .onKeyPress(.escape) {
-                    guard !entry.text.isEmpty else { return .ignored }
-                    entry.text = ""
-                    return .handled
-                }
-                    .onChange(of: entry.text) { refreshSuggestions(resetSelection: true) }
-                    .onChange(of: phone.contacts) { refreshSuggestions(resetSelection: false) }
+                    .onSubmit { call(choices, selection) }
+                    .onKeyPress(.downArrow) { move(1, in: choices) }
+                    .onKeyPress(.upArrow) { move(-1, in: choices) }
+                    .onKeyPress(.escape) {
+                        guard !entry.text.isEmpty else { return .ignored }
+                        entry.text = ""
+                        return .handled
+                    }
+                    .onChange(of: entry.text) { selection = 0 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .background(AnchorView { field = $0 })
+
+            // Under the field, in the panel: the popover grows and shrinks around the
+            // list, its content held still (see PopoverHost).
+            if !choices.isEmpty {
+                VStack(spacing: 1) {
+                    ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
+                        SuggestionRow(choice: choice, selected: index == selection) {
+                            call(choices, index)
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle()
@@ -99,12 +119,11 @@ private struct SearchView: View {
             }
             .padding(.leading, 2)
         }
+        .animation(Motion.resize, value: choices.count)
         .onAppear {
             focused = true
             if phone.contacts.isEmpty { phone.refreshContacts() }
-            refreshSuggestions(resetSelection: false)
         }
-        .onDisappear { suggestions.hide() }
     }
 
     private var status: String {
@@ -114,28 +133,43 @@ private struct SearchView: View {
         return phone.summary
     }
 
-    private func refreshSuggestions(resetSelection: Bool) {
-        let model = suggestions.model
-        model.choices = phone.callsAvailable ? choices : []
-        if resetSelection || model.selection >= model.choices.count { model.selection = 0 }
-        model.onPick = { index in call(index) }
-        suggestions.update(beside: field)
-    }
-
-    private func move(_ step: Int) -> KeyPress.Result {
-        let model = suggestions.model
-        guard !model.choices.isEmpty else { return .ignored }
-        model.selection = min(max(model.selection + step, 0), model.choices.count - 1)
+    private func move(_ step: Int, in choices: [CallChoice]) -> KeyPress.Result {
+        guard !choices.isEmpty else { return .ignored }
+        selection = min(max(selection + step, 0), choices.count - 1)
         return .handled
     }
 
-    private func call(_ index: Int) {
-        let list = suggestions.model.choices
-        guard list.indices.contains(index) else { return }
-        let choice = list[index]
+    private func call(_ choices: [CallChoice], _ index: Int) {
+        guard choices.indices.contains(index) else { return }
+        let choice = choices[index]
         phone.dial(choice.number, name: choice.name)
         entry.text = ""
-        suggestions.hide()
+    }
+}
+
+private struct SuggestionRow: View {
+    let choice: CallChoice
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(choice.title).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(choice.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                selected ? AnyShapeStyle(Color.accentColor.opacity(0.22)) : hovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
     }
 }
 

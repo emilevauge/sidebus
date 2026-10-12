@@ -116,7 +116,34 @@ final class PhoneModel {
         channelState = .ready(phone: "Phone", over: .wifi, helperRuns: true, contactsReadable: true)
     }
 
+    /// Development hook: SIDEBUS_DEMO=1 fills the panel with made up contacts and types
+    /// names in the call field, over and over, to watch the suggestions come and go.
+    private func demo() {
+        phoneName = "Phone"
+        isBluetoothConnected = true
+        channelState = .ready(phone: "Phone", over: .wifi, helperRuns: true, contactsReadable: true)
+        contacts = [
+            PhoneContact(name: "Alice Martin", number: "06 11 22 33 44"),
+            PhoneContact(name: "Alain Dubois", number: "06 55 66 77 88"),
+            PhoneContact(name: "Albert Petit", number: "+44 20 7946 0000"),
+            PhoneContact(name: "Bruno Leroy", number: "07 12 34 56 78"),
+        ]
+        Task {
+            let steps = ["", "a", "al", "ali", "al", "a", ""]
+            while true {
+                for text in steps {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    AppDelegate.shared.dialer.text = text
+                }
+            }
+        }
+    }
+
     func start() {
+        if ProcessInfo.processInfo.environment["SIDEBUS_DEMO"] == "1" {
+            demo()
+            return
+        }
         if let number = ProcessInfo.processInfo.environment["SIDEBUS_FAKE_CALL"] {
             fakeCall(number)
             return
