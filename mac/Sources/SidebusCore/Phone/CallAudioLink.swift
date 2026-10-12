@@ -74,6 +74,11 @@ public final class CallAudioLink: @unchecked Sendable {
     /// One engine for both directions, so that voice processing hears what the speakers
     /// play and takes it out of the microphone. It follows the system's default devices.
     private func startWithVoiceProcessing() throws {
+        // The output side must exist before voice processing is on: built afterwards, its
+        // format no longer matches the input's, and the unit refuses to start ("client-side
+        // input and output formats do not match", -10875).
+        _ = captureEngine.outputNode
+        _ = captureEngine.mainMixerNode
         try captureEngine.inputNode.setVoiceProcessingEnabled(true)
         playbackEngine = captureEngine
         try startEngines()

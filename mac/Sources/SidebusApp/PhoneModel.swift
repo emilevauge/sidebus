@@ -165,6 +165,7 @@ final class PhoneModel {
             notifications.clearIncoming()
             answeredAt = nil
             isMuted = false
+            if previous != .idle { problem = nil }
         }
         syncAudio()
     }
