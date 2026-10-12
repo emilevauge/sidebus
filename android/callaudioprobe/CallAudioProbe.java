@@ -175,8 +175,8 @@ public final class CallAudioProbe {
         int volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
         audio.setMicrophoneMute(muteMic);
         System.out.println("phone microphone muted: " + muteMic);
-        // On this Qualcomm platform the microphone mute also silences what is injected
-        // into the uplink; Xiaomi's own call relay sets this key next to the mute.
+        // Xiaomi's own call relay sets this key next to the mute. With both, the other
+        // party hears what is injected and nothing from the phone's microphone.
         audio.setParameters("incall_music_mute=false");
         audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
                 audio.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL), 0);
