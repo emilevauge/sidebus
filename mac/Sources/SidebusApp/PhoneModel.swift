@@ -165,6 +165,7 @@ final class PhoneModel {
     /// The phone's call screen named the caller: shown in place of a bare number, with
     /// what it adds (a spam warning, a business), unless a contact already names it.
     private func callerShown(title: String, text: String) {
+        log.info("caller from the phone: \(title, privacy: .private) / \(text, privacy: .private)")
         guard case let .incoming(number) = callState else { return }
         if let number, ContactBook.contact(for: number, in: contacts) != nil { return }
         let digits = ContactBook.dialable(title)
@@ -217,7 +218,10 @@ final class PhoneModel {
         case let .incoming(number):
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
             peer = name ?? number ?? "Unknown number"
-            if previous != callState { notifications.showIncoming(caller: peer ?? "") }
+            if previous != callState {
+                notifications.showIncoming(caller: peer ?? "")
+                AppDelegate.shared.showPanelForCall()
+            }
         case .active:
             if answeredAt == nil { answeredAt = Date() }
             notifications.clearIncoming()
@@ -231,7 +235,10 @@ final class PhoneModel {
             answeredAt = nil
             isMuted = false
             callOnMac = false
-            if previous != .idle { problem = nil }
+            if previous != .idle {
+                problem = nil
+                AppDelegate.shared.callEnded()
+            }
         }
         syncChannel()
         syncAudio()
