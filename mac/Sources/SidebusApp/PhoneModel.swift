@@ -19,6 +19,10 @@ final class PhoneModel {
     private(set) var channelState: PhoneChannel.State = .searching
     private(set) var contacts: [PhoneContact] = []
     private(set) var isMuted = false
+    /// True when the call goes through the Mac's speakers and microphone: placed or
+    /// answered from the Mac, or moved to it. A call placed or answered on the phone
+    /// stays there.
+    private(set) var callOnMac = false
     /// When the current call was answered, for its duration.
     private(set) var answeredAt: Date?
     /// Who the current call is with: a contact's name, or the number.
@@ -130,11 +134,32 @@ final class PhoneModel {
         guard !dialable.isEmpty else { return }
         problem = nil
         peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
+        callOnMac = true
         link.dial(dialable)
+        syncAudio()
     }
 
     func accept() {
+        callOnMac = true
         link.accept()
+        syncAudio()
+    }
+
+    /// Moves the call under way to the Mac, or back to the phone.
+    func moveCall(toMac: Bool) {
+        callOnMac = toMac
+        syncChannel()
+        syncAudio()
+    }
+
+    private func syncChannel() {
+        guard let channel else { return }
+        let wanted = callOnMac || {
+            if case .incoming = callState { return true }
+            return false
+        }()
+        let holds = callState != .idle && wanted
+        Task { await channel.setInCall(holds) }
     }
 
     func hangUp() {
@@ -163,11 +188,6 @@ final class PhoneModel {
         isBluetoothConnected = link.isConnected
         phoneName = link.phoneName
 
-        if let channel {
-            let inCall = callState != .idle
-            Task { await channel.setInCall(inCall) }
-        }
-
         switch callState {
         case let .incoming(number):
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
@@ -177,13 +197,18 @@ final class PhoneModel {
             if answeredAt == nil { answeredAt = Date() }
             notifications.clearIncoming()
         case .outgoing:
-            break
+            // Placed on the phone itself: it stays there.
+            if previous == .idle, !callOnMac {
+                peer = "Call on the phone"
+            }
         case .idle:
             notifications.clearIncoming()
             answeredAt = nil
             isMuted = false
+            callOnMac = false
             if previous != .idle { problem = nil }
         }
+        syncChannel()
         syncAudio()
     }
 
@@ -223,19 +248,25 @@ final class PhoneModel {
         }
     }
 
-    /// The engine starts as soon as Bluetooth announces a call, ringing included, so that
+    /// For a call on the Mac, the engine starts as soon as Bluetooth announces it, ringing
+    /// included, so that
     /// voice processing (a second or so to set up) gets ready while the link to the phone
     /// comes up; the sound flows once both are there, from the moment the call is placed
     /// or answered, until it ends.
     private func syncAudio() {
-        let engineWanted = callState != .idle && helperKnownRunning
+        // Ringing: warmed up in case the call is answered from the Mac.
+        let ringing: Bool = {
+            if case .incoming = callState { return true }
+            return false
+        }()
+        let engineWanted = callState != .idle && helperKnownRunning && (callOnMac || ringing)
         if engineWanted, audio == nil {
             startAudio()
         } else if !engineWanted, audio != nil {
             stopAudio()
         }
 
-        let streamWanted = (callState == .active || callState == .outgoing) && audioReady && audioStarted
+        let streamWanted = callOnMac && (callState == .active || callState == .outgoing) && audioReady && audioStarted
         if streamWanted, !streaming {
             streaming = true
             if let channel { Task { await channel.send(.callStart) } }

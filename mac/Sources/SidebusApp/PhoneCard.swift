@@ -35,8 +35,7 @@ private struct SearchView: View {
     let phone: PhoneModel
     @Bindable var entry: DialerEntry
     @FocusState private var focused: Bool
-    @State private var fieldWindow: NSWindow?
-    @State private var fieldFrame = NSRect.zero
+    @State private var field: NSView?
     private let suggestions = SuggestionPanel.shared
 
     /// The typed text, when it reads as a number rather than a name.
@@ -66,14 +65,7 @@ private struct SearchView: View {
                     entry.text = ""
                     return .handled
                 }
-                .background(ScreenFrameReader { window, frame in
-                    guard window !== fieldWindow || frame != fieldFrame else { return }
-                    DispatchQueue.main.async {
-                        fieldWindow = window
-                        fieldFrame = frame
-                        refreshSuggestions(resetSelection: false)
-                    }
-                })
+                .background(AnchorView { field = $0 })
                 .onChange(of: entry.text) { refreshSuggestions(resetSelection: true) }
                 .onChange(of: phone.contacts) { refreshSuggestions(resetSelection: false) }
 
@@ -100,12 +92,7 @@ private struct SearchView: View {
         model.choices = choices
         if resetSelection || model.selection >= model.choices.count { model.selection = 0 }
         model.onPick = { index in call(index) }
-        // Only while the popover shows: its window leaves the screen when it closes.
-        if fieldWindow?.isVisible == true {
-            suggestions.update(beside: fieldWindow, anchor: fieldFrame)
-        } else {
-            suggestions.hide()
-        }
+        suggestions.update(beside: field)
     }
 
     private func move(_ step: Int) -> KeyPress.Result {
@@ -137,7 +124,11 @@ private struct CallView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
             }
-            if let route = phone.audioRoute {
+            if !phone.callOnMac, phone.callState == .active {
+                Button("Move to the Mac") { phone.moveCall(toMac: true) }
+                    .disabled(!phone.callsAvailable)
+            }
+            if phone.callOnMac, let route = phone.audioRoute {
                 VStack(spacing: 2) {
                     Label(route.microphone, systemImage: "mic")
                     Label(route.speaker, systemImage: "speaker.wave.2")
@@ -145,7 +136,7 @@ private struct CallView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            } else if phone.isInCall, !phone.audioReady {
+            } else if phone.callOnMac, !phone.audioReady {
                 Text("Sound stays on the phone: \(phone.summary)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -161,14 +152,20 @@ private struct CallView: View {
                     RoundButton(symbol: "phone.down.fill", color: .red, title: "Decline") { phone.hangUp() }
                     RoundButton(symbol: "phone.fill", color: .green, title: "Answer") { phone.accept() }
                 } else {
-                    RoundButton(
-                        symbol: phone.isMuted ? "mic.slash.fill" : "mic.fill",
-                        color: phone.isMuted ? .orange : .gray,
-                        title: phone.isMuted ? "Unmute" : "Mute"
-                    ) { phone.toggleMute() }
+                    if phone.callOnMac {
+                        RoundButton(
+                            symbol: phone.isMuted ? "mic.slash.fill" : "mic.fill",
+                            color: phone.isMuted ? .orange : .gray,
+                            title: phone.isMuted ? "Unmute" : "Mute"
+                        ) { phone.toggleMute() }
+                    }
                     RoundButton(symbol: "circle.grid.3x3.fill", color: .gray, title: "Keypad") { showsKeypad.toggle() }
                     RoundButton(symbol: "phone.down.fill", color: .red, title: "Hang up") { phone.hangUp() }
                 }
+            }
+            if phone.callOnMac, phone.callState == .active {
+                Button("Move to the phone") { phone.moveCall(toMac: false) }
+                    .buttonStyle(.link)
             }
         }
         .frame(maxWidth: .infinity)

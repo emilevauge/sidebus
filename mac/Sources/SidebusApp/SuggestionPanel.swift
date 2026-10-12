@@ -18,60 +18,38 @@ final class Suggestions {
     var onPick: (Int) -> Void = { _ in }
 }
 
-/// The call field's suggestions, in a small panel beside the menu bar popover rather than
-/// inside it, so the popover keeps its size while one types. The panel never takes the
-/// keyboard: typing and the arrow keys stay with the field.
+/// The call field's suggestions, in a popover beside the field, styled as the settings
+/// one, rather than inside the menu bar popover, which would resize on every key. The
+/// keyboard goes back to the field once it shows: typing and the arrow keys stay there.
 @MainActor
 final class SuggestionPanel {
     static let shared = SuggestionPanel()
 
     let model = Suggestions()
-    private var panel: NSPanel?
-    private static let width: CGFloat = 300
-    private static let gap: CGFloat = 8
+    private lazy var popover: NSPopover = {
+        let popover = NSPopover()
+        // Closed with the field's popover, or when there is nothing left to suggest.
+        popover.behavior = .applicationDefined
+        popover.animates = false
+        let host = NSHostingController(rootView: SuggestionList(model: model))
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        return popover
+    }()
 
-    /// Shows the panel beside `window`, its top level with `anchor`, both in screen
-    /// coordinates; hides it when there is nothing to suggest.
-    func update(beside window: NSWindow?, anchor: NSRect) {
-        guard let window, !model.choices.isEmpty else {
+    /// Shows the suggestions beside `field`, or hides them when there are none.
+    func update(beside field: NSView?) {
+        guard let field, field.window?.isVisible == true, !model.choices.isEmpty else {
             hide()
             return
         }
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        let height = panel.contentView?.fittingSize.height ?? 200
-        let screen = window.screen?.visibleFrame ?? .infinite
-        var x = window.frame.maxX + Self.gap
-        if x + Self.width > screen.maxX { x = window.frame.minX - Self.gap - Self.width }
-        let y = max(screen.minY, anchor.maxY - height)
-        panel.setFrame(NSRect(x: x, y: y, width: Self.width, height: height), display: true)
-        if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
-        panel.orderFront(nil)
+        guard !popover.isShown else { return }
+        popover.show(relativeTo: field.bounds, of: field, preferredEdge: .maxX)
+        field.window?.makeKey()
     }
 
     func hide() {
-        guard let panel else { return }
-        panel.parent?.removeChildWindow(panel)
-        panel.orderOut(nil)
-    }
-
-    private func makePanel() -> NSPanel {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 100),
-            styleMask: [.nonactivatingPanel, .borderless],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isFloatingPanel = true
-        panel.level = .popUpMenu
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.becomesKeyOnlyIfNeeded = true
-        let host = NSHostingView(rootView: SuggestionList(model: model))
-        host.sizingOptions = [.intrinsicContentSize]
-        panel.contentView = host
-        return panel
+        if popover.isShown { popover.close() }
     }
 }
 
@@ -103,42 +81,19 @@ private struct SuggestionList: View {
             }
         }
         .padding(6)
-        .frame(width: 300)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(width: 280)
     }
 }
 
-/// Reports where a view sits on screen, and in which window.
-struct ScreenFrameReader: NSViewRepresentable {
-    let onChange: (NSWindow?, NSRect) -> Void
+/// Hands over the AppKit view behind a SwiftUI one, to anchor a popover on it.
+struct AnchorView: NSViewRepresentable {
+    let onView: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = ReportingView()
-        view.onChange = onChange
+        let view = NSView()
+        DispatchQueue.main.async { onView(view) }
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        (view as? ReportingView)?.onChange = onChange
-        (view as? ReportingView)?.report()
-    }
-
-    final class ReportingView: NSView {
-        var onChange: (NSWindow?, NSRect) -> Void = { _, _ in }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            report()
-        }
-
-        override func layout() {
-            super.layout()
-            report()
-        }
-
-        func report() {
-            guard let window else { return }
-            onChange(window, window.convertToScreen(convert(bounds, to: nil)))
-        }
-    }
+    func updateNSView(_ view: NSView, context: Context) {}
 }
