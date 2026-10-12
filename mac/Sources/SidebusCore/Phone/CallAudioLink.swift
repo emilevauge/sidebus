@@ -20,7 +20,8 @@ public final class CallAudioLink: @unchecked Sendable {
     private static let prebufferMs = 80
 
     private let send: @Sendable (Data) -> Void
-    private var engine = AVAudioEngine()
+    private var captureEngine = AVAudioEngine()
+    private var playbackEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let wireFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
@@ -45,28 +46,41 @@ public final class CallAudioLink: @unchecked Sendable {
     /// cannot start.
     public func start() throws {
         do {
-            try start(voiceProcessing: true)
+            try startWithVoiceProcessing()
         } catch {
-            // macOS sometimes refuses voice processing altogether (-10875), as after an
-            // aggregate input lost a member. A call with some echo beats no call.
+            // macOS sometimes refuses voice processing altogether (-10875), as when the
+            // default input is an aggregate missing a member. A call with some echo beats
+            // no call.
             log.error("voice processing unavailable, going without: \(String(describing: error), privacy: .public)")
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            if player.engine != nil { engine.detach(player) }
-            engine = AVAudioEngine()
-            try start(voiceProcessing: false)
+            stopEngines()
+            captureEngine = AVAudioEngine()
+            playbackEngine = AVAudioEngine()
+            try startPlain()
         }
     }
 
-    private func start(voiceProcessing: Bool) throws {
-        let input = engine.inputNode
-        if let device = Self.microphone() {
-            try input.auAudioUnit.setDeviceID(device)
-        }
-        if voiceProcessing { try input.setVoiceProcessingEnabled(true) }
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: playFormat)
+    /// One engine for both directions, so that voice processing hears what the speakers
+    /// play and takes it out of the microphone. It follows the system's default devices.
+    private func startWithVoiceProcessing() throws {
+        try captureEngine.inputNode.setVoiceProcessingEnabled(true)
+        playbackEngine = captureEngine
+        try startEngines()
+    }
 
+    /// Two engines: on macOS an engine's input and output share one device unit, so the
+    /// microphone can only be chosen on an engine that plays nothing.
+    private func startPlain() throws {
+        if let device = Self.microphone() {
+            try captureEngine.inputNode.auAudioUnit.setDeviceID(device)
+        }
+        try startEngines()
+    }
+
+    private func startEngines() throws {
+        playbackEngine.attach(player)
+        playbackEngine.connect(player, to: playbackEngine.mainMixerNode, format: playFormat)
+
+        let input = captureEngine.inputNode
         let micFormat = input.outputFormat(forBus: 0)
         let converter = AVAudioConverter(from: micFormat, to: wireFormat)
         // With voice processing on, channel 0 carries the processed voice; the other
@@ -74,18 +88,25 @@ public final class CallAudioLink: @unchecked Sendable {
         converter?.channelMap = [0]
         queue.sync { self.converter = converter }
         input.installTap(onBus: 0, bufferSize: 1024, format: micFormat) { [weak self] buffer, _ in
-            self?.capture(buffer)
+            self?.encode(buffer)
         }
 
-        try engine.start()
+        try captureEngine.start()
+        if playbackEngine !== captureEngine { try playbackEngine.start() }
         player.play()
     }
 
     public func stop() {
         queue.sync { stopped = true }
-        engine.inputNode.removeTap(onBus: 0)
+        stopEngines()
+    }
+
+    private func stopEngines() {
+        captureEngine.inputNode.removeTap(onBus: 0)
         player.stop()
-        engine.stop()
+        captureEngine.stop()
+        playbackEngine.stop()
+        if player.engine != nil { playbackEngine.detach(player) }
     }
 
     /// The system's default input, unless it is an aggregate device: voice processing fails
@@ -186,7 +207,7 @@ public final class CallAudioLink: @unchecked Sendable {
     }
 
     // Called on the audio tap's thread.
-    private func capture(_ buffer: AVAudioPCMBuffer) {
+    private func encode(_ buffer: AVAudioPCMBuffer) {
         guard let converter = queue.sync(execute: { self.converter }) else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * Self.sampleRate / buffer.format.sampleRate) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: wireFormat, frameCapacity: capacity) else { return }
