@@ -5,6 +5,11 @@
 //
 //   swift run HandsFreeProbe list              paired devices, phones marked
 //   swift run HandsFreeProbe <address>         connect, then type commands
+//   swift run HandsFreeProbe <address> <channel>   same, on that RFCOMM channel
+//
+// The channel override exists because a Xiaomi 15 on HyperOS (Android 16) advertises
+// its hands-free gateway on RFCOMM channel 1 in SDP, while the server actually listens
+// on channel 8: channel 1 is refused, channel 8 answers AT+BRSF.
 //
 // The phone must already be paired with the Mac, from System Settings > Bluetooth.
 
@@ -201,6 +206,32 @@ enum AudioDevices {
     }
 }
 
+// MARK: - Channel override
+
+// IOBluetoothHandsFree reads the channel from the gateway's SDP record and offers no way
+// to pass another one, so the record's getter is swapped for one that lies about it.
+nonisolated(unsafe) var channelOverride: BluetoothRFCOMMChannelID?
+
+extension IOBluetoothSDPServiceRecord {
+    @objc func probe_getRFCOMMChannelID(_ channel: UnsafeMutablePointer<BluetoothRFCOMMChannelID>) -> IOReturn {
+        // Swapped: this calls the original.
+        let result = probe_getRFCOMMChannelID(channel)
+        let gateway = IOBluetoothSDPUUID(uuid16: BluetoothSDPUUID16(kBluetoothSDPUUID16ServiceClassHandsFreeAudioGateway.rawValue))
+        if let channelOverride, hasService(from: [gateway as Any]) {
+            log("gateway record says channel \(channel.pointee), using \(channelOverride)")
+            channel.pointee = channelOverride
+        }
+        return result
+    }
+
+    static func overrideGatewayChannel(_ channel: BluetoothRFCOMMChannelID) {
+        channelOverride = channel
+        let original = class_getInstanceMethod(self, #selector(getRFCOMMChannelID(_:)))!
+        let swapped = class_getInstanceMethod(self, #selector(probe_getRFCOMMChannelID(_:)))!
+        method_exchangeImplementations(original, swapped)
+    }
+}
+
 // MARK: - Entry point
 
 let paired = (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice]) ?? []
@@ -225,8 +256,14 @@ guard let device = paired.first(where: {
     exit(1)
 }
 
+if let channel = arguments.dropFirst().first.flatMap({ BluetoothRFCOMMChannelID($0) }) {
+    IOBluetoothSDPServiceRecord.overrideGatewayChannel(channel)
+}
+
 let probe = Probe(device: device)
-probe.start()
+// IOBluetooth's Core Bluetooth session needs a moment to reach the powered on state;
+// a connect sent before that is dropped with "API MISUSE" in the log.
+DispatchQueue.main.asyncAfter(deadline: .now() + 2) { probe.start() }
 
 // Commands come from stdin on a background thread; IOBluetooth wants the main thread.
 FileHandle.standardInput.readabilityHandler = { handle in
