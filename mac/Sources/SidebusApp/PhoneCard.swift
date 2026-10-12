@@ -209,6 +209,9 @@ private struct CallView: View {
         guard phone.callOnMac else {
             return phone.callsAvailable ? "Move it to the Mac below" : phone.summary
         }
+        if phone.linkLost {
+            return "Connection lost: sound on the phone, reconnecting…"
+        }
         if let route = phone.audioRoute {
             return route.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones"
         }

@@ -64,7 +64,7 @@ public actor PhoneChannel {
         self.onEvent = onEvent
         tasks.append(Task { [browser] in
             for await peers in await browser.start() {
-                self.wifiPeers = peers
+                await self.wifiPeersChanged(peers)
             }
         })
         tasks.append(Task { await self.loop() })
@@ -81,12 +81,32 @@ public actor PhoneChannel {
     /// calls for a check: the helper may just have started.
     public func setUSBAvailable(_ available: Bool) {
         usbAvailable = available
-        if available { checkDue = true }
+        if available { checkDue = true } else { lostIfOutOfReach() }
+    }
+
+    /// The phone's announcement comes and goes with its Wi-Fi: gone, it is out of reach
+    /// at once; back, it gets checked.
+    private func wifiPeersChanged(_ peers: [Peer]) {
+        let appeared = wifiPeers.isEmpty && !peers.isEmpty
+        wifiPeers = peers
+        if appeared { checkDue = true }
+        lostIfOutOfReach()
+    }
+
+    private func lostIfOutOfReach() {
+        guard bestPeer() == nil, session == nil else { return }
+        lastStatus = nil
+        emit(.state(.searching))
     }
 
     /// Holds the link open while a call is placed, rings or goes on.
     public func setInCall(_ inCall: Bool) {
         self.inCall = inCall
+    }
+
+    /// Drops the link at once, for a new one: the call's sound stopped coming.
+    public func dropLink() async {
+        await session?.stop(reason: "no sound from the phone")
     }
 
     /// Asks for a check now, contacts included.
@@ -111,8 +131,13 @@ public actor PhoneChannel {
                     if checked {
                         checkDue = false
                         nextCheck = .now + Self.checkInterval
+                    } else {
+                        // Announced, or forwarded, but not answering: out of reach.
+                        lastStatus = nil
+                        emit(.state(.searching))
                     }
-                } else if lastStatus == nil {
+                } else {
+                    lastStatus = nil
                     emit(.state(.searching))
                 }
             }
