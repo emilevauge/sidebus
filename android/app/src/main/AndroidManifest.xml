@@ -3,6 +3,8 @@
 
     <!-- The Mac connects to the tablet, so we listen on the local network. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- On a phone, the Mac completes contact names when placing a call. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <application
         android:allowBackup="false"
@@ -23,6 +25,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Read over adb by the Mac. DUMP is held by the adb shell and by no app. -->
+        <provider
+            android:name=".phone.ContactsProvider"
+            android:authorities="app.sidebus.contacts"
+            android:exported="true"
+            android:readPermission="android.permission.DUMP"
+            android:writePermission="android.permission.DUMP" />
+
+        <activity
+            android:name=".phone.ContactsAccessActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     </application>
 
