@@ -53,10 +53,7 @@ final class PopoverHost<Content: View>: NSViewController {
     }
 
     override func loadView() {
-        // The content keeps its own height and hangs from the top of a flipped container.
-        // Stretched to a taller popover, NSHostingView centred it: making room for the
-        // keypad dropped everything by half the room, then the keypad's arrival raised it
-        // again, animated.
+        // A flipped container, so the hosting view hangs from the top; see pinHost.
         view = FlippedView()
         host.frame = view.bounds
         host.autoresizingMask = [.width]
@@ -68,10 +65,15 @@ final class PopoverHost<Content: View>: NSViewController {
         override var isFlipped: Bool { true }
     }
 
-    /// The content at the height it asks for, against the top edge.
+    /// The hosting view never changes height: as tall as the screen, against the top,
+    /// with the popover showing as much of it as the content needs. When it changed
+    /// height, its layers kept their place from the bottom for a moment, and SwiftUI
+    /// animated every view back from there, the call card's top sliding while the
+    /// keypad opened (the timer alone stayed, redrawn each second). Recorded, checked:
+    /// with a fixed height, nothing above the keypad moves.
     private func pinHost() {
-        let height = host.intrinsicContentSize.height
-        guard height > 0, host.frame.height != height || host.frame.minY != 0 else { return }
+        let height = max(NSScreen.screens.map(\.frame.height).max() ?? 2000, 2000)
+        guard host.frame.height != height || host.frame.minY != 0 || host.frame.width != view.bounds.width else { return }
         host.frame = NSRect(x: 0, y: 0, width: view.bounds.width, height: height)
     }
 

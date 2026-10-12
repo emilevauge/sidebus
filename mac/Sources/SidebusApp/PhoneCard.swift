@@ -196,6 +196,15 @@ private struct CallView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // Development hook: SIDEBUS_KEYPAD_LOOP=1 opens and closes the keypad every two
+        // seconds, to watch the animation with no hand on the mouse.
+        .task {
+            guard ProcessInfo.processInfo.environment["SIDEBUS_KEYPAD_LOOP"] == "1" else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                toggleKeypad()
+            }
+        }
     }
 
     /// Opening, the popover makes room first, with nothing animating, then the keypad

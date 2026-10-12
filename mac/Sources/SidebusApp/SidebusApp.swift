@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Development hook: opens the panel, or its settings, at launch, to look at them.
         switch ProcessInfo.processInfo.environment["SIDEBUS_OPEN"] {
         case "panel":
-            showPanel()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.showPanel() }
         case "settings":
             showPanel()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.panelState.showsSettings = true }
