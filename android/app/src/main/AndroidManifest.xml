@@ -3,8 +3,15 @@
 
     <!-- The Mac connects to the tablet, so we listen on the local network. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- On a phone, the Mac completes contact names when placing a call. -->
+    <!-- On a phone: calls carried to the Mac, see phone/PhoneService. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <application
         android:allowBackup="false"
@@ -26,16 +33,22 @@
             </intent-filter>
         </activity>
 
-        <!-- Read over adb by the Mac. DUMP is held by the adb shell and by no app. -->
-        <provider
-            android:name=".phone.ContactsProvider"
-            android:authorities="app.sidebus.contacts"
-            android:exported="true"
-            android:readPermission="android.permission.DUMP"
-            android:writePermission="android.permission.DUMP" />
+        <service
+            android:name=".phone.PhoneService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <receiver
+            android:name=".phone.PhoneServiceStarter"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <activity
-            android:name=".phone.ContactsAccessActivity"
+            android:name=".phone.PermissionsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />

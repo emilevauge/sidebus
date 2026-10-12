@@ -97,6 +97,22 @@ public enum MessageCodec {
         case let .pairResult(accepted):
             payload.u8(accepted ? 1 : 0)
 
+        case let .callAccess(token):
+            payload.bytes(token)
+
+        case let .callGrant(status, token):
+            payload.u8(status.rawValue)
+            payload.bytes(token)
+
+        case let .callStatus(statusFlags):
+            payload.u8(statusFlags)
+
+        case .callStart, .callStop, .contactsRequest:
+            break
+
+        case let .callAudio(data), let .contacts(data):
+            payload.bytes(data)
+
         case let .unknown(_, unknownFlags, data):
             flags = unknownFlags
             payload.bytes(data)
@@ -220,6 +236,34 @@ public enum MessageCodec {
                 // Any value other than 1 counts as a refusal: a future version adding a
                 // detailed refusal code must not read as an acceptance.
                 return .pairResult(accepted: try reader.u8() == 1)
+
+            case .callAccess:
+                return .callAccess(token: reader.rest())
+
+            case .callGrant:
+                let rawStatus = try reader.u8()
+                guard let status = CallGrantStatus(rawValue: rawStatus) else {
+                    throw ProtocolError.unknownEnumValue("call grant status", rawStatus)
+                }
+                return .callGrant(status: status, token: reader.rest())
+
+            case .callStatus:
+                return .callStatus(flags: try reader.u8())
+
+            case .callStart:
+                return .callStart
+
+            case .callStop:
+                return .callStop
+
+            case .callAudio:
+                return .callAudio(reader.rest())
+
+            case .contactsRequest:
+                return .contactsRequest
+
+            case .contacts:
+                return .contacts(reader.rest())
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)

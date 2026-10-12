@@ -1,12 +1,20 @@
 // Phone half of Sidebus calls: carries a phone call's audio to and from the Mac.
 //
 // The Mac pushes this file as a dex and starts it over adb, as the shell user, which
-// holds CALL_AUDIO_INTERCEPTION: an installed app cannot reach call audio. It listens
-// on the abstract socket sidebus-call, which the Mac forwards with adb. Each connection
-// carries one call: once the call is up, the downlink (the other party) goes to the
-// Mac, and what the Mac sends (its microphone) goes into the uplink, both as 16 kHz
-// mono 16 bit little endian PCM. The bridge ends when the call ends or the Mac closes
-// the connection, then waits for the next one.
+// holds CALL_AUDIO_INTERCEPTION: an installed app cannot reach call audio. Started
+// detached from the adb session, it outlives the USB cable and runs until the phone
+// restarts.
+//
+// It listens on the abstract socket sidebus-call, and only the Sidebus app may connect
+// (the shell too, for testing). Each connection opens with one byte:
+//
+//   P   is the bridge running? It answers K and closes.
+//   C   carry a call: once the call is up, the downlink (the other party) goes out on
+//       the socket, and what comes in (the Mac's microphone) goes into the uplink, both
+//       as 16 kHz mono 16 bit little endian PCM, until the call ends or the socket
+//       closes.
+//
+// The app relays between this socket and the Mac, over Sidebus's call channel.
 //
 // android/callaudioprobe holds the experiments behind each choice made here.
 
@@ -61,11 +69,22 @@ public final class CallBridge {
             System.exit(1);
         }
 
+        int appUid = context.getPackageManager().getPackageUid("app.sidebus", 0);
         LocalServerSocket server = new LocalServerSocket("sidebus-call");
         System.out.println("ready");
         while (true) {
             try (LocalSocket client = server.accept()) {
-                if (awaitCall()) bridge(client);
+                int uid = client.getPeerCredentials().getUid();
+                if (uid != appUid && uid != 2000) {
+                    System.out.println("refused uid " + uid);
+                    continue;
+                }
+                int command = client.getInputStream().read();
+                if (command == 'P') {
+                    client.getOutputStream().write('K');
+                } else if (command == 'C' && awaitCall()) {
+                    bridge(client);
+                }
             } catch (Exception e) {
                 System.out.println("bridge: " + e);
             }

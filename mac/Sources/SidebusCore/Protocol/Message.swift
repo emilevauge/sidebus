@@ -15,6 +15,21 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case bye = 0x0B
     case pairRequest = 0x0C
     case pairResult = 0x0D
+    case callAccess = 0x0E
+    case callGrant = 0x0F
+    case callStatus = 0x10
+    case callStart = 0x11
+    case callStop = 0x12
+    case callAudio = 0x13
+    case contactsRequest = 0x14
+    case contacts = 0x15
+}
+
+/// CALL_GRANT status, `protocol/PROTOCOL.md` 10.2.
+public enum CallGrantStatus: UInt8, Sendable {
+    case refused = 0
+    case granted = 1
+    case waiting = 2
 }
 
 public enum Codec: UInt8, Sendable {
@@ -74,6 +89,19 @@ public enum Message: Sendable, Equatable {
     /// The tablet's answer to PAIR_REQUEST.
     case pairResult(accepted: Bool)
 
+    /// Phone calls, `protocol/PROTOCOL.md` section 10.
+    case callAccess(token: Data)
+    case callGrant(status: CallGrantStatus, token: Data)
+    /// Bit 0: the audio helper runs. Bit 1: contacts are readable.
+    case callStatus(flags: UInt8)
+    case callStart
+    case callStop
+    /// 16 kHz mono 16 bit little endian PCM.
+    case callAudio(Data)
+    case contactsRequest
+    /// One line per number: name, tab, number, tab, starred as 0 or 1.
+    case contacts(Data)
+
     /// A message of a type this version does not know. Kept so that it can be skipped
     /// cleanly rather than closing the connection.
     case unknown(type: UInt8, flags: UInt16, payload: Data)
@@ -93,6 +121,14 @@ public enum Message: Sendable, Equatable {
         case .bye: return MessageType.bye.rawValue
         case .pairRequest: return MessageType.pairRequest.rawValue
         case .pairResult: return MessageType.pairResult.rawValue
+        case .callAccess: return MessageType.callAccess.rawValue
+        case .callGrant: return MessageType.callGrant.rawValue
+        case .callStatus: return MessageType.callStatus.rawValue
+        case .callStart: return MessageType.callStart.rawValue
+        case .callStop: return MessageType.callStop.rawValue
+        case .callAudio: return MessageType.callAudio.rawValue
+        case .contactsRequest: return MessageType.contactsRequest.rawValue
+        case .contacts: return MessageType.contacts.rawValue
         case let .unknown(type, _, _): return type
         }
     }

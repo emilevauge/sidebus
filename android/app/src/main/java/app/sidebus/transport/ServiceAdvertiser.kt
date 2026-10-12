@@ -19,13 +19,13 @@ class ServiceAdvertiser(private val context: Context) {
     private val manager = context.getSystemService(NsdManager::class.java)
     private var listener: NsdManager.RegistrationListener? = null
 
-    fun start(port: Int, info: Message.DeviceInfo) {
+    fun start(port: Int, info: Message.DeviceInfo, serviceType: String = SERVICE_TYPE) {
         if (listener != null) return
 
         val service = NsdServiceInfo().apply {
             // The name has to be recognisable to the user in the Mac's menu.
             serviceName = info.name
-            serviceType = SERVICE_TYPE
+            this.serviceType = serviceType
             setPort(port)
             setAttribute("v", PROTOCOL_VERSION.toString())
             setAttribute("id", info.uuid.toString())
@@ -67,6 +67,8 @@ class ServiceAdvertiser(private val context: Context) {
 
     companion object {
         const val SERVICE_TYPE = "_sidebus._tcp"
+        /** The phone's call channel, `protocol/PROTOCOL.md` section 10. */
+        const val CALL_SERVICE_TYPE = "_sidebus-call._tcp"
         const val PROTOCOL_VERSION = 1
         private const val TAG = "Sidebus"
     }

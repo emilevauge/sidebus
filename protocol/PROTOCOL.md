@@ -75,6 +75,14 @@ Fields are serialised in table order, with no alignment and no padding.
 | `0x0B` | BYE            | bidirectional      | `u8` reason code                        |
 | `0x0C` | PAIR_REQUEST   | Mac to Android     | `u32` pairing code, see 4.12            |
 | `0x0D` | PAIR_RESULT    | Android to Mac     | `u8` 0 refused, 1 accepted, see 4.13    |
+| `0x0E` | CALL_ACCESS    | Mac to Android     | see 10.2                                |
+| `0x0F` | CALL_GRANT     | Android to Mac     | see 10.2                                |
+| `0x10` | CALL_STATUS    | Android to Mac     | see 10.3                                |
+| `0x11` | CALL_START     | Mac to Android     | empty, see 10.4                         |
+| `0x12` | CALL_STOP      | bidirectional      | empty, see 10.4                         |
+| `0x13` | CALL_AUDIO     | bidirectional      | see 10.4                                |
+| `0x14` | CONTACTS_REQ   | Mac to Android     | empty, see 10.5                         |
+| `0x15` | CONTACTS       | Android to Mac     | see 10.5                                |
 
 Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
 the socket.
@@ -340,3 +348,75 @@ both sides decode each vector, check the fields, re-encode and compare byte for 
 the original file.
 
 The vectors arrived in phase 3, alongside `MessageCodec`.
+
+## 10. Phone calls
+
+A phone running Sidebus can carry its calls to the Mac. Bluetooth (HFP, between the Mac and
+the phone directly) places, answers and ends them; this channel carries their sound and the
+phone's contacts.
+
+### 10.1 Transport
+
+The phone runs a second server for calls, apart from the one of sections 1 and 6: TCP port
+**27185**, the same TLS identity, advertised over mDNS as `_sidebus-call._tcp` with the `v`,
+`id` and `fp` keys of section 8. On USB the Mac reaches it through `adb forward`, as the
+display server. It runs in the background, screen off, so long as the phone is on.
+
+The sequence opens as in section 6: HELLO, DEVICE_INFO, then PING and PONG every second.
+The Mac connects only to a device it already paired with (section 7); this server never
+pairs. DISPLAY_CONFIG and the video messages are not used here.
+
+Call audio is not reachable from an app: the phone side holds a helper process started over
+adb, which lives until the phone restarts. The app relays between it and this channel.
+
+### 10.2 CALL_ACCESS (`0x0E`) and CALL_GRANT (`0x0F`)
+
+TLS authenticates the phone to the Mac, not the Mac to the phone. Before anything else on
+this channel, the Mac proves the phone's user allowed it:
+
+CALL_ACCESS, Mac to Android:
+
+| Field | Type | Description                                                     |
+| ----- | ---- | --------------------------------------------------------------- |
+| token | rest | the token from an earlier CALL_GRANT, or empty the first time   |
+
+CALL_GRANT, Android to Mac:
+
+| Field  | Type | Description                                                    |
+| ------ | ---- | -------------------------------------------------------------- |
+| status | `u8` | 0 refused, 1 granted, 2 waiting for the phone's user           |
+| token  | rest | 32 random bytes when granted, empty otherwise                  |
+
+A token the phone knows is granted at once. Otherwise the phone asks its user, through a
+notification, whether this Mac (HELLO's name) may carry its calls, answers 2 right away,
+then 1 or 0 once the user has answered. The token goes out inside TLS to a pinned
+certificate, so only the phone and that Mac know it. The Mac keeps it in the keychain, tied
+to the device's uuid.
+
+Until a CALL_GRANT with status 1, the phone ignores every message below.
+
+### 10.3 CALL_STATUS (`0x10`)
+
+| Field | Type | Description                                                  |
+| ----- | ---- | ------------------------------------------------------------ |
+| flags | `u8` | bit 0: the audio helper runs, bit 1: contacts are readable   |
+
+Sent after CALL_GRANT, then on every change.
+
+### 10.4 CALL_START (`0x11`), CALL_STOP (`0x12`) and CALL_AUDIO (`0x13`)
+
+The Mac sends CALL_START once a call is placed or answered. The phone then sends the other
+party's voice as CALL_AUDIO, and plays the CALL_AUDIO it receives into the call, until the
+call ends or either side sends CALL_STOP.
+
+CALL_AUDIO's payload is 16 kHz mono 16 bit little endian PCM, to the end of the message,
+usually 20 ms (640 bytes) per message.
+
+### 10.5 CONTACTS_REQ (`0x14`) and CONTACTS (`0x15`)
+
+The Mac asks with CONTACTS_REQ; the phone answers CONTACTS, or nothing when bit 1 of
+CALL_STATUS is clear.
+
+| Field   | Type | Description                                                     |
+| ------- | ---- | --------------------------------------------------------------- |
+| entries | rest | UTF-8 text, one line per number: name, tab, number, tab, `0` or `1` for starred |

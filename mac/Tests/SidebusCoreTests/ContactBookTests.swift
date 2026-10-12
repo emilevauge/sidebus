@@ -47,3 +47,24 @@ final class ContactBookTests: XCTestCase {
         XCTAssertNil(ContactBook.contact(for: "+33600000000", in: contacts))
     }
 }
+
+final class CallMessageTests: XCTestCase {
+
+    func testCallMessagesSurviveARoundTrip() throws {
+        let messages: [Message] = [
+            .callAccess(token: Data(repeating: 7, count: 32)),
+            .callAccess(token: Data()),
+            .callGrant(status: .granted, token: Data(repeating: 9, count: 32)),
+            .callGrant(status: .waiting, token: Data()),
+            .callStatus(flags: 0b11),
+            .callStart,
+            .callStop,
+            .callAudio(Data([1, 2, 3, 4])),
+            .contactsRequest,
+            .contacts(Data("Jérôme\t0612\t1\n".utf8)),
+        ]
+        var decoder = MessageDecoder()
+        for message in messages { decoder.append(MessageCodec.encode(message)) }
+        for message in messages { XCTAssertEqual(try decoder.next(), message) }
+    }
+}

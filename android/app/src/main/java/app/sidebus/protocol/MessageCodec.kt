@@ -74,6 +74,15 @@ object MessageCodec {
             is Message.Bye -> payload.u8(message.reason)
             is Message.PairRequest -> payload.u32(message.code)
             is Message.PairResult -> payload.u8(if (message.accepted) 1 else 0)
+            is Message.CallAccess -> payload.write(message.token)
+            is Message.CallGrant -> {
+                payload.u8(message.status)
+                payload.write(message.token)
+            }
+            is Message.CallStatus -> payload.u8(message.flags)
+            is Message.CallStart, is Message.CallStop, is Message.ContactsRequest -> Unit
+            is Message.CallAudio -> payload.write(message.pcm)
+            is Message.Contacts -> payload.write(message.entries)
 
             is Message.Unknown -> {
                 flags = message.flags
@@ -148,6 +157,14 @@ object MessageCodec {
             // Any value other than 1 counts as a refusal: a future version adding a detailed
             // refusal code must not read as an acceptance.
             MessageType.PAIR_RESULT -> Message.PairResult(reader.u8() == 1)
+            MessageType.CALL_ACCESS -> Message.CallAccess(reader.rest())
+            MessageType.CALL_GRANT -> Message.CallGrant(reader.u8(), reader.rest())
+            MessageType.CALL_STATUS -> Message.CallStatus(reader.u8())
+            MessageType.CALL_START -> Message.CallStart
+            MessageType.CALL_STOP -> Message.CallStop
+            MessageType.CALL_AUDIO -> Message.CallAudio(reader.rest())
+            MessageType.CONTACTS_REQ -> Message.ContactsRequest
+            MessageType.CONTACTS -> Message.Contacts(reader.rest())
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

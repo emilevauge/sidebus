@@ -17,6 +17,21 @@ object MessageType {
     const val BYE = 0x0B
     const val PAIR_REQUEST = 0x0C
     const val PAIR_RESULT = 0x0D
+    const val CALL_ACCESS = 0x0E
+    const val CALL_GRANT = 0x0F
+    const val CALL_STATUS = 0x10
+    const val CALL_START = 0x11
+    const val CALL_STOP = 0x12
+    const val CALL_AUDIO = 0x13
+    const val CONTACTS_REQ = 0x14
+    const val CONTACTS = 0x15
+}
+
+/** CALL_GRANT status, `protocol/PROTOCOL.md` 10.2. */
+object CallGrantStatus {
+    const val REFUSED = 0
+    const val GRANTED = 1
+    const val WAITING = 2
 }
 
 object Codec {
@@ -142,6 +157,42 @@ sealed class Message {
     /** The tablet's answer to PAIR_REQUEST. */
     data class PairResult(val accepted: Boolean) : Message() {
         override val type = MessageType.PAIR_RESULT
+    }
+
+    /** Phone calls, `protocol/PROTOCOL.md` section 10. */
+    class CallAccess(val token: ByteArray) : Message() {
+        override val type = MessageType.CALL_ACCESS
+    }
+
+    class CallGrant(val status: Int, val token: ByteArray) : Message() {
+        override val type = MessageType.CALL_GRANT
+    }
+
+    /** Bit 0: the audio helper runs. Bit 1: contacts are readable. */
+    data class CallStatus(val flags: Int) : Message() {
+        override val type = MessageType.CALL_STATUS
+    }
+
+    object CallStart : Message() {
+        override val type = MessageType.CALL_START
+    }
+
+    object CallStop : Message() {
+        override val type = MessageType.CALL_STOP
+    }
+
+    /** 16 kHz mono 16 bit little endian PCM. */
+    class CallAudio(val pcm: ByteArray) : Message() {
+        override val type = MessageType.CALL_AUDIO
+    }
+
+    object ContactsRequest : Message() {
+        override val type = MessageType.CONTACTS_REQ
+    }
+
+    /** One line per number: name, tab, number, tab, starred as 0 or 1. */
+    class Contacts(val entries: ByteArray) : Message() {
+        override val type = MessageType.CONTACTS
     }
 
     /**

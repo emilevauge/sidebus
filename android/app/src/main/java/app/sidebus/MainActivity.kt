@@ -124,6 +124,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         show("Starting")
         startServer()
+        // On a phone, calls to the Mac run apart from the screen, in the background.
+        app.sidebus.phone.PhoneService.start(this)
     }
 
     override fun onResume() {
