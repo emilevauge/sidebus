@@ -203,7 +203,9 @@ public final class CallAudioProbe {
                 int held = 0, read;
                 skipBacklog(fromMac, 0);
                 while (true) {
-                    if (held == 0) skipBacklog(fromMac, MAX_BACKLOG_BYTES);
+                    if (held == 0 && fromMac.available() > MAX_BACKLOG_BYTES) {
+                        skipBacklog(fromMac, KEPT_BACKLOG_BYTES);
+                    }
                     if ((read = fromMac.read(buffer, held, buffer.length - held)) <= 0) break;
                     // A read may end in the middle of a sample; AudioTrack refuses that
                     // write whole, so keep the odd byte for the next one.
@@ -255,8 +257,11 @@ public final class CallAudioProbe {
         }
     }
 
-    // Audio from the Mac allowed to wait in the socket: 100 ms.
-    private static final int MAX_BACKLOG_BYTES = RATE / 10 * 2;
+    // Audio from the Mac allowed to wait in the socket, 200 ms, and what is kept when
+    // it goes beyond, 60 ms. The gap between the two keeps drops rare: each one
+    // clicks, and the backlog swings by a few milliseconds with every write.
+    private static final int MAX_BACKLOG_BYTES = RATE / 5 * 2;
+    private static final int KEPT_BACKLOG_BYTES = RATE * 6 / 100 * 2;
 
     // Drops what waits beyond keep bytes, in whole samples. True if it dropped any.
     private static boolean skipBacklog(InputStream in, int keep) throws java.io.IOException {
