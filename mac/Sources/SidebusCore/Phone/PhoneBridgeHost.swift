@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import os
 
 /// What only USB can do for calls: start the call helper (android/callbridge) on the
@@ -10,6 +11,8 @@ public actor PhoneBridgeHost {
 
     private static let remoteDex = "/data/local/tmp/sidebus-callbridge.dex"
     private static let remoteLog = "/data/local/tmp/sidebus-callbridge.log"
+    /// The helper's secret, kept where apps cannot read, for later plugs. See CallBridge.java.
+    private static let remoteSecret = "/data/local/tmp/sidebus-callbridge.secret"
 
     private let dex: URL
     private var serial: String?
@@ -50,14 +53,21 @@ public actor PhoneBridgeHost {
             return
         }
         do {
-            if try await !helperRuns(on: phone) {
-                try await startHelper(on: phone)
+            guard serial != phone else { return }
+            var secret = try await storedSecret(on: phone)
+            let runs = try await helperRuns(on: phone)
+            if secret == nil || !runs {
+                secret = try await startHelper(on: phone)
             }
-            if serial != phone {
-                try await adb(["-s", phone, "forward", "tcp:\(Sidebus.callPort)", "tcp:\(Sidebus.callPort)"])
-                serial = phone
-                onUSB?(true)
-            }
+            // The app proves itself to the helper with this secret. HyperOS also keeps the
+            // app's call service from starting on its own at boot: this starts it.
+            try await adb([
+                "-s", phone, "shell", "am", "start", "-n", "app.sidebus/.phone.HelperActivity",
+                "--es", "secret", secret ?? "",
+            ])
+            try await adb(["-s", phone, "forward", "tcp:\(Sidebus.callPort)", "tcp:\(Sidebus.callPort)"])
+            serial = phone
+            onUSB?(true)
         } catch {
             log.error("call helper: \(String(describing: error), privacy: .public)")
         }
@@ -83,20 +93,37 @@ public actor PhoneBridgeHost {
         return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func startHelper(on serial: String) async throws {
+    private func storedSecret(on serial: String) async throws -> String? {
+        let output = (try? await adb(["-s", serial, "shell", "cat", Self.remoteSecret])) ?? ""
+        let secret = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return secret.count == 64 && secret.allSatisfy(\.isHexDigit) ? secret : nil
+    }
+
+    /// Starts a fresh helper, with a fresh secret, and returns the secret.
+    private func startHelper(on serial: String) async throws -> String {
         log.info("starting the call helper on \(serial, privacy: .public)")
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw AdbWatcher.AdbError.commandFailed("SecRandomCopyBytes", 1, "no randomness")
+        }
+        let secret = bytes.map { String(format: "%02x", $0) }.joined()
+
+        _ = try? await adb(["-s", serial, "shell", "pkill", "-f", "CallBridge"])
         try await adb(["-s", serial, "push", dex.path, Self.remoteDex])
-        // setsid takes it out of the adb session, which ends with the cable.
+        try await adb([
+            "-s", serial, "shell",
+            "umask 077; echo \(secret) > \(Self.remoteSecret)",
+        ])
+        // setsid takes it out of the adb session, which ends with the cable. Other apps
+        // cannot read a shell process's command line, so the secret may pass there.
         try await adb([
             "-s", serial, "shell",
             """
-            setsid sh -c 'CLASSPATH=\(Self.remoteDex) exec app_process / CallBridge \
+            setsid sh -c 'CLASSPATH=\(Self.remoteDex) exec app_process / CallBridge \(secret) \
             > \(Self.remoteLog) 2>&1 < /dev/null' &
             """,
         ])
-        // The app's call service relays the helper to the Mac. HyperOS does not let it
-        // start on its own at boot, so start it here.
-        _ = try? await adb(["-s", serial, "shell", "am", "start", "-n", "app.sidebus/.phone.PermissionsActivity"])
+        return secret
     }
 
     @discardableResult

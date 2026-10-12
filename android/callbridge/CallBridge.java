@@ -5,8 +5,17 @@
 // detached from the adb session, it outlives the USB cable and runs until the phone
 // restarts.
 //
-// It listens on the abstract socket sidebus-call, and only the Sidebus app may connect
-// (the shell too, for testing). Each connection opens with one byte:
+// It listens on 127.0.0.1:27186. SELinux keeps apps from connecting to a shell
+// process's Unix sockets, but not to a local TCP port, which any app may reach. So both
+// ends prove they know a secret, without sending it: the Mac draws it when it starts the
+// helper, passes it as the first argument, keeps a copy in /data/local/tmp (out of
+// apps' reach) and hands it to the Sidebus app over adb. A connection opens with
+//
+//   helper -> app   16 random bytes, n1
+//   app -> helper   HMAC(secret, "app" n1), then 16 random bytes, n2
+//   helper -> app   HMAC(secret, "helper" n2)
+//
+// HMAC is SHA-256. Then one command byte:
 //
 //   P   is the bridge running? It answers K and closes.
 //   C   carry a call: once the call is up, the downlink (the other party) goes out on
@@ -27,16 +36,22 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
-import android.net.LocalServerSocket;
-import android.net.LocalSocket;
 import android.os.Looper;
 import android.telephony.TelephonyManager;
 
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 public final class CallBridge {
     private static final int RATE = 16000;
@@ -47,6 +62,8 @@ public final class CallBridge {
     private static final int KEPT_BACKLOG_BYTES = RATE * 6 / 100 * 2;
     // How long a connection may wait for its call to come up.
     private static final long CALL_WAIT_MS = 15_000;
+    private static final int PORT = 27186;
+    private static byte[] secret;
 
     private static Context context;
     private static AudioManager audio;
@@ -69,16 +86,18 @@ public final class CallBridge {
             System.exit(1);
         }
 
-        int appUid = context.getPackageManager().getPackageUid("app.sidebus", 0);
-        LocalServerSocket server = new LocalServerSocket("sidebus-call");
+        secret = hex(args[0]);
+        ServerSocket server = new ServerSocket(PORT, 4, InetAddress.getLoopbackAddress());
         System.out.println("ready");
         while (true) {
-            try (LocalSocket client = server.accept()) {
-                int uid = client.getPeerCredentials().getUid();
-                if (uid != appUid && uid != 2000) {
-                    System.out.println("refused uid " + uid);
+            try (Socket client = server.accept()) {
+                client.setTcpNoDelay(true);
+                client.setSoTimeout(5_000);
+                if (!authenticate(client)) {
+                    System.out.println("refused a client without the secret");
                     continue;
                 }
+                client.setSoTimeout(0);
                 int command = client.getInputStream().read();
                 if (command == 'P') {
                     client.getOutputStream().write('K');
@@ -89,6 +108,36 @@ public final class CallBridge {
                 System.out.println("bridge: " + e);
             }
         }
+    }
+
+    private static boolean authenticate(Socket client) throws Exception {
+        DataInputStream in = new DataInputStream(client.getInputStream());
+        OutputStream out = client.getOutputStream();
+        byte[] ours = new byte[16];
+        new SecureRandom().nextBytes(ours);
+        out.write(ours);
+        byte[] proof = new byte[32];
+        byte[] theirs = new byte[16];
+        in.readFully(proof);
+        in.readFully(theirs);
+        if (!MessageDigest.isEqual(proof, hmac("app", ours))) return false;
+        out.write(hmac("helper", theirs));
+        return true;
+    }
+
+    private static byte[] hmac(String label, byte[] nonce) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+        mac.update(label.getBytes("UTF-8"));
+        return mac.doFinal(nonce);
+    }
+
+    private static byte[] hex(String text) {
+        byte[] bytes = new byte[text.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(text.substring(2 * i, 2 * i + 2), 16);
+        }
+        return bytes;
     }
 
     private static boolean awaitCall() throws InterruptedException {
@@ -104,7 +153,7 @@ public final class CallBridge {
         return true;
     }
 
-    private static void bridge(LocalSocket client) throws Exception {
+    private static void bridge(Socket client) throws Exception {
         AudioFormat in = new AudioFormat.Builder().setSampleRate(RATE)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();

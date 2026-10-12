@@ -43,6 +43,7 @@ class PhoneService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var grants: CallGrants
     private lateinit var advertiser: ServiceAdvertiser
+    private lateinit var helper: CallBridgeClient
 
     /** The Mac currently connected, once it proved it may use the calls. */
     @Volatile private var granted: Connection? = null
@@ -57,6 +58,7 @@ class PhoneService : Service() {
     override fun onCreate() {
         super.onCreate()
         grants = CallGrants(this)
+        helper = CallBridgeClient(this)
         advertiser = ServiceAdvertiser(this)
         createChannels()
         startForeground(
@@ -171,7 +173,7 @@ class PhoneService : Service() {
 
     private fun sendStatus(connection: Connection, force: Boolean) {
         var flags = 0
-        if (CallBridgeClient.isRunning() || call != null) flags = flags or 0x01
+        if (helper.isRunning() || call != null) flags = flags or 0x01
         if (hasContacts()) flags = flags or 0x02
         if (flags == lastStatus && !force) return
         lastStatus = flags
@@ -182,7 +184,7 @@ class PhoneService : Service() {
 
     private fun startCall(connection: Connection) {
         endCall()
-        val opened = runCatching { CallBridgeClient.Call() }.getOrElse {
+        val opened = runCatching { helper.call() }.getOrElse {
             Log.w(TAG, "call helper unreachable", it)
             connection.send(Message.CallStop)
             return

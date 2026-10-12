@@ -47,9 +47,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Opened by the Mac over adb. DUMP is held by the adb shell and by no app. -->
+        <activity
+            android:name=".phone.HelperActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <activity
             android:name=".phone.PermissionsActivity"
-            android:exported="true"
+            android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 

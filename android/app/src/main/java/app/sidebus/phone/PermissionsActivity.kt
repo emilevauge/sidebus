@@ -7,8 +7,7 @@ import android.os.Bundle
 
 /**
  * Starts the call service, asks for what it needs (contacts, notifications), and closes.
- * Opened from the service's notification, and by the Mac over adb when it starts the call
- * helper: HyperOS keeps apps from starting on their own at boot unless allowed to.
+ * Opened from the service's notification.
  */
 class PermissionsActivity : Activity() {
 
