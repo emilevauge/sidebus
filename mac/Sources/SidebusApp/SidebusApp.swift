@@ -157,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// call that starts ringing.
     func showPanel(number: String? = nil, activate: Bool = true) {
         if let number { dialer.text = number }
+        PhoneModel.shared.checkSoon()
         DispatchQueue.main.async { [weak self] in
             guard let self, let popover, let button = statusItem?.button else { return }
             (popover.contentViewController as? PopoverHost<SidebusPanel>)?.fitPopover()

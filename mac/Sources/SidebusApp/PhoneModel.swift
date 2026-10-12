@@ -193,12 +193,38 @@ final class PhoneModel {
         let dialable = ContactBook.dialable(number)
         // Without the sound on the Mac, a call placed from it is of no use.
         guard !dialable.isEmpty, callsAvailable else { return }
+        guard !dialing else { return }
         problem = nil
-        peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
-        peerNumber = dialable
-        callOnMac = true
-        link.dial(dialable)
-        syncAudio()
+        // The last check may be stale (a phone that drops its Wi-Fi does not say so), so
+        // the link comes up first and the call goes out only once it has.
+        dialing = true
+        syncChannel()
+        Task {
+            let deadline = ContinuousClock.now + .seconds(4)
+            while !audioReady, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            dialing = false
+            guard audioReady else {
+                problem = "\(phoneName ?? "The phone") is not reachable: the call was not placed"
+                syncChannel()
+                return
+            }
+            peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
+            peerNumber = dialable
+            callOnMac = true
+            link.dial(dialable)
+            syncAudio()
+        }
+    }
+
+    /// Bringing the link up before placing a call.
+    @ObservationIgnored private var dialing = false
+
+    /// A fresh look at the phone, when the panel opens.
+    func checkSoon() {
+        guard let channel, callState == .idle else { return }
+        Task { await channel.checkSoon() }
     }
 
     func accept() {
@@ -247,7 +273,7 @@ final class PhoneModel {
             if case .incoming = callState { return true }
             return false
         }()
-        let holds = callState != .idle && wanted
+        let holds = (callState != .idle && wanted) || dialing
         Task { await channel.setInCall(holds) }
     }
 
