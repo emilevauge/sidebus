@@ -77,11 +77,14 @@ public actor PhoneChannel {
         await session?.stop(reason: "Sidebus shutting down")
     }
 
-    /// Whether `adb forward` currently reaches the call channel on 127.0.0.1. A plug also
-    /// calls for a check: the helper may just have started.
+    /// Whether `adb forward` currently reaches the call channel on 127.0.0.1. A plug or an
+    /// unplug calls for a check: the helper may just have started, and the phone is now
+    /// reached another way, or not at all.
     public func setUSBAvailable(_ available: Bool) {
+        guard available != usbAvailable else { return }
         usbAvailable = available
-        if available { checkDue = true } else { lostIfOutOfReach() }
+        checkDue = true
+        if !available { lostIfOutOfReach() }
     }
 
     /// The phone's announcement comes and goes with its Wi-Fi: gone, it is out of reach
