@@ -53,24 +53,11 @@ final class PopoverHost<Content: View>: NSViewController {
     }
 
     override func loadView() {
-        // Flipped, so the content hangs from the top: it is laid out at its new size at
-        // once, and the popover's frame, animating, uncovers or covers its bottom. Stretched
-        // to the popover instead, the content was recentred at every step and its top
-        // moved.
-        view = FlippedView()
+        view = NSView()
         host.frame = view.bounds
-        host.autoresizingMask = [.width]
+        host.autoresizingMask = [.width, .height]
         view.addSubview(host)
         host.onSizeChange = { [weak self] in self?.scheduleResize() }
-    }
-
-    private final class FlippedView: NSView {
-        override var isFlipped: Bool { true }
-    }
-
-    /// The content at the size it asks for, against the top edge.
-    private func pinHost(height: CGFloat) {
-        host.frame = NSRect(x: 0, y: 0, width: view.bounds.width, height: height)
     }
 
     /// Sets the popover to the content's size at once, before it shows.
@@ -81,7 +68,6 @@ final class PopoverHost<Content: View>: NSViewController {
         guard let popover, size.width > 0, size.height > 0 else { return }
         resizeLog.info("fit \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public)")
         popover.contentSize = size
-        pinHost(height: size.height)
     }
 
     /// Once per pass: SwiftUI may invalidate several times in a row.
@@ -99,50 +85,16 @@ final class PopoverHost<Content: View>: NSViewController {
         let size = host.intrinsicContentSize
         guard size.width > 0, size.height > 0, size != popover.contentSize else { return }
         resizeLog.info("resize \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public), shown \(popover.isShown, privacy: .public)")
-        pinHost(height: size.height)
         guard popover.isShown else {
             popover.contentSize = size
             return
         }
-        animate(popover, to: size)
-    }
-
-    private var animation: Timer?
-
-    /// Steps the popover's size by hand, 60 times a second on the shared curve. Animated
-    /// by AppKit, the content view took its final size at once while the window grew,
-    /// and the window held it by its bottom: the top was cut off for the first frames.
-    /// Set without animation at each step, window and content always match.
-    private func animate(_ popover: NSPopover, to target: NSSize) {
-        animation?.invalidate()
-        let start = popover.contentSize
-        let began = CACurrentMediaTime()
-        popover.animates = false
-        animation = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self, weak popover] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                guard let popover else {
-                    self.animation?.invalidate()
-                    return
-                }
-                let linear = min(1, (CACurrentMediaTime() - began) / Motion.duration)
-                let progress = CGFloat(Self.ease(linear))
-                popover.contentSize = NSSize(
-                    width: start.width + (target.width - start.width) * progress,
-                    height: start.height + (target.height - start.height) * progress
-                )
-                if linear >= 1 {
-                    self.animation?.invalidate()
-                    self.animation = nil
-                    popover.animates = true
-                }
-            }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.duration
+            context.timingFunction = Motion.timing
+            context.allowsImplicitAnimation = true
+            popover.contentSize = size
         }
-    }
-
-    /// Ease in and out, as `Motion.timing`.
-    private static func ease(_ t: Double) -> Double {
-        t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
     }
 }
 

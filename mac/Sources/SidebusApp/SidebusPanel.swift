@@ -51,6 +51,8 @@ struct SidebusPanel: View {
         }
         .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
+        // Held against the top while the popover resizes around it, as in Calbar.
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 

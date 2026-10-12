@@ -177,7 +177,9 @@ private struct CallView: View {
                             title: phone.isMuted ? "Unmute" : "Mute"
                         ) { phone.toggleMute() }
                     }
-                    RoundButton(symbol: "circle.grid.3x3.fill", color: .gray, title: "Keypad") { showsKeypad.toggle() }
+                    RoundButton(symbol: "circle.grid.3x3.fill", color: .gray, title: "Keypad") {
+                        withAnimation(Motion.resize) { showsKeypad.toggle() }
+                    }
                     RoundButton(symbol: "phone.down.fill", color: .red, title: "Hang up") { phone.hangUp() }
                 }
             }
@@ -190,6 +192,7 @@ private struct CallView: View {
             // Last: the popover grows and uncovers it, nothing above moves.
             if showsKeypad {
                 Keypad { phone.sendTone($0) }
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity)
