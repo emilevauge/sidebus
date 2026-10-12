@@ -20,7 +20,7 @@ public actor PhoneChannel {
         /// Connected: the call's sound can flow.
         case ready(phone: String, over: TransportKind, helperRuns: Bool, contactsReadable: Bool)
         /// Not connected, on purpose, between calls: what the last check found.
-        case resting(phone: String, helperRuns: Bool, contactsReadable: Bool)
+        case resting(phone: String, over: TransportKind, helperRuns: Bool, contactsReadable: Bool)
     }
 
     /// Between two checks of the phone, outside calls.
@@ -225,6 +225,7 @@ public actor PhoneChannel {
         if let lastStatus {
             emit(.state(.resting(
                 phone: lastStatus.phone,
+                over: peer.kind,
                 helperRuns: lastStatus.flags & 0x01 != 0,
                 contactsReadable: lastStatus.flags & 0x02 != 0
             )))

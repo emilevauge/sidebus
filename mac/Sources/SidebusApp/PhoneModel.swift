@@ -47,7 +47,7 @@ final class PhoneModel {
     /// True while the Sidebus app on the phone lacks the contacts permission.
     var contactsNeedPermission: Bool {
         switch channelState {
-        case .ready(_, _, _, false), .resting(_, _, false): return true
+        case .ready(_, _, _, false), .resting(_, _, _, false): return true
         default: return false
         }
     }
@@ -67,12 +67,9 @@ final class PhoneModel {
             return "Allow this Mac in the notification on \(phone)"
         case let .refused(phone):
             return "\(phone) refused this Mac its calls"
-        case let .ready(phone, over, helperRuns, _):
+        case let .ready(phone, over, helperRuns, _), let .resting(phone, over, helperRuns, _):
             guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
             return "Calls go through \(phone), over \(over == .usb ? "USB" : "Wi-Fi")"
-        case let .resting(phone, helperRuns, _):
-            guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
-            return "Calls go through \(phone)"
         }
     }
 
@@ -185,9 +182,9 @@ final class PhoneModel {
         case let .state(state):
             channelState = state
             switch state {
-            case let .ready(phone, _, false, _), let .resting(phone, false, _):
+            case let .ready(phone, _, false, _), let .resting(phone, _, false, _):
                 notifications.showPlugIn(phone: phone)
-            case .ready(_, _, true, _), .resting(_, true, _):
+            case .ready(_, _, true, _), .resting(_, _, true, _):
                 notifications.clearPlugIn()
             default:
                 break
