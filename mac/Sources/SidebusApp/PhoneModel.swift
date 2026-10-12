@@ -46,8 +46,10 @@ final class PhoneModel {
 
     /// True while the Sidebus app on the phone lacks the contacts permission.
     var contactsNeedPermission: Bool {
-        if case .ready(_, _, _, false) = channelState { return true }
-        return false
+        switch channelState {
+        case .ready(_, _, _, false), .resting(_, _, false): return true
+        default: return false
+        }
     }
 
     /// One line on where calls stand, for the menu and the dialer.
@@ -68,6 +70,9 @@ final class PhoneModel {
         case let .ready(phone, over, helperRuns, _):
             guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
             return "Calls go through \(phone), over \(over == .usb ? "USB" : "Wi-Fi")"
+        case let .resting(phone, helperRuns, _):
+            guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
+            return "Calls go through \(phone)"
         }
     }
 
@@ -140,7 +145,7 @@ final class PhoneModel {
 
     func refreshContacts() {
         guard let channel else { return }
-        Task { await channel.send(.contactsRequest) }
+        Task { await channel.checkSoon() }
     }
 
     // MARK: - State
@@ -150,6 +155,11 @@ final class PhoneModel {
         callState = link.state
         isBluetoothConnected = link.isConnected
         phoneName = link.phoneName
+
+        if let channel {
+            let inCall = callState != .idle
+            Task { await channel.setInCall(inCall) }
+        }
 
         switch callState {
         case let .incoming(number):
@@ -173,12 +183,14 @@ final class PhoneModel {
     private func channelEvent(_ event: PhoneChannel.Event) {
         switch event {
         case let .state(state):
-            let wasReady = audioReady
             channelState = state
-            if case let .ready(phone, _, false, _) = state {
+            switch state {
+            case let .ready(phone, _, false, _), let .resting(phone, false, _):
                 notifications.showPlugIn(phone: phone)
-            } else if audioReady, !wasReady {
+            case .ready(_, _, true, _), .resting(_, true, _):
                 notifications.clearPlugIn()
+            default:
+                break
             }
         case let .contacts(list):
             contacts = list

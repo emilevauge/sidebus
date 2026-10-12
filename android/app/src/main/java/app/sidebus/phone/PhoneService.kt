@@ -51,6 +51,9 @@ class PhoneService : Service() {
     @Volatile private var peerName = "Mac"
     @Volatile private var lastStatus = -1
     @Volatile private var call: CallBridgeClient.Call? = null
+    /// Watches the helper while a Mac is connected, and only then: the Mac connects for
+    /// calls and short checks, so the phone sleeps the rest of the time.
+    private var statusJob: Job? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -69,7 +72,6 @@ class PhoneService : Service() {
         val info = DeviceDescriptor.deviceInfo(this)
         advertiser.start(PORT, info, ServiceAdvertiser.CALL_SERVICE_TYPE)
         scope.launch { serve(info) }
-        scope.launch { watchStatus() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -97,6 +99,8 @@ class PhoneService : Service() {
                 is TransportServer.Event.Disconnected -> {
                     Log.i(TAG, "Mac gone: ${event.reason}")
                     granted = null
+                    statusJob?.cancel()
+                    statusJob = null
                     endCall()
                 }
                 else -> Unit
@@ -136,6 +140,7 @@ class PhoneService : Service() {
             granted = connection
             connection.send(Message.CallGrant(CallGrantStatus.GRANTED, token))
             sendStatus(connection, force = true)
+            watchStatus()
             return
         }
         Log.i(TAG, "$peerName asks for the calls")
@@ -155,6 +160,7 @@ class PhoneService : Service() {
                     granted = connection
                     connection.send(Message.CallGrant(CallGrantStatus.GRANTED, token))
                     sendStatus(connection, force = true)
+                    watchStatus()
                 } else {
                     connection.send(Message.CallGrant(CallGrantStatus.REFUSED, ByteArray(0)))
                 }
@@ -164,10 +170,13 @@ class PhoneService : Service() {
 
     // MARK: status
 
-    private suspend fun watchStatus() {
-        while (true) {
-            granted?.let { runCatching { sendStatus(it, force = false) } }
-            delay(3_000)
+    private fun watchStatus() {
+        statusJob?.cancel()
+        statusJob = scope.launch {
+            while (true) {
+                delay(3_000)
+                granted?.let { runCatching { sendStatus(it, force = false) } }
+            }
         }
     }
 

@@ -366,6 +366,10 @@ The sequence opens as in section 6: HELLO, DEVICE_INFO, then PING and PONG every
 The Mac connects only to a device it already paired with (section 7); this server never
 pairs. DISPLAY_CONFIG and the video messages are not used here.
 
+A live connection keeps the phone's Wi-Fi awake, so the Mac only holds one when needed:
+from the moment Bluetooth announces a call, placed or ringing, until it ends, and every
+15 minutes for a short check, which ends once CALL_STATUS and CONTACTS have come.
+
 Call audio is not reachable from an app: the phone side holds a helper process started over
 adb, which lives until the phone restarts. The app relays between it and this channel.
 
