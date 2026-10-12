@@ -32,7 +32,7 @@ struct SidebusPanel: View {
                 }
 
                 PanelSection(title: "Screens") {
-                    ScreenList(devices: devices)
+                    ScreenList(devices: devices, phoneName: phone.phoneName)
                 }
             }
             .padding(14)
@@ -76,6 +76,13 @@ struct PanelSection<Content: View>: View {
 /// The screens in sight and the paired ones: a click pairs, shares or stops.
 private struct ScreenList: View {
     let devices: DeviceManager
+    /// The phone, which the Phone card stands for: listed here only while its screen
+    /// server is in sight, that is the Sidebus app open on it.
+    let phoneName: String?
+
+    private var entries: [DeviceEntry] {
+        devices.entries.filter { $0.isOnline || $0.name != phoneName }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -83,10 +90,10 @@ private struct ScreenList: View {
                 Text(refusal).font(.caption).foregroundStyle(.red)
                     .padding(.bottom, 6)
             }
-            if devices.entries.isEmpty {
+            if entries.isEmpty {
                 Text(devices.summary).foregroundStyle(.secondary)
             }
-            ForEach(Array(devices.entries.enumerated()), id: \.element.id) { index, entry in
+            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 if index > 0 { Divider().padding(.vertical, 6) }
                 Button {
                     devices.perform(entry)
