@@ -8,7 +8,9 @@
 # stream mode on the phone, CallAudioBridge on the Mac). Hang up on the phone, or
 # press Ctrl-C here.
 set -e
-NUMBER="$1"
+# Spaces and dots are fine inside quotes: "06 12 34 56 78".
+NUMBER=$(printf %s "$1" | tr -d ' .')
+[ $# -le 3 ] || { echo "too many arguments: quote the number, as in \"06 12 34 56 78\""; exit 1; }
 ADDRESS="${2:-64-63-06-5c-68-56}"
 CHANNEL="${3:-8}"
 [ -n "$NUMBER" ] || { echo "usage: $0 <number> [address] [channel]"; exit 1; }
