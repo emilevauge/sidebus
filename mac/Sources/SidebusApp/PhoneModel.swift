@@ -92,7 +92,7 @@ final class PhoneModel {
         }
         switch channelState {
         case .searching:
-            return "Sound stays on the phone: it is not on this Wi-Fi, nor plugged in"
+            return "Calls stay on the phone: it is not on this Wi-Fi, nor plugged in"
         case .connecting:
             return "Reaching the phone…"
         case let .waitingForGrant(phone):
@@ -100,7 +100,7 @@ final class PhoneModel {
         case let .refused(phone):
             return "\(phone) refused this Mac its calls"
         case let .ready(phone, over, helperRuns, _), let .resting(phone, over, helperRuns, _):
-            guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
+            guard helperRuns else { return "Calls stay on the phone: plug \(phone) in over USB once" }
             return "Calls go through \(phone), over \(over == .usb ? "USB" : "Wi-Fi")"
         }
     }
@@ -149,7 +149,8 @@ final class PhoneModel {
 
     func dial(_ number: String, name: String? = nil) {
         let dialable = ContactBook.dialable(number)
-        guard !dialable.isEmpty else { return }
+        // Without the sound on the Mac, a call placed from it is of no use.
+        guard !dialable.isEmpty, callsAvailable else { return }
         problem = nil
         peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
         peerNumber = dialable
@@ -186,7 +187,7 @@ final class PhoneModel {
         let detail = generic.contains(text.lowercased()) ? nil : text.isEmpty ? nil : text
         phoneCaller = detail.map { "\(title) · \($0)" } ?? title
         peer = phoneCaller
-        notifications.showIncoming(caller: incomingBody)
+        if callsAvailable { notifications.showIncoming(caller: incomingBody) }
     }
 
     /// The incoming call notification's text: who, then the number and its country.
@@ -239,7 +240,8 @@ final class PhoneModel {
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
             peer = name ?? phoneCaller ?? number ?? "Unknown number"
             if let number { peerNumber = number }
-            if previous != callState {
+            // Rings on the phone alone when its sound cannot come to the Mac.
+            if previous != callState, callsAvailable {
                 notifications.showIncoming(caller: incomingBody)
                 AppDelegate.shared.showPanelForCall()
             }

@@ -71,6 +71,7 @@ private struct SearchView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .focused($focused)
+                    .disabled(!phone.callsAvailable)
                 .onSubmit { call(suggestions.model.selection) }
                 .onKeyPress(.downArrow) { move(1) }
                 .onKeyPress(.upArrow) { move(-1) }
@@ -115,7 +116,7 @@ private struct SearchView: View {
 
     private func refreshSuggestions(resetSelection: Bool) {
         let model = suggestions.model
-        model.choices = choices
+        model.choices = phone.callsAvailable ? choices : []
         if resetSelection || model.selection >= model.choices.count { model.selection = 0 }
         model.onPick = { index in call(index) }
         suggestions.update(beside: field)
