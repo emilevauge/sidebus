@@ -170,7 +170,9 @@ private struct DeviceRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(entry.action == .none)
+        // Not disabled when there is nothing to do: a disabled button greys its whole
+        // label, and the phone's row read as offline while calls went through it.
+        .allowsHitTesting(entry.action != .none)
         .onHover { hovered = $0 }
         .padding(.horizontal, 6)
     }
