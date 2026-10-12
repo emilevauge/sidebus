@@ -34,12 +34,10 @@ struct PhoneCard: View {
 private struct SearchView: View {
     let phone: PhoneModel
     @Bindable var entry: DialerEntry
-    @State private var selection = 0
     @FocusState private var focused: Bool
-
-    private var matches: [PhoneContact] {
-        ContactBook.search(entry.text, in: phone.contacts, limit: 6)
-    }
+    @State private var fieldWindow: NSWindow?
+    @State private var fieldFrame = NSRect.zero
+    private let suggestions = SuggestionPanel.shared
 
     /// The typed text, when it reads as a number rather than a name.
     private var typedNumber: String? {
@@ -47,9 +45,10 @@ private struct SearchView: View {
         return digits.count >= 2 && digits.count * 2 >= entry.text.filter { !$0.isWhitespace }.count ? digits : nil
     }
 
-    private var choices: [(title: String, detail: String, number: String, name: String?)] {
-        var list = typedNumber.map { [(title: "Call \(entry.text)", detail: "", number: $0, name: String?.none)] } ?? []
-        list += matches.map { (title: $0.name, detail: $0.number, number: $0.number, name: Optional($0.name)) }
+    private var choices: [CallChoice] {
+        var list = typedNumber.map { [CallChoice(title: "Call \(entry.text)", detail: "", number: $0, name: nil)] } ?? []
+        list += ContactBook.search(entry.text, in: phone.contacts, limit: 8)
+            .map { CallChoice(title: $0.name, detail: $0.number, number: $0.number, name: $0.name) }
         return list
     }
 
@@ -59,28 +58,24 @@ private struct SearchView: View {
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.large)
                 .focused($focused)
-                .onSubmit(callSelection)
+                .onSubmit { call(suggestions.model.selection) }
                 .onKeyPress(.downArrow) { move(1) }
                 .onKeyPress(.upArrow) { move(-1) }
-                .onChange(of: entry.text) { selection = 0 }
-
-            ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
-                Button {
-                    selection = index
-                    callSelection()
-                } label: {
-                    HStack {
-                        Text(choice.title)
-                        Spacer()
-                        Text(choice.detail).foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(index == selection ? Color.accentColor.opacity(0.2) : .clear, in: .rect(cornerRadius: 6))
-                    .contentShape(.rect)
+                .onKeyPress(.escape) {
+                    guard !entry.text.isEmpty else { return .ignored }
+                    entry.text = ""
+                    return .handled
                 }
-                .buttonStyle(.plain)
-            }
+                .background(ScreenFrameReader { window, frame in
+                    guard window !== fieldWindow || frame != fieldFrame else { return }
+                    DispatchQueue.main.async {
+                        fieldWindow = window
+                        fieldFrame = frame
+                        refreshSuggestions(resetSelection: false)
+                    }
+                })
+                .onChange(of: entry.text) { refreshSuggestions(resetSelection: true) }
+                .onChange(of: phone.contacts) { refreshSuggestions(resetSelection: false) }
 
             Text(status).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -88,7 +83,9 @@ private struct SearchView: View {
         .onAppear {
             focused = true
             if phone.contacts.isEmpty { phone.refreshContacts() }
+            refreshSuggestions(resetSelection: false)
         }
+        .onDisappear { suggestions.hide() }
     }
 
     private var status: String {
@@ -98,17 +95,33 @@ private struct SearchView: View {
         return phone.summary
     }
 
+    private func refreshSuggestions(resetSelection: Bool) {
+        let model = suggestions.model
+        model.choices = choices
+        if resetSelection || model.selection >= model.choices.count { model.selection = 0 }
+        model.onPick = { index in call(index) }
+        // Only while the popover shows: its window leaves the screen when it closes.
+        if fieldWindow?.isVisible == true {
+            suggestions.update(beside: fieldWindow, anchor: fieldFrame)
+        } else {
+            suggestions.hide()
+        }
+    }
+
     private func move(_ step: Int) -> KeyPress.Result {
-        guard !choices.isEmpty else { return .ignored }
-        selection = min(max(selection + step, 0), choices.count - 1)
+        let model = suggestions.model
+        guard !model.choices.isEmpty else { return .ignored }
+        model.selection = min(max(model.selection + step, 0), model.choices.count - 1)
         return .handled
     }
 
-    private func callSelection() {
-        guard choices.indices.contains(selection) else { return }
-        let choice = choices[selection]
+    private func call(_ index: Int) {
+        let list = suggestions.model.choices
+        guard list.indices.contains(index) else { return }
+        let choice = list[index]
         phone.dial(choice.number, name: choice.name)
         entry.text = ""
+        suggestions.hide()
     }
 }
 

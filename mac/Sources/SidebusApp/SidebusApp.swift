@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var outsideClicks: Any?
+    private var escapeKey: Any?
 
     override init() {
         super.init()
@@ -76,7 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpPopover() {
         let popover = NSPopover()
-        popover.behavior = .transient
+        // Closed by hand, on clicks outside Sidebus and on Esc: a transient popover also
+        // closes on a click in the suggestion panel beside it.
+        popover.behavior = .applicationDefined
         popover.animates = true
         let host = PopoverHost(rootView: SidebusPanel(
             devices: devices,
@@ -89,6 +93,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.popover = popover
         popover.contentViewController = host
         self.popover = popover
+        NotificationCenter.default.addObserver(
+            forName: NSPopover.didCloseNotification, object: popover, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                SuggestionPanel.shared.hide()
+                self?.stopWatchingOutside()
+            }
+        }
+    }
+
+    private func watchOutside() {
+        stopWatchingOutside()
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover?.performClose(nil) }
+        }
+        escapeKey = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Esc in the call field first clears it; once empty, it closes the panel.
+            guard event.keyCode == 53,
+                  AppDelegate.shared.dialer.text.isEmpty,
+                  self?.popover?.isShown == true else { return event }
+            self?.popover?.performClose(nil)
+            return nil
+        }
+    }
+
+    private func stopWatchingOutside() {
+        if let outsideClicks { NSEvent.removeMonitor(outsideClicks) }
+        if let escapeKey { NSEvent.removeMonitor(escapeKey) }
+        outsideClicks = nil
+        escapeKey = nil
     }
 
     @objc private func statusItemClicked() {
@@ -107,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         if !popover.isShown {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            watchOutside()
         }
         popover.contentViewController?.view.window?.makeKey()
     }
