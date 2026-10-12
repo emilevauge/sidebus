@@ -152,18 +152,20 @@ private struct CallView: View {
                 // Held from the start, empty until the number is known.
                 Text(phone.peerCountry ?? " ").font(.subheadline).foregroundStyle(.secondary)
             }
-            .transaction { $0.animation = nil }
+            // Text that changes swaps in place; moves still follow the card's animation.
+            .animation(nil, value: phone.peer)
+            .animation(nil, value: phone.peerCountry)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
+                    .animation(nil, value: context.date)
             }
-            .transaction { $0.animation = nil }
             // One line, there from the first moment of the call and empty unless something
             // needs saying, so the card never changes height.
             Text(soundStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .transaction { $0.animation = nil }
+                .animation(nil, value: soundStatus)
 
             HStack(spacing: 20) {
                 if case .incoming = phone.callState {
