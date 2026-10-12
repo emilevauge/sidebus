@@ -36,7 +36,6 @@ struct PhoneCard: View {
         // with the same timing.
         .animation(Motion.resize, value: phone.isInCall)
         .animation(Motion.resize, value: phone.callOnMac)
-        .animation(Motion.resize, value: phone.audioRoute)
         .animation(Motion.resize, value: phone.problem)
     }
 }
@@ -151,21 +150,26 @@ private struct CallView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
             }
+            .transaction { $0.animation = nil }
             // Every line is there from the first moment of the call, only its text changes:
             // lines coming and going while the link comes up resized the popover several
             // times in a row.
-            VStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 if phone.callOnMac {
-                    Label(phone.audioRoute?.microphone ?? "Microphone", systemImage: "mic")
-                    Label(phone.audioRoute?.speaker ?? "Speakers", systemImage: "speaker.wave.2")
+                    AudioLine(symbol: "mic", text: phone.audioRoute?.microphone ?? "Microphone")
+                    AudioLine(symbol: "speaker.wave.2", text: phone.audioRoute?.speaker ?? "Speakers")
                 } else {
-                    Label("On the phone", systemImage: "iphone")
-                    Label("Its earpiece and microphone", systemImage: "ear")
+                    AudioLine(symbol: "iphone", text: "On the phone")
+                    AudioLine(symbol: "ear", text: "Its earpiece and microphone")
                 }
-                Text(soundStatus).lineLimit(1)
+                AudioLine(symbol: "waveform", text: soundStatus)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // Text that changes in place, never sliding to a new position.
+            .transaction { $0.animation = nil }
 
             if showsKeypad {
                 Keypad { phone.sendTone($0) }
@@ -198,7 +202,7 @@ private struct CallView: View {
 
     private var soundStatus: String {
         guard phone.callOnMac else {
-            return phone.callsAvailable ? " " : phone.summary
+            return phone.callsAvailable ? "Move it to the Mac below" : phone.summary
         }
         if let route = phone.audioRoute {
             return route.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones"
@@ -215,6 +219,24 @@ private struct CallView: View {
             let seconds = Int(date.timeIntervalSince(phone.answeredAt ?? date))
             return String(format: "%d:%02d", seconds / 60, seconds % 60)
         }
+    }
+}
+
+/// One line of the call's sound: an icon in a fixed column, then the text.
+private struct AudioLine: View {
+    let symbol: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .frame(width: 16)
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 
