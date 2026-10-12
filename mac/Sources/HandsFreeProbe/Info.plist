@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>app.sidebus.handsfreeprobe</string>
+	<key>CFBundleName</key>
+	<string>HandsFreeProbe</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>HandsFreeProbe connects to your phone as a hands-free kit to carry its calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>HandsFreeProbe sends your voice to the phone during a call.</string>
+</dict>
+</plist>
