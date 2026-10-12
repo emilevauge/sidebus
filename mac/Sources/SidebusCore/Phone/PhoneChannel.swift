@@ -112,7 +112,7 @@ public actor PhoneChannel {
                         checkDue = false
                         nextCheck = .now + Self.checkInterval
                     }
-                } else {
+                } else if lastStatus == nil {
                     emit(.state(.searching))
                 }
             }
@@ -130,7 +130,9 @@ public actor PhoneChannel {
     /// One connection, held while a call goes on, or until the check is through. Returns
     /// true once the phone's status and contacts came.
     private func run(_ peer: Peer) async -> Bool {
-        emit(.state(.connecting))
+        // Once the phone's state is known, it stands while connecting again: a passing
+        // "connecting" made the phone's row and its status come and go in the panel.
+        if lastStatus == nil { emit(.state(.connecting)) }
         let transport = TransportClient(
             endpoint: peer.endpoint,
             kind: peer.kind,
