@@ -53,11 +53,24 @@ final class PopoverHost<Content: View>: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        // Flipped, so the content hangs from the top: it is laid out at its new size at
+        // once, and the popover's frame, animating, uncovers or covers its bottom. Stretched
+        // to the popover instead, the content was recentred at every step and its top
+        // moved.
+        view = FlippedView()
         host.frame = view.bounds
-        host.autoresizingMask = [.width, .height]
+        host.autoresizingMask = [.width]
         view.addSubview(host)
         host.onSizeChange = { [weak self] in self?.scheduleResize() }
+    }
+
+    private final class FlippedView: NSView {
+        override var isFlipped: Bool { true }
+    }
+
+    /// The content at the size it asks for, against the top edge.
+    private func pinHost(height: CGFloat) {
+        host.frame = NSRect(x: 0, y: 0, width: view.bounds.width, height: height)
     }
 
     /// Sets the popover to the content's size at once, before it shows.
@@ -68,6 +81,7 @@ final class PopoverHost<Content: View>: NSViewController {
         guard let popover, size.width > 0, size.height > 0 else { return }
         resizeLog.info("fit \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public)")
         popover.contentSize = size
+        pinHost(height: size.height)
     }
 
     /// Once per pass: SwiftUI may invalidate several times in a row.
@@ -85,6 +99,7 @@ final class PopoverHost<Content: View>: NSViewController {
         let size = host.intrinsicContentSize
         guard size.width > 0, size.height > 0, size != popover.contentSize else { return }
         resizeLog.info("resize \(popover.contentSize.height, privacy: .public) -> \(size.height, privacy: .public), shown \(popover.isShown, privacy: .public)")
+        pinHost(height: size.height)
         guard popover.isShown else {
             popover.contentSize = size
             return
