@@ -11,4 +11,8 @@ public enum Sidebus {
 
     /// mDNS service type advertised by the tablet.
     public static let serviceType = "_sidebus._tcp"
+
+    /// A phone's call channel: its port and its mDNS service type, section 10.
+    public static let callPort: UInt16 = 27185
+    public static let callServiceType = "_sidebus-call._tcp"
 }

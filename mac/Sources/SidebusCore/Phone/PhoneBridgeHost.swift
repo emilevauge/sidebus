@@ -1,28 +1,19 @@
 import Foundation
 import os
 
-/// Everything the phone side of calls needs over adb: finding the phone among the
-/// devices, reading its contacts through the Sidebus app, and keeping the call bridge
-/// (android/callbridge) running on it, with the port forward that reaches it.
+/// What only USB can do for calls: start the call helper (android/callbridge) on the
+/// phone, as the adb shell, since no app may reach call audio. Started detached from
+/// adb, the helper outlives the cable and runs until the phone restarts, so one plug after
+/// each restart is enough. Also forwards the phone's call channel, so that a plugged phone
+/// is reached over USB rather than Wi-Fi.
 public actor PhoneBridgeHost {
 
-    public enum Status: Equatable, Sendable {
-        /// No phone on adb: plugged out, or USB debugging off.
-        case noPhone
-        case starting
-        /// The bridge runs on the phone, calls can carry audio.
-        case ready
-        case failed(String)
-    }
-
-    /// Mac port forwarded to the bridge's socket on the phone.
-    public static let port: UInt16 = 27184
     private static let remoteDex = "/data/local/tmp/sidebus-callbridge.dex"
+    private static let remoteLog = "/data/local/tmp/sidebus-callbridge.log"
 
     private let dex: URL
     private var serial: String?
-    private var process: Process?
-    private var statusHandler: (@Sendable (Status) -> Void)?
+    private var onUSB: (@Sendable (Bool) -> Void)?
     private var watch: Task<Void, Never>?
     private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
@@ -31,9 +22,10 @@ public actor PhoneBridgeHost {
         self.dex = dex
     }
 
-    /// Looks for a phone every few seconds, and keeps the bridge running on it.
-    public func start(onStatus: @escaping @Sendable (Status) -> Void) {
-        statusHandler = onStatus
+    /// Looks for a plugged phone every few seconds. `onUSB` says whether one is plugged
+    /// and its call channel forwarded.
+    public func start(onUSB: @escaping @Sendable (Bool) -> Void) {
+        self.onUSB = onUSB
         watch?.cancel()
         watch = Task { [weak self] in
             while !Task.isCancelled {
@@ -46,36 +38,28 @@ public actor PhoneBridgeHost {
     public func stop() async {
         watch?.cancel()
         watch = nil
-        await stopBridge()
+        if serial != nil {
+            _ = try? await adb(["forward", "--remove", "tcp:\(Sidebus.callPort)"])
+        }
     }
-
-    /// The phone's contacts. Nil when the Sidebus app lacks the permission: it then
-    /// asks for it on the phone, and a later call returns the list.
-    public func contacts() async throws -> [PhoneContact]? {
-        guard let serial else { return [] }
-        let output = try await adb(["-s", serial, "shell", "content", "query", "--uri", "content://app.sidebus.contacts/phones"])
-        if let contacts = ContactBook.parse(output) { return contacts }
-        _ = try? await adb(["-s", serial, "shell", "am", "start", "-n", "app.sidebus/.phone.ContactsAccessActivity"])
-        return nil
-    }
-
-    // MARK: - Bridge
 
     private func check() async {
-        if let process, process.isRunning { return }
         guard let phone = await findPhone() else {
-            if serial != nil || process == nil { report(.noPhone) }
+            if serial != nil { onUSB?(false) }
             serial = nil
-            process = nil
             return
         }
-        serial = phone
-        report(.starting)
         do {
-            try await startBridge(on: phone)
+            if try await !helperRuns(on: phone) {
+                try await startHelper(on: phone)
+            }
+            if serial != phone {
+                try await adb(["-s", phone, "forward", "tcp:\(Sidebus.callPort)", "tcp:\(Sidebus.callPort)"])
+                serial = phone
+                onUSB?(true)
+            }
         } catch {
-            log.error("call bridge: \(String(describing: error), privacy: .public)")
-            report(.failed(String(describing: error)))
+            log.error("call helper: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -94,55 +78,25 @@ public actor PhoneBridgeHost {
         return nil
     }
 
-    private func startBridge(on serial: String) async throws {
+    private func helperRuns(on serial: String) async throws -> Bool {
+        let output = (try? await adb(["-s", serial, "shell", "pgrep", "-f", "CallBridge"])) ?? ""
+        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func startHelper(on serial: String) async throws {
+        log.info("starting the call helper on \(serial, privacy: .public)")
         try await adb(["-s", serial, "push", dex.path, Self.remoteDex])
-        try await adb(["-s", serial, "forward", "tcp:\(Self.port)", "localabstract:sidebus-call"])
-        // A bridge left over from an earlier run holds the socket name.
-        _ = try? await adb(["-s", serial, "shell", "pkill", "-f", "CallBridge"])
-
-        guard let adbPath = AdbWatcher.locateAdb() else { throw AdbWatcher.AdbError.adbNotFound }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: adbPath)
-        process.arguments = ["-s", serial, "shell", "CLASSPATH=\(Self.remoteDex)", "exec", "app_process", "/", "CallBridge"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        let log = self.log
-        pipe.fileHandleForReading.readabilityHandler = { [self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            for line in String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init) {
-                log.info("call bridge: \(line, privacy: .public)")
-                if line == "ready" { Task { await self.report(.ready) } }
-                if line.hasPrefix("error: ") { Task { await self.report(.failed(String(line.dropFirst(7)))) } }
-            }
-        }
-        // Gone with the cable, or with the phone: the next check starts it again.
-        process.terminationHandler = { [weak self] _ in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            Task { await self?.bridgeExited() }
-        }
-        try process.run()
-        self.process = process
-    }
-
-    private func bridgeExited() {
-        process = nil
-        report(serial == nil ? .noPhone : .starting)
-    }
-
-    private func stopBridge() async {
-        process?.terminationHandler = nil
-        process?.terminate()
-        process = nil
-        if let serial {
-            _ = try? await adb(["-s", serial, "shell", "pkill", "-f", "CallBridge"])
-            _ = try? await adb(["-s", serial, "forward", "--remove", "tcp:\(Self.port)"])
-        }
-    }
-
-    private func report(_ status: Status) {
-        statusHandler?(status)
+        // setsid takes it out of the adb session, which ends with the cable.
+        try await adb([
+            "-s", serial, "shell",
+            """
+            setsid sh -c 'CLASSPATH=\(Self.remoteDex) exec app_process / CallBridge \
+            > \(Self.remoteLog) 2>&1 < /dev/null' &
+            """,
+        ])
+        // The app's call service relays the helper to the Mac. HyperOS does not let it
+        // start on its own at boot, so start it here.
+        _ = try? await adb(["-s", serial, "shell", "am", "start", "-n", "app.sidebus/.phone.PermissionsActivity"])
     }
 
     @discardableResult

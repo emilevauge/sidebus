@@ -130,7 +130,7 @@ private struct SearchView: View {
 
     private var status: String {
         if phone.contactsNeedPermission {
-            return "Allow Sidebus to read contacts on the phone to search them"
+            return "Tap the Sidebus notification on the phone to let the Mac search your contacts"
         }
         return phone.summary
     }

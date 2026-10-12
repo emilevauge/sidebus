@@ -19,27 +19,17 @@ public struct PhoneContact: Sendable, Hashable, Identifiable {
 /// dialer runs on it.
 public enum ContactBook {
 
-    /// Parses `content query --uri content://app.sidebus.contacts/phones`: one
-    /// `Row: <n> name=<name>, number=<number>, starred=<0|1>, times_contacted=<n>` line
-    /// per number. Returns nil when the app reports the contacts permission missing.
-    ///
-    /// The keys are found from the right, since a name may hold a comma but the number and
-    /// the counters never do.
-    public static func parse(_ output: String) -> [PhoneContact]? {
-        var contacts: [PhoneContact] = []
-        for line in output.split(separator: "\n") {
-            if line.contains("permission=0") { return nil }
-            guard let nameStart = line.range(of: " name="),
-                  let numberStart = line.range(of: ", number=", options: .backwards),
-                  let starredStart = line.range(of: ", starred=", options: .backwards),
-                  nameStart.upperBound <= numberStart.lowerBound,
-                  numberStart.upperBound <= starredStart.lowerBound
-            else { continue }
-            let name = String(line[nameStart.upperBound..<numberStart.lowerBound])
-            let number = String(line[numberStart.upperBound..<starredStart.lowerBound])
-            let starred = line[starredStart.upperBound...].hasPrefix("1")
-            guard !number.isEmpty, number != "NULL" else { continue }
-            contacts.append(PhoneContact(name: name == "NULL" ? number : name, number: number, isStarred: starred))
+    /// Parses the CONTACTS message (`protocol/PROTOCOL.md` 10.5): one line per number,
+    /// name, tab, number, tab, starred as 0 or 1.
+    public static func parse(lines text: String) -> [PhoneContact] {
+        let contacts = text.split(separator: "\n").compactMap { line -> PhoneContact? in
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard fields.count >= 2, !fields[1].isEmpty else { return nil }
+            return PhoneContact(
+                name: fields[0].isEmpty ? String(fields[1]) : String(fields[0]),
+                number: String(fields[1]),
+                isStarred: fields.count > 2 && fields[2] == "1"
+            )
         }
         // The same number saved twice under one name shows once.
         var seen = Set<String>()

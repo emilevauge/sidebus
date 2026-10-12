@@ -1,15 +1,13 @@
 @preconcurrency import AVFoundation
 import Foundation
-import Network
 import os
 
-/// Mac half of a call's audio: plays what the phone sends (the other party) and sends
-/// the microphone back. The phone half is android/callbridge, reached through the adb
-/// forward that [PhoneBridgeHost] sets up.
+/// Mac half of a call's audio: plays what the phone sends (the other party) and hands the
+/// microphone back, both as 16 kHz mono 16 bit little endian PCM. [PhoneChannel] carries
+/// them; this class only deals with sound.
 ///
-/// Both directions are 16 kHz mono 16 bit little endian PCM. The microphone goes
-/// through macOS voice processing, so the speakers do not echo into the call. One
-/// instance carries one call.
+/// The microphone goes through macOS voice processing, so the speakers do not echo into
+/// the call. One instance carries one call.
 public final class CallAudioLink: @unchecked Sendable {
     private static let sampleRate = 16000.0
     private static let frameBytes = Int(sampleRate) / 50 * 2
@@ -20,7 +18,7 @@ public final class CallAudioLink: @unchecked Sendable {
     // arrive in bursts, and playing each one as it lands leaves gaps that click.
     private static let prebufferMs = 80
 
-    private let port: UInt16
+    private let send: @Sendable (Data) -> Void
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let wireFormat = AVAudioFormat(
@@ -30,7 +28,6 @@ public final class CallAudioLink: @unchecked Sendable {
     private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
     // Touched on `queue` only.
-    private var connection: NWConnection?
     private var converter: AVAudioConverter?
     private var pending = Data()
     private var queuedFrames = 0
@@ -38,12 +35,13 @@ public final class CallAudioLink: @unchecked Sendable {
     private var stopped = false
     private var muted = false
 
-    public init(port: UInt16) {
-        self.port = port
+    /// `send` receives the microphone, in 20 ms or so pieces, on a background queue.
+    public init(send: @escaping @Sendable (Data) -> Void) {
+        self.send = send
     }
 
-    /// Starts the audio engine and connects to the phone. Needs the microphone
-    /// permission; throws when the engine cannot start.
+    /// Starts the audio engine. Needs the microphone permission; throws when the engine
+    /// cannot start.
     public func start() throws {
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
@@ -57,20 +55,15 @@ public final class CallAudioLink: @unchecked Sendable {
         converter?.channelMap = [0]
         queue.sync { self.converter = converter }
         input.installTap(onBus: 0, bufferSize: 1024, format: micFormat) { [weak self] buffer, _ in
-            self?.send(buffer)
+            self?.capture(buffer)
         }
 
         try engine.start()
         player.play()
-        queue.async { self.connect() }
     }
 
     public func stop() {
-        queue.sync {
-            stopped = true
-            connection?.cancel()
-            connection = nil
-        }
+        queue.sync { stopped = true }
         engine.inputNode.removeTap(onBus: 0)
         player.stop()
         engine.stop()
@@ -81,47 +74,12 @@ public final class CallAudioLink: @unchecked Sendable {
         queue.async { self.muted = muted }
     }
 
-    // MARK: Network
-
-    private func connect() {
-        guard !stopped else { return }
-        let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
-        self.connection = connection
-        pending.removeAll()
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                receive(on: connection)
-            case .failed, .cancelled:
-                retry(connection)
-            default:
-                break
-            }
-        }
-        connection.start(queue: queue)
-    }
-
-    // adb accepts the TCP connection even when nothing listens on the phone yet, then
-    // closes it: that case lands here too, and simply tries again.
-    private func retry(_ connection: NWConnection) {
-        guard connection === self.connection, !stopped else { return }
-        self.connection = nil
-        queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.connect() }
-    }
-
-    private func receive(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
-            guard let self else { return }
-            if let data, !data.isEmpty {
-                pending.append(data)
-                playPending()
-            }
-            if complete || error != nil {
-                connection.cancel()
-                return
-            }
-            receive(on: connection)
+    /// Plays a piece of the other party's voice.
+    public func play(_ data: Data) {
+        queue.async {
+            guard !self.stopped else { return }
+            self.pending.append(data)
+            self.playPending()
         }
     }
 
@@ -157,7 +115,7 @@ public final class CallAudioLink: @unchecked Sendable {
     }
 
     // Called on the audio tap's thread.
-    private func send(_ buffer: AVAudioPCMBuffer) {
+    private func capture(_ buffer: AVAudioPCMBuffer) {
         guard let converter = queue.sync(execute: { self.converter }) else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * Self.sampleRate / buffer.format.sampleRate) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: wireFormat, frameCapacity: capacity) else { return }
@@ -175,9 +133,9 @@ public final class CallAudioLink: @unchecked Sendable {
         guard error == nil, output.frameLength > 0 else { return }
         var data = Data(bytes: output.int16ChannelData![0], count: Int(output.frameLength) * 2)
         queue.async { [self] in
-            guard let connection, connection.state == .ready else { return }
+            guard !stopped else { return }
             if muted { data.resetBytes(in: 0..<data.count) }
-            connection.send(content: data, completion: .idempotent)
+            send(data)
         }
     }
 }

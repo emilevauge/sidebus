@@ -51,9 +51,10 @@ private struct PhoneSettings: View {
                     : "\(phone.contacts.count) numbers")
             } footer: {
                 Text("""
-                    Pair the phone from System Settings > Bluetooth, and plug it over USB \
-                    with USB debugging on: Bluetooth places and answers calls, USB carries \
-                    their sound. The phone's earpiece keeps playing the call quietly.
+                    Pair the phone from System Settings > Bluetooth, and with Sidebus, as a \
+                    tablet. Bluetooth places and answers calls; their sound travels over \
+                    Wi-Fi or USB. After each restart of the phone, plug it in over USB once, \
+                    with USB debugging on. The phone's earpiece keeps playing the call quietly.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)

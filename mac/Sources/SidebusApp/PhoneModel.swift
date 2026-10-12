@@ -5,9 +5,9 @@ import SidebusCore
 import UserNotifications
 import os
 
-/// Phone calls through the user's Android phone: Bluetooth for dialing and the call
-/// state, adb for the audio and the contacts. One instance for the whole app, since
-/// links, notifications and the menu all reach it.
+/// Phone calls through the user's Android phone. Bluetooth places and answers them; the
+/// phone's call channel carries their sound and the contacts, over USB or Wi-Fi. One
+/// instance for the whole app, since links, notifications and the menu all reach it.
 @MainActor
 @Observable
 final class PhoneModel {
@@ -16,10 +16,8 @@ final class PhoneModel {
     private(set) var callState: HandsFreeLink.CallState = .idle
     private(set) var isBluetoothConnected = false
     private(set) var phoneName: String?
-    private(set) var bridgeStatus: PhoneBridgeHost.Status = .noPhone
+    private(set) var channelState: PhoneChannel.State = .searching
     private(set) var contacts: [PhoneContact] = []
-    /// True while the Sidebus app on the phone waits for the contacts permission.
-    private(set) var contactsNeedPermission = false
     private(set) var isMuted = false
     /// When the current call was answered, for its duration.
     private(set) var answeredAt: Date?
@@ -30,11 +28,25 @@ final class PhoneModel {
 
     @ObservationIgnored private let link = HandsFreeLink()
     @ObservationIgnored private var host: PhoneBridgeHost?
+    @ObservationIgnored private var channel: PhoneChannel?
     @ObservationIgnored private var audio: CallAudioLink?
+    @ObservationIgnored private var uplink: AsyncStream<Data>.Continuation?
     @ObservationIgnored private let notifications = IncomingCallNotifier()
     @ObservationIgnored private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
     var isInCall: Bool { callState != .idle }
+
+    /// True when calls can carry their sound to the Mac right now.
+    var audioReady: Bool {
+        if case .ready(_, _, true, _) = channelState { return true }
+        return false
+    }
+
+    /// True while the Sidebus app on the phone lacks the contacts permission.
+    var contactsNeedPermission: Bool {
+        if case .ready(_, _, _, false) = channelState { return true }
+        return false
+    }
 
     /// One line on where calls stand, for the menu and the dialer.
     var summary: String {
@@ -42,11 +54,18 @@ final class PhoneModel {
             return phoneName.map { "\($0) is not connected over Bluetooth" }
                 ?? "No phone paired over Bluetooth"
         }
-        switch bridgeStatus {
-        case .ready: return "Calls go through \(phoneName ?? "the phone")"
-        case .noPhone: return "Plug the phone over USB to hear calls on the Mac"
-        case .starting: return "Preparing the phone…"
-        case let .failed(reason): return "Call audio unavailable: \(reason)"
+        switch channelState {
+        case .searching:
+            return "Open Sidebus on the phone once, on the same Wi-Fi or over USB"
+        case .connecting:
+            return "Reaching the phone…"
+        case let .waitingForGrant(phone):
+            return "Allow this Mac in the notification on \(phone)"
+        case let .refused(phone):
+            return "\(phone) refused this Mac its calls"
+        case let .ready(phone, over, helperRuns, _):
+            guard helperRuns else { return "Plug \(phone) in over USB once to hear calls on the Mac" }
+            return "Calls go through \(phone), over \(over == .usb ? "USB" : "Wi-Fi")"
         }
     }
 
@@ -58,17 +77,36 @@ final class PhoneModel {
         notifications.onDecline = { [weak self] in self?.hangUp() }
         notifications.setUp()
 
+        let channel = PhoneChannel(macName: Host.current().localizedName ?? "Mac", macUUID: Self.macUUID)
+        self.channel = channel
+        Task {
+            await channel.start { event in
+                Task { @MainActor in PhoneModel.shared.channelEvent(event) }
+            }
+        }
+
         guard let dex = Bundle.module.url(forResource: "callbridge", withExtension: "dex") else {
-            bridgeStatus = .failed("callbridge.dex is missing from the app, run android/callbridge/build.sh")
+            problem = "callbridge.dex is missing from the app, run android/callbridge/build.sh"
             return
         }
         let host = PhoneBridgeHost(dex: dex)
         self.host = host
         Task {
-            await host.start { status in
-                Task { @MainActor in PhoneModel.shared.bridgeChanged(status) }
+            await host.start { plugged in
+                Task { await channel.setUSBAvailable(plugged) }
             }
         }
+    }
+
+    /// The Mac's identity, shared with the display sessions.
+    private static var macUUID: UUID {
+        let key = "macUUID"
+        if let stored = UserDefaults.standard.string(forKey: key), let uuid = UUID(uuidString: stored) {
+            return uuid
+        }
+        let uuid = UUID()
+        UserDefaults.standard.set(uuid.uuidString, forKey: key)
+        return uuid
     }
 
     // MARK: - Actions
@@ -99,19 +137,8 @@ final class PhoneModel {
     }
 
     func refreshContacts() {
-        guard let host else { return }
-        Task {
-            do {
-                if let list = try await host.contacts() {
-                    contacts = list
-                    contactsNeedPermission = false
-                } else {
-                    contactsNeedPermission = true
-                }
-            } catch {
-                log.error("contacts: \(String(describing: error), privacy: .public)")
-            }
-        }
+        guard let channel else { return }
+        Task { await channel.send(.contactsRequest) }
     }
 
     // MARK: - State
@@ -126,51 +153,86 @@ final class PhoneModel {
         case let .incoming(number):
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
             peer = name ?? number ?? "Unknown number"
-            if previous != callState { notifications.show(caller: peer ?? "") }
+            if previous != callState { notifications.showIncoming(caller: peer ?? "") }
         case .active:
             if answeredAt == nil { answeredAt = Date() }
-            notifications.clear()
+            notifications.clearIncoming()
         case .outgoing:
             break
         case .idle:
-            notifications.clear()
+            notifications.clearIncoming()
             answeredAt = nil
             isMuted = false
         }
         syncAudio()
     }
 
-    private func bridgeChanged(_ status: PhoneBridgeHost.Status) {
-        bridgeStatus = status
-        if status == .ready && contacts.isEmpty { refreshContacts() }
+    private func channelEvent(_ event: PhoneChannel.Event) {
+        switch event {
+        case let .state(state):
+            let wasReady = audioReady
+            channelState = state
+            if case let .ready(phone, _, false, _) = state {
+                notifications.showPlugIn(phone: phone)
+            } else if audioReady, !wasReady {
+                notifications.clearPlugIn()
+            }
+        case let .contacts(list):
+            contacts = list
+        case let .audio(pcm):
+            audio?.play(pcm)
+        case .audioStopped:
+            stopAudio()
+            syncAudio()
+        }
         syncAudio()
     }
 
-    /// Audio runs from the moment a call is placed or answered until it ends, and only
-    /// while the bridge runs on the phone.
+    /// Audio runs from the moment a call is placed or answered until it ends, while the
+    /// phone's helper runs.
     private func syncAudio() {
-        let wanted = (callState == .active || callState == .outgoing) && bridgeStatus == .ready
+        let wanted = (callState == .active || callState == .outgoing) && audioReady
         if wanted, audio == nil {
-            let audio = CallAudioLink(port: PhoneBridgeHost.port)
-            self.audio = audio
-            Task {
-                guard await AVCaptureDevice.requestAccess(for: .audio) else {
-                    problem = "Sidebus may not use the microphone: allow it in System Settings > Privacy & Security > Microphone"
-                    return
-                }
-                guard self.audio === audio else { return }
-                do {
-                    try audio.start()
-                    audio.setMuted(isMuted)
-                } catch {
-                    problem = "Call audio could not start: \(error.localizedDescription)"
-                    self.audio = nil
-                }
-            }
-        } else if !wanted, let audio {
-            audio.stop()
-            self.audio = nil
+            startAudio()
+        } else if !wanted, audio != nil {
+            stopAudio()
         }
+    }
+
+    private func startAudio() {
+        guard let channel else { return }
+        // One sender for the whole call, so the microphone's pieces keep their order.
+        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingNewest(25))
+        uplink = continuation
+        Task {
+            for await pcm in stream { await channel.send(.callAudio(pcm)) }
+        }
+        let audio = CallAudioLink { pcm in continuation.yield(pcm) }
+        self.audio = audio
+        Task {
+            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                problem = "Sidebus may not use the microphone: allow it in System Settings > Privacy & Security > Microphone"
+                return
+            }
+            guard self.audio === audio else { return }
+            do {
+                try audio.start()
+                audio.setMuted(isMuted)
+                await channel.send(.callStart)
+            } catch {
+                problem = "Call audio could not start: \(error.localizedDescription)"
+                stopAudio()
+            }
+        }
+    }
+
+    private func stopAudio() {
+        guard let audio else { return }
+        audio.stop()
+        self.audio = nil
+        uplink?.finish()
+        uplink = nil
+        if let channel { Task { await channel.send(.callStop) } }
     }
 }
 
@@ -182,6 +244,7 @@ private final class IncomingCallNotifier: NSObject, UNUserNotificationCenterDele
 
     private static let category = "incoming-call"
     private static let identifier = "incoming-call"
+    private static let plugInIdentifier = "plug-in"
 
     /// Notifications need an app bundle; `swift run` has none and would crash on them.
     private var center: UNUserNotificationCenter? {
@@ -199,7 +262,7 @@ private final class IncomingCallNotifier: NSObject, UNUserNotificationCenterDele
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func show(caller: String) {
+    func showIncoming(caller: String) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = "Incoming call"
@@ -209,10 +272,28 @@ private final class IncomingCallNotifier: NSObject, UNUserNotificationCenterDele
         center.add(UNNotificationRequest(identifier: Self.identifier, content: content, trigger: nil))
     }
 
-    func clear() {
+    func clearIncoming() {
         center?.removeDeliveredNotifications(withIdentifiers: [Self.identifier])
         center?.removePendingNotificationRequests(withIdentifiers: [Self.identifier])
     }
+
+    /// The phone's call helper is not running, since the phone restarted: one USB plug
+    /// starts it again, and it then runs until the next restart.
+    func showPlugIn(phone: String) {
+        guard let center, !plugInShown else { return }
+        plugInShown = true
+        let content = UNMutableNotificationContent()
+        content.title = "Plug \(phone) in over USB"
+        content.body = "Once after each restart of the phone, to hear its calls on the Mac. You can unplug it right after."
+        center.add(UNNotificationRequest(identifier: Self.plugInIdentifier, content: content, trigger: nil))
+    }
+
+    func clearPlugIn() {
+        plugInShown = false
+        center?.removeDeliveredNotifications(withIdentifiers: [Self.plugInIdentifier])
+    }
+
+    private var plugInShown = false
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,

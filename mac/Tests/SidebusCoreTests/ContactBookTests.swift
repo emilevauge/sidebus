@@ -4,21 +4,12 @@ import XCTest
 
 final class ContactBookTests: XCTestCase {
 
-    func testParsesTheProviderOutput() throws {
-        let output = """
-            Row: 0 name=Jérôme, number=(0033)664217960, starred=0, times_contacted=0
-            Row: 1 name=Dupont, Marie, number=06 12 34 56 78, starred=1, times_contacted=4
-            Row: 2 name=Dupont, Marie, number=0612345678, starred=1, times_contacted=4
-            """
-        let contacts = try XCTUnwrap(ContactBook.parse(output))
-        XCTAssertEqual(contacts, [
+    func testParsesTheContactsMessage() {
+        let text = "Jérôme\t(0033)664217960\t0\nDupont, Marie\t06 12 34 56 78\t1\nDupont, Marie\t0612345678\t1\n"
+        XCTAssertEqual(ContactBook.parse(lines: text), [
             PhoneContact(name: "Jérôme", number: "(0033)664217960"),
             PhoneContact(name: "Dupont, Marie", number: "06 12 34 56 78", isStarred: true),
         ])
-    }
-
-    func testReportsTheMissingPermission() {
-        XCTAssertNil(ContactBook.parse("Row: 0 permission=0"))
     }
 
     func testDialableKeepsOnlyWhatThePhoneDials() {

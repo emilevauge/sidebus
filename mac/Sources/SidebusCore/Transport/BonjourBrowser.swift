@@ -15,7 +15,11 @@ public actor BonjourBrowser: PeerDiscovery {
     private var continuation: AsyncStream<[Peer]>.Continuation?
     private let queue = DispatchQueue(label: "app.sidebus.bonjour")
 
-    public init() {}
+    private let serviceType: String
+
+    public init(serviceType: String = Sidebus.serviceType) {
+        self.serviceType = serviceType
+    }
 
     public func start() async -> AsyncStream<[Peer]> {
         await stop()
@@ -29,7 +33,7 @@ public actor BonjourBrowser: PeerDiscovery {
         parameters.includePeerToPeer = false
 
         let browser = NWBrowser(
-            for: .bonjourWithTXTRecord(type: Sidebus.serviceType, domain: nil),
+            for: .bonjourWithTXTRecord(type: serviceType, domain: nil),
             using: parameters
         )
         self.browser = browser
