@@ -108,16 +108,20 @@ private struct SearchView: View {
                 .transition(.opacity)
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Circle()
-                    .fill(phone.callsAvailable ? Color.green : Color.orange)
-                    .frame(width: 7, height: 7)
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // Only when something is wrong: when all is well, the phone's icons in the
+            // device list say so.
+            if let problem = statusProblem {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 7, height: 7)
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 2)
             }
-            .padding(.leading, 2)
         }
         .animation(Motion.resize, value: choices.count)
         .onAppear {
@@ -126,11 +130,12 @@ private struct SearchView: View {
         }
     }
 
-    private var status: String {
+    private var statusProblem: String? {
+        if !phone.callsAvailable { return phone.summary }
         if phone.contactsNeedPermission {
             return "Tap the Sidebus notification on the phone to let the Mac search your contacts"
         }
-        return phone.summary
+        return nil
     }
 
     private func move(_ step: Int, in choices: [CallChoice]) -> KeyPress.Result {

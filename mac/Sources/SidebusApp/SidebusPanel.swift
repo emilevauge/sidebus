@@ -148,6 +148,10 @@ private struct DeviceRow: View {
                 Spacer(minLength: 8)
 
                 if isPhone {
+                    if phone.callsAvailable, let over = phone.channelTransport {
+                        Capability(symbol: over == .usb ? "cable.connector" : "wifi", active: true)
+                            .help(over == .usb ? "Calls reach the Mac over USB" : "Calls reach the Mac over Wi-Fi")
+                    }
                     Capability(symbol: "phone.fill", active: phone.callsAvailable)
                         .help(phone.summary)
                 }
