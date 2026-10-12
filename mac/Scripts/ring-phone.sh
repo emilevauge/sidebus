@@ -13,7 +13,7 @@ set -eu
 TO="${1:?usage: $0 <phone number, international format>}"
 command -v twilio >/dev/null || { echo "install the Twilio CLI: brew install twilio, then twilio login"; exit 1; }
 
-FROM="${TWILIO_FROM:-$(twilio phone-numbers:list -o json | python3 -c 'import json,sys; n=json.load(sys.stdin); print(n[0]["phoneNumber"] if n else "")')}"
+FROM="${TWILIO_FROM:-$(twilio phone-numbers:list -o json 2>/dev/null | python3 -c 'import json,sys; t=sys.stdin.read().strip(); n=json.loads(t) if t else []; print(n[0]["phoneNumber"] if n else "")')}"
 [ -n "$FROM" ] || { echo "no number on the Twilio account: buy one, or set TWILIO_FROM"; exit 1; }
 
 TWIML='<Response><Say language="fr-FR">Appel de test Sidebus.</Say><Pause length="30"/><Say language="fr-FR">Fin du test.</Say></Response>'
