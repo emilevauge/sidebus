@@ -2,6 +2,7 @@
 # Places a call from the Mac and bridges its audio, until the call ends.
 #
 #   ./call.sh <number> [phone Bluetooth address] [RFCOMM channel]
+#   PHONE_MIC=on ./call.sh <number>     leave the phone's microphone on
 #
 # The call goes out over HFP (HandsFreeProbe), the audio over adb (CallAudioProbe's
 # stream mode on the phone, CallAudioBridge on the Mac). Hang up on the phone, or
@@ -29,7 +30,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$HERE/run.sh" stream &
+if [ "$PHONE_MIC" = on ]; then
+    "$HERE/run.sh" stream nomute &
+else
+    "$HERE/run.sh" stream &
+fi
 PHONE=$!
 sleep 6
 "$MAC/.build/debug/CallAudioBridge" &
@@ -43,9 +48,12 @@ sleep 2
     started=0
     while :; do
         sleep 1
-        state=$(adb shell dumpsys telephony.registry | grep -m1 mCallState | tr -dc 0-9)
-        [ "$state" != 0 ] && started=1
-        [ "$started" = 1 ] && [ "$state" = 0 ] && break
+        # One mCallState per SIM: the call is on while any of them is not idle.
+        if adb shell dumpsys telephony.registry | grep mCallState | grep -qv "mCallState=0"; then
+            started=1
+        elif [ "$started" = 1 ]; then
+            break
+        fi
     done
     echo quit
 } | "$MAC/.build/debug/HandsFreeProbe" "$ADDRESS" "$CHANNEL" | grep --line-buffered -E "call active|call setup: [23]"
