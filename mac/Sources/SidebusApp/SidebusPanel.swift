@@ -143,7 +143,8 @@ private struct DeviceList: View {
     }
 }
 
-/// One thing a device can do, in colour when it can right now, greyed otherwise.
+/// One thing a device can do: green when it can right now, accent while in use, greyed
+/// otherwise.
 private struct Capability: View {
     let symbol: String
     let active: Bool
@@ -152,7 +153,7 @@ private struct Capability: View {
     var body: some View {
         Image(systemName: symbol)
             .font(.system(size: 14))
-            .foregroundStyle(highlighted ? AnyShapeStyle(Color.accentColor) : active ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .foregroundStyle(highlighted ? AnyShapeStyle(Color.accentColor) : active ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
             .frame(width: 22)
     }
 }
