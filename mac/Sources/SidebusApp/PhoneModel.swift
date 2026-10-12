@@ -194,26 +194,53 @@ final class PhoneModel {
         case let .audio(pcm):
             audio?.play(pcm)
         case .audioStopped:
-            stopAudio()
-            syncAudio()
+            // The phone ended the sound (the call, or the link, is over): CALL_START again
+            // if the call goes on over a new link.
+            streaming = false
         }
         syncAudio()
     }
 
-    /// Audio runs from the moment a call is placed or answered until it ends, while the
-    /// phone's helper runs.
-    private func syncAudio() {
-        let wanted = (callState == .active || callState == .outgoing) && audioReady
-        if wanted, audio == nil {
-            startAudio()
-        } else if !wanted, audio != nil {
-            stopAudio()
+    /// True when the last word from the phone is that its helper runs, live or from the
+    /// last check: the call's sound can come to the Mac once the link is up.
+    private var helperKnownRunning: Bool {
+        switch channelState {
+        case .ready(_, _, true, _), .resting(_, _, true, _): return true
+        default: return false
         }
     }
 
+    /// The engine starts as soon as Bluetooth announces a call, ringing included, so that
+    /// voice processing (a second or so to set up) gets ready while the link to the phone
+    /// comes up; the sound flows once both are there, from the moment the call is placed
+    /// or answered, until it ends.
+    private func syncAudio() {
+        let engineWanted = callState != .idle && helperKnownRunning
+        if engineWanted, audio == nil {
+            startAudio()
+        } else if !engineWanted, audio != nil {
+            stopAudio()
+        }
+
+        let streamWanted = (callState == .active || callState == .outgoing) && audioReady && audioStarted
+        if streamWanted, !streaming {
+            streaming = true
+            if let channel { Task { await channel.send(.callStart) } }
+        } else if !streamWanted, streaming {
+            streaming = false
+            if let channel { Task { await channel.send(.callStop) } }
+        }
+    }
+
+    /// The engine runs (`audio.start()` went through).
+    @ObservationIgnored private var audioStarted = false
+    /// CALL_START sent, CALL_STOP not yet.
+    @ObservationIgnored private var streaming = false
+
     private func startAudio() {
         guard let channel else { return }
-        // One sender for the whole call, so the microphone's pieces keep their order.
+        // One sender for the whole call, so the microphone's pieces keep their order. The
+        // phone drops them until CALL_START.
         let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingNewest(25))
         uplink = continuation
         Task {
@@ -231,7 +258,8 @@ final class PhoneModel {
                 try audio.start()
                 audioRoute = audio.route
                 audio.setMuted(isMuted)
-                await channel.send(.callStart)
+                audioStarted = true
+                syncAudio()
             } catch {
                 problem = "Call audio could not start: \(error.localizedDescription)"
                 stopAudio()
@@ -243,10 +271,14 @@ final class PhoneModel {
         guard let audio else { return }
         audio.stop()
         self.audio = nil
+        audioStarted = false
         audioRoute = nil
         uplink?.finish()
         uplink = nil
-        if let channel { Task { await channel.send(.callStop) } }
+        if streaming {
+            streaming = false
+            if let channel { Task { await channel.send(.callStop) } }
+        }
     }
 }
 
