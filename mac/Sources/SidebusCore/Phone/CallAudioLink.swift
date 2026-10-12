@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import CoreAudio
 import Foundation
 import os
 
@@ -19,7 +20,7 @@ public final class CallAudioLink: @unchecked Sendable {
     private static let prebufferMs = 80
 
     private let send: @Sendable (Data) -> Void
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let wireFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
@@ -43,8 +44,26 @@ public final class CallAudioLink: @unchecked Sendable {
     /// Starts the audio engine. Needs the microphone permission; throws when the engine
     /// cannot start.
     public func start() throws {
+        do {
+            try start(voiceProcessing: true)
+        } catch {
+            // macOS sometimes refuses voice processing altogether (-10875), as after an
+            // aggregate input lost a member. A call with some echo beats no call.
+            log.error("voice processing unavailable, going without: \(String(describing: error), privacy: .public)")
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            if player.engine != nil { engine.detach(player) }
+            engine = AVAudioEngine()
+            try start(voiceProcessing: false)
+        }
+    }
+
+    private func start(voiceProcessing: Bool) throws {
         let input = engine.inputNode
-        try input.setVoiceProcessingEnabled(true)
+        if let device = Self.microphone() {
+            try input.auAudioUnit.setDeviceID(device)
+        }
+        if voiceProcessing { try input.setVoiceProcessingEnabled(true) }
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: playFormat)
 
@@ -67,6 +86,58 @@ public final class CallAudioLink: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         player.stop()
         engine.stop()
+    }
+
+    /// The system's default input, unless it is an aggregate device: voice processing fails
+    /// to start on one whose members are not all there (error -10875), as with a wireless
+    /// microphone switched off. The built-in microphone then.
+    static func microphone() -> AudioDeviceID? {
+        if let device = defaultInput(), transportType(device) != kAudioDeviceTransportTypeAggregate {
+            return device
+        }
+        return inputDevices().first { transportType($0) == kAudioDeviceTransportTypeBuiltIn }
+    }
+
+    private static func defaultInput() -> AudioDeviceID? {
+        var device = AudioDeviceID(0)
+        guard property(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultInputDevice, &device),
+              device != 0 else { return nil }
+        return device
+    }
+
+    private static func inputDevices() -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
+        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices)
+        return devices.filter { device in
+            var streams = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain)
+            var streamsSize: UInt32 = 0
+            AudioObjectGetPropertyDataSize(device, &streams, 0, nil, &streamsSize)
+            return streamsSize > 0
+        }
+    }
+
+    private static func transportType(_ device: AudioDeviceID) -> UInt32 {
+        var value: UInt32 = 0
+        _ = property(device, kAudioDevicePropertyTransportType, &value)
+        return value
+    }
+
+    private static func property<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ value: inout T) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(MemoryLayout<T>.size)
+        return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr
     }
 
     /// Sends silence instead of the microphone, while true.
