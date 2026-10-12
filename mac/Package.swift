@@ -8,6 +8,7 @@ let package = Package(
         .executable(name: "SidebusApp", targets: ["SidebusApp"]),
         .library(name: "SidebusCore", targets: ["SidebusCore"]),
         .executable(name: "HandsFreeProbe", targets: ["HandsFreeProbe"]),
+        .executable(name: "CallAudioBridge", targets: ["CallAudioBridge"]),
     ],
     targets: [
         // Declarations of the private CoreGraphics classes for the virtual display.
@@ -36,6 +37,19 @@ let package = Package(
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
                     "-Xlinker", "Sources/HandsFreeProbe/Info.plist",
+                ]),
+            ]
+        ),
+        // Throwaway probe: plays a call's audio from the phone and sends the
+        // microphone back, over the adb forward set up by android/callaudioprobe.
+        .executableTarget(
+            name: "CallAudioBridge",
+            exclude: ["Info.plist"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/CallAudioBridge/Info.plist",
                 ]),
             ]
         ),

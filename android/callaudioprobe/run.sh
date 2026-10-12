@@ -9,4 +9,7 @@ OUT="$(mktemp -d)"
 javac -source 11 -target 11 -nowarn -cp "$ANDROID_JAR" -d "$OUT" CallAudioProbe.java 2>/dev/null
 "$BUILD_TOOLS/d8" --min-api 33 --lib "$ANDROID_JAR" --output "$OUT" "$OUT"/*.class
 adb push "$OUT/classes.dex" /data/local/tmp/callaudioprobe.dex >/dev/null
+if [ "$1" = stream ]; then
+    adb forward tcp:27183 localabstract:sidebus-callaudio >/dev/null
+fi
 adb shell CLASSPATH=/data/local/tmp/callaudioprobe.dex app_process / CallAudioProbe "$@"

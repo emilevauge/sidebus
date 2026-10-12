@@ -7,8 +7,12 @@
 //   ./run.sh check                 interceptable or not
 //   ./run.sh down <seconds>        record the downlink to /data/local/tmp/down.pcm
 //   ./run.sh up <seconds>          play a 440 Hz tone into the uplink
+//   ./run.sh stream                bridge a call to the Mac, see below
 //
-// The last two only work while a call is active.
+// down and up only work while a call is active. stream listens on the abstract
+// socket sidebus-callaudio, which run.sh forwards to tcp:27183 on the Mac. Once a
+// client is connected and a call is active, it sends the downlink and injects what it
+// receives into the uplink, both as 16 kHz mono 16 bit PCM, until the call ends.
 
 import android.content.Context;
 import android.media.AudioDeviceInfo;
@@ -17,18 +21,29 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.net.LocalServerSocket;
+import android.net.LocalSocket;
+import android.os.Binder;
+import android.os.IBinder;
 import android.os.Looper;
+import android.telephony.TelephonyManager;
 
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public final class CallAudioProbe {
     private static final int RATE = 16000;
+    private static TelephonyManager telephony;
 
     public static void main(String[] args) throws Exception {
         Looper.prepareMainLooper();
-        AudioManager audio = shellContext().getSystemService(AudioManager.class);
+        Context context = shellContext();
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        telephony = context.getSystemService(TelephonyManager.class);
         String command = args.length > 0 ? args[0] : "check";
         int seconds = args.length > 1 ? Integer.parseInt(args[1]) : 5;
 
@@ -47,6 +62,7 @@ public final class CallAudioProbe {
         switch (command) {
             case "down": down(audio, format, seconds); break;
             case "up": up(audio, format, seconds); break;
+            case "stream": stream(audio); break;
             default: break;
         }
     }
@@ -124,6 +140,111 @@ public final class CallAudioProbe {
         track.release();
         recorder.join();
         System.out.println("tone sent");
+    }
+
+    private static void stream(AudioManager audio) throws Exception {
+        // 20 ms frames.
+        final int frameBytes = RATE / 50 * 2;
+        LocalServerSocket server = new LocalServerSocket("sidebus-callaudio");
+        System.out.println("listening on sidebus-callaudio");
+        LocalSocket client = server.accept();
+        System.out.println("client connected");
+        while (audio.getMode() != AudioManager.MODE_IN_CALL) Thread.sleep(100);
+        System.out.println("call active");
+
+        AudioFormat in = new AudioFormat.Builder().setSampleRate(RATE)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
+        AudioFormat out = new AudioFormat.Builder().setSampleRate(RATE)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
+        AudioRecord downlink = (AudioRecord) AudioManager.class
+                .getMethod("getCallDownlinkExtractionAudioRecord", AudioFormat.class)
+                .invoke(audio, in);
+        AudioTrack uplink = (AudioTrack) AudioManager.class
+                .getMethod("getCallUplinkInjectionAudioTrack", AudioFormat.class)
+                .invoke(audio, out);
+        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (device.getType() == AudioDeviceInfo.TYPE_TELEPHONY) uplink.setPreferredDevice(device);
+        }
+        // The Mac's microphone replaces the phone's, and its speakers the earpiece.
+        // Call screening mode keeps the call audio off the phone while interception
+        // still works; the voice call volume goes to its minimum in case the mode
+        // does not hold.
+        boolean wasMuted = audio.isMicrophoneMute();
+        int volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+        audio.setMicrophoneMute(true);
+        setMode(AudioManager.MODE_CALL_SCREENING);
+        audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
+                audio.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL), 0);
+        System.out.println("mode now " + audio.getMode() + ", voice call volume "
+                + audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL) + " (was " + volume + ")");
+
+        downlink.startRecording();
+        uplink.play();
+        System.out.println("bridging, uplink routed to "
+                + (uplink.getRoutedDevice() == null ? "?" : uplink.getRoutedDevice().getType()));
+
+        OutputStream toMac = client.getOutputStream();
+        InputStream fromMac = client.getInputStream();
+        Thread receiver = new Thread(() -> {
+            byte[] buffer = new byte[frameBytes];
+            try {
+                int read;
+                while ((read = fromMac.read(buffer)) > 0) uplink.write(buffer, 0, read);
+            } catch (Exception e) {
+                System.out.println("from Mac: " + e);
+            }
+        });
+        receiver.setDaemon(true);
+        receiver.start();
+
+        byte[] buffer = new byte[frameBytes];
+        try {
+            long lastMode = -1;
+            // Not the audio mode: the bridge holds it at call screening itself, so it
+            // would outlive the call.
+            while (telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
+                if (audio.getMode() != lastMode) {
+                    lastMode = audio.getMode();
+                    System.out.println("mode " + lastMode);
+                }
+                int read = downlink.read(buffer, 0, buffer.length);
+                if (read > 0) toMac.write(buffer, 0, read);
+            }
+        } catch (Exception e) {
+            System.out.println("to Mac: " + e);
+        } finally {
+            audio.setMicrophoneMute(wasMuted);
+            audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, volume, 0);
+            try { setMode(AudioManager.MODE_NORMAL); } catch (Exception e) { System.out.println("mode: " + e); }
+            downlink.stop();
+            downlink.release();
+            uplink.stop();
+            uplink.release();
+            client.close();
+            server.close();
+            System.out.println("call ended");
+            System.exit(0);
+        }
+    }
+
+    // Audio service keeps the mode only while this binder lives, so it stays referenced.
+    private static final IBinder MODE_TOKEN = new Binder();
+
+    // AudioManager.setMode reads the application context, which app_process lacks;
+    // the service it calls takes the package name directly.
+    private static void setMode(int mode) throws Exception {
+        Method getService = AudioManager.class.getDeclaredMethod("getService");
+        getService.setAccessible(true);
+        Object service = getService.invoke(null);
+        for (Method method : service.getClass().getMethods()) {
+            if (method.getName().equals("setMode") && method.getParameterCount() == 3) {
+                method.invoke(service, mode, MODE_TOKEN, "com.android.shell");
+                return;
+            }
+        }
+        System.out.println("no IAudioService.setMode(int, IBinder, String)");
     }
 
     private static void record(AudioRecord record, int seconds, String path) {
