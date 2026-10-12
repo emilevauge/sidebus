@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 import os
@@ -56,7 +57,8 @@ public actor PhoneBridgeHost {
             guard serial != phone else { return }
             var secret = try await storedSecret(on: phone)
             let runs = try await helperRuns(on: phone)
-            if secret == nil || !runs {
+            let current = try await helperIsCurrent(on: phone)
+            if secret == nil || !runs || !current {
                 secret = try await startHelper(on: phone)
             }
             // The app proves itself to the helper with this secret. HyperOS also keeps the
@@ -91,6 +93,15 @@ public actor PhoneBridgeHost {
     private func helperRuns(on serial: String) async throws -> Bool {
         let output = (try? await adb(["-s", serial, "shell", "pgrep", "-f", "CallBridge"])) ?? ""
         return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether the helper on the phone is the one this app carries: a helper started by
+    /// an older Sidebus keeps running until the phone restarts, unless replaced.
+    private func helperIsCurrent(on serial: String) async throws -> Bool {
+        guard let local = try? Data(contentsOf: dex) else { return true }
+        let digest = Insecure.MD5.hash(data: local).map { String(format: "%02x", $0) }.joined()
+        let remote = (try? await adb(["-s", serial, "shell", "md5sum", Self.remoteDex])) ?? ""
+        return remote.hasPrefix(digest)
     }
 
     private func storedSecret(on serial: String) async throws -> String? {

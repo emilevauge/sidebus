@@ -87,25 +87,48 @@ public final class CallBridge {
         }
 
         secret = hex(args[0]);
-        ServerSocket server = new ServerSocket(PORT, 4, InetAddress.getLoopbackAddress());
+        ServerSocket server = new ServerSocket(PORT, 16, InetAddress.getLoopbackAddress());
         System.out.println("ready");
         while (true) {
-            try (Socket client = server.accept()) {
-                client.setTcpNoDelay(true);
-                client.setSoTimeout(5_000);
-                if (!authenticate(client)) {
-                    System.out.println("refused a client without the secret");
-                    continue;
+            Socket client = server.accept();
+            // One thread per connection: a check must get its answer while a call is
+            // carried, or the app takes the helper for gone.
+            Thread thread = new Thread(() -> serve(client));
+            thread.setDaemon(true);
+            thread.start();
+        }
+    }
+
+    /** The call being carried, closed when another takes its place. */
+    private static Socket current;
+
+    private static void serve(Socket client) {
+        try (Socket socket = client) {
+            socket.setTcpNoDelay(true);
+            socket.setSoTimeout(5_000);
+            if (!authenticate(socket)) {
+                System.out.println("refused a client without the secret");
+                return;
+            }
+            socket.setSoTimeout(0);
+            int command = socket.getInputStream().read();
+            if (command == 'P') {
+                socket.getOutputStream().write('K');
+                return;
+            }
+            if (command != 'C') return;
+            synchronized (CallBridge.class) {
+                if (current != null) {
+                    try { current.close(); } catch (IOException ignored) { }
                 }
-                client.setSoTimeout(0);
-                int command = client.getInputStream().read();
-                if (command == 'P') {
-                    client.getOutputStream().write('K');
-                } else if (command == 'C' && awaitCall()) {
-                    bridge(client);
-                }
-            } catch (Exception e) {
-                System.out.println("bridge: " + e);
+                current = socket;
+            }
+            if (awaitCall(socket)) bridge(socket);
+        } catch (Exception e) {
+            System.out.println("bridge: " + e);
+        } finally {
+            synchronized (CallBridge.class) {
+                if (current == client) current = null;
             }
         }
     }
@@ -140,15 +163,20 @@ public final class CallBridge {
         return bytes;
     }
 
-    private static boolean awaitCall() throws InterruptedException {
+    private static boolean awaitCall(Socket socket) throws Exception {
         long deadline = System.currentTimeMillis() + CALL_WAIT_MS;
+        InputStream in = socket.getInputStream();
+        byte[] drain = new byte[4096];
         while (telephony.getCallState() != TelephonyManager.CALL_STATE_OFFHOOK
                 || audio.getMode() != AudioManager.MODE_IN_CALL) {
-            if (System.currentTimeMillis() > deadline) {
+            if (System.currentTimeMillis() > deadline || socket.isClosed()) {
                 System.out.println("no call came up");
                 return false;
             }
-            Thread.sleep(100);
+            // The Mac's microphone may already flow: read it away rather than let it
+            // fill the socket and stall the app.
+            while (in.available() > 0) in.read(drain, 0, Math.min(drain.length, in.available()));
+            Thread.sleep(50);
         }
         return true;
     }
@@ -197,7 +225,8 @@ public final class CallBridge {
 
         byte[] buffer = new byte[FRAME_BYTES];
         try {
-            while (receiver.isAlive() && telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
+            while (receiver.isAlive() && !client.isClosed()
+                    && telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
                 int read = downlink.read(buffer, 0, buffer.length);
                 if (read > 0) toMac.write(buffer, 0, read);
             }

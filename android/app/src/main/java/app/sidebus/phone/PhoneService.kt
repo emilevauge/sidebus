@@ -127,9 +127,10 @@ class PhoneService : Service() {
 
     private fun handleGranted(message: Message, connection: Connection) {
         when (message) {
-            is Message.CallStart -> startCall(connection)
+            // Off the read loop, which must keep answering the Mac's pings.
+            is Message.CallStart -> scope.launch { startCall(connection) }
             is Message.CallStop -> endCall()
-            is Message.CallAudio -> runCatching { call?.output?.write(message.pcm) }
+            is Message.CallAudio -> uplink.offer(message.pcm)
             is Message.ContactsRequest -> contacts()?.let { connection.send(Message.Contacts(it)) }
             else -> Unit
         }
@@ -142,7 +143,7 @@ class PhoneService : Service() {
             Log.i(TAG, "$peerName known, calls granted")
             granted = connection
             connection.send(Message.CallGrant(CallGrantStatus.GRANTED, token))
-            sendStatus(connection, force = true)
+            scope.launch { runCatching { sendStatus(connection, force = true) } }
             sendRecentCaller(connection)
             watchStatus()
             return
@@ -173,6 +174,28 @@ class PhoneService : Service() {
     }
 
     // MARK: status
+
+    /**
+     * The Mac's microphone on its way to the helper, through a thread of its own: written
+     * from the read loop, a helper slow to read stalled the loop, and the Mac, missing its
+     * pongs, dropped the link. Late audio is dropped rather than queued.
+     */
+    private val uplink = java.util.concurrent.ArrayBlockingQueue<ByteArray>(10)
+
+    private fun startUplink(opened: CallBridgeClient.Call) {
+        uplink.clear()
+        val thread = Thread {
+            try {
+                while (call === opened) {
+                    val pcm = uplink.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
+                    opened.output.write(pcm)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        thread.isDaemon = true
+        thread.start()
+    }
 
     private fun watchStatus() {
         statusJob?.cancel()
@@ -211,6 +234,7 @@ class PhoneService : Service() {
             return
         }
         call = opened
+        startUplink(opened)
         // Wi-Fi power saving delays packets by tens of milliseconds: off for the call.
         wifiLock = getSystemService(WifiManager::class.java)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "sidebus-call")

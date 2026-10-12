@@ -46,8 +46,11 @@ class CallBridgeClient(context: Context) {
 
     private fun open(command: Char): Socket {
         val secret = secret() ?: error("no helper secret yet")
-        val socket = Socket(InetAddress.getLoopbackAddress(), PORT)
+        // A bounded connect: an unbounded one hung for most of a minute when the helper's
+        // queue was full.
+        val socket = Socket()
         try {
+            socket.connect(java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), PORT), 1_000)
             socket.tcpNoDelay = true
             socket.soTimeout = 2_000
             val input = DataInputStream(socket.getInputStream())
