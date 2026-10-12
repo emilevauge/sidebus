@@ -42,7 +42,7 @@ public final class CallAudioProbe {
         AudioManager audio = context.getSystemService(AudioManager.class);
         telephony = context.getSystemService(TelephonyManager.class);
         String command = args.length > 0 ? args[0] : "check";
-        int seconds = args.length > 1 ? Integer.parseInt(args[1]) : 5;
+        int seconds = args.length > 1 && args[1].matches("\\d+") ? Integer.parseInt(args[1]) : 5;
 
         boolean interceptable = (boolean) AudioManager.class
                 .getMethod("isPstnCallAudioInterceptable").invoke(audio);
@@ -59,7 +59,7 @@ public final class CallAudioProbe {
         switch (command) {
             case "down": down(audio, format, seconds); break;
             case "up": up(audio, format, seconds); break;
-            case "stream": stream(audio); break;
+            case "stream": stream(audio, !(args.length > 1 && args[1].equals("nomute"))); break;
             default: break;
         }
     }
@@ -139,7 +139,7 @@ public final class CallAudioProbe {
         System.out.println("tone sent");
     }
 
-    private static void stream(AudioManager audio) throws Exception {
+    private static void stream(AudioManager audio, boolean muteMic) throws Exception {
         // 20 ms frames.
         final int frameBytes = RATE / 50 * 2;
         LocalServerSocket server = new LocalServerSocket("sidebus-callaudio");
@@ -170,7 +170,11 @@ public final class CallAudioProbe {
         // policy indexes nor routing changes take it off (see the git history).
         boolean wasMuted = audio.isMicrophoneMute();
         int volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
-        audio.setMicrophoneMute(true);
+        audio.setMicrophoneMute(muteMic);
+        System.out.println("phone microphone muted: " + muteMic);
+        // On this Qualcomm platform the microphone mute also silences what is injected
+        // into the uplink; Xiaomi's own call relay sets this key next to the mute.
+        audio.setParameters("incall_music_mute=false");
         audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
                 audio.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL), 0);
 
@@ -183,9 +187,13 @@ public final class CallAudioProbe {
         InputStream fromMac = client.getInputStream();
         Thread receiver = new Thread(() -> {
             byte[] buffer = new byte[frameBytes];
+            Level level = new Level("from Mac");
             try {
                 int read;
-                while ((read = fromMac.read(buffer)) > 0) uplink.write(buffer, 0, read);
+                while ((read = fromMac.read(buffer)) > 0) {
+                    uplink.write(buffer, 0, read);
+                    level.add(buffer, read);
+                }
             } catch (Exception e) {
                 System.out.println("from Mac: " + e);
             }
@@ -193,9 +201,11 @@ public final class CallAudioProbe {
         receiver.setDaemon(true);
         receiver.start();
 
+
         byte[] buffer = new byte[frameBytes];
         try {
-            long lastMode = -1, sum = 0, samples = 0;
+            long lastMode = -1;
+            Level level = new Level("downlink");
             // Not the audio mode: the bridge holds it at call redirect itself, so it
             // would outlive the call.
             while (telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
@@ -204,16 +214,9 @@ public final class CallAudioProbe {
                     System.out.println("mode " + lastMode);
                 }
                 int read = downlink.read(buffer, 0, buffer.length);
-                if (read > 0) toMac.write(buffer, 0, read);
-                for (int j = 0; j + 1 < read; j += 2) {
-                    short sample = (short) ((buffer[j] & 0xff) | (buffer[j + 1] << 8));
-                    sum += (long) sample * sample;
-                    samples++;
-                }
-                if (samples >= RATE * 2) {
-                    System.out.println("downlink rms " + (long) Math.sqrt(sum / samples));
-                    sum = 0;
-                    samples = 0;
+                if (read > 0) {
+                    toMac.write(buffer, 0, read);
+                    level.add(buffer, read);
                 }
             }
         } catch (Exception e) {
@@ -229,6 +232,27 @@ public final class CallAudioProbe {
             server.close();
             System.out.println("call ended");
             System.exit(0);
+        }
+    }
+
+    // Logs the RMS of 16 bit PCM every two seconds of audio.
+    private static final class Level {
+        private final String name;
+        private long sum, samples;
+
+        Level(String name) { this.name = name; }
+
+        void add(byte[] buffer, int length) {
+            for (int j = 0; j + 1 < length; j += 2) {
+                short sample = (short) ((buffer[j] & 0xff) | (buffer[j + 1] << 8));
+                sum += (long) sample * sample;
+                samples++;
+            }
+            if (samples >= RATE * 2) {
+                System.out.println(name + " rms " + (long) Math.sqrt(sum / samples));
+                sum = 0;
+                samples = 0;
+            }
         }
     }
 
