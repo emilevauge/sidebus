@@ -191,11 +191,25 @@ public final class CallAudioProbe {
         Thread receiver = new Thread(() -> {
             byte[] buffer = new byte[frameBytes];
             Level level = new Level("from Mac");
-            try {
-                int read;
-                while ((read = fromMac.read(buffer)) > 0) {
-                    uplink.write(buffer, 0, read);
-                    level.add(buffer, read);
+            // Kept to check what the Mac sent, apart from what the network let through.
+            try (FileOutputStream dump = new FileOutputStream("/data/local/tmp/from-mac.pcm")) {
+                // The Mac starts sending before the call is up, and a blocked write lets
+                // more pile up: play only the latest audio, or the other party hears
+                // everything seconds late.
+                int held = 0, read;
+                skipBacklog(fromMac, 0);
+                while (true) {
+                    if (held == 0) skipBacklog(fromMac, MAX_BACKLOG_BYTES);
+                    if ((read = fromMac.read(buffer, held, buffer.length - held)) <= 0) break;
+                    // A read may end in the middle of a sample; AudioTrack refuses that
+                    // write whole, so keep the odd byte for the next one.
+                    int length = held + read;
+                    int whole = length & ~1;
+                    uplink.write(buffer, 0, whole);
+                    dump.write(buffer, 0, whole);
+                    level.add(buffer, whole);
+                    held = length - whole;
+                    if (held > 0) buffer[0] = buffer[whole];
                 }
             } catch (Exception e) {
                 System.out.println("from Mac: " + e);
@@ -236,6 +250,19 @@ public final class CallAudioProbe {
             System.out.println("call ended");
             System.exit(0);
         }
+    }
+
+    // Audio from the Mac allowed to wait in the socket: 100 ms.
+    private static final int MAX_BACKLOG_BYTES = RATE / 10 * 2;
+
+    // Drops what waits beyond keep bytes, in whole samples. True if it dropped any.
+    private static boolean skipBacklog(InputStream in, int keep) throws java.io.IOException {
+        int excess = (in.available() - keep) & ~1;
+        if (excess <= 0) return false;
+        long skipped = 0;
+        while (skipped < excess) skipped += in.skip(excess - skipped);
+        System.out.println("from Mac: dropped " + excess * 1000 / (RATE * 2) + " ms behind");
+        return true;
     }
 
     // What getCallUplinkInjectionAudioTrack builds, but attributed to the shell package
