@@ -63,7 +63,12 @@ public final class CallAudioProbe {
             case "down": down(audio, format, seconds); break;
             case "up": up(audio, format, seconds); break;
             case "stream": stream(audio); break;
-            case "reset": routeCall(audio, false); break;
+            case "reset":
+                routeCall(audio, false);
+                fakeUsbHeadset(false);
+                break;
+            case "usb-on": fakeUsbHeadset(true); listOutputs(audio); break;
+            case "usb-off": fakeUsbHeadset(false); listOutputs(audio); break;
             case "sig":
                 for (Method m : Class.forName("android.media.AudioSystem").getMethods()) {
                     if (m.getName().matches("setStreamVolumeIndexAS|initStreamVolume|setVolumeIndexForAttributes|setVoiceVolume"))
@@ -239,6 +244,38 @@ public final class CallAudioProbe {
             server.close();
             System.out.println("call ended");
             System.exit(0);
+        }
+    }
+
+    // A USB headset nobody plugged in. The modem only reaches outputs of its own
+    // audio module; the earpiece is one, and so is the USB headset output, which a
+    // call takes over from the earpiece as soon as one is connected. Declaring one
+    // through the audio service, as the USB stack would, moves the call there.
+    private static final String FAKE_USB_ADDRESS = "card=1;device=0";
+
+    private static void fakeUsbHeadset(boolean connected) throws Exception {
+        Method getService = AudioManager.class.getDeclaredMethod("getService");
+        getService.setAccessible(true);
+        Object service = getService.invoke(null);
+        Class<?> deviceClass = Class.forName("android.media.AudioDeviceAttributes");
+        Object usb = deviceClass.getConstructor(int.class, int.class, String.class)
+                .newInstance(2 /* ROLE_OUTPUT */, AudioDeviceInfo.TYPE_USB_HEADSET, FAKE_USB_ADDRESS);
+        for (Method method : service.getClass().getMethods()) {
+            if (method.getName().equals("setWiredDeviceConnectionState")
+                    && method.getParameterCount() == 3) {
+                method.invoke(service, usb, connected ? 1 : 0, "com.android.shell");
+                System.out.println("fake USB headset " + (connected ? "connected" : "disconnected"));
+                return;
+            }
+        }
+        System.out.println("no setWiredDeviceConnectionState(AudioDeviceAttributes, int, String)");
+    }
+
+    private static void listOutputs(AudioManager audio) throws Exception {
+        Thread.sleep(1500);
+        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            System.out.println("output: type " + device.getType() + " " + device.getProductName()
+                    + " " + device.getAddress());
         }
     }
 
