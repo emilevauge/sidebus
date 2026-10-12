@@ -25,6 +25,7 @@ object MessageType {
     const val CALL_AUDIO = 0x13
     const val CONTACTS_REQ = 0x14
     const val CONTACTS = 0x15
+    const val CALLER_ID = 0x16
 }
 
 /** CALL_GRANT status, `protocol/PROTOCOL.md` 10.2. */
@@ -193,6 +194,11 @@ sealed class Message {
     /** One line per number: name, tab, number, tab, starred as 0 or 1. */
     class Contacts(val entries: ByteArray) : Message() {
         override val type = MessageType.CONTACTS
+    }
+
+    /** The ringing call's caller as the phone's call screen shows it: title, newline, text. */
+    class CallerId(val caller: ByteArray) : Message() {
+        override val type = MessageType.CALLER_ID
     }
 
     /**

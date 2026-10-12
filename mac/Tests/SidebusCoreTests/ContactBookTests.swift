@@ -53,6 +53,7 @@ final class CallMessageTests: XCTestCase {
             .callAudio(Data([1, 2, 3, 4])),
             .contactsRequest,
             .contacts(Data("Jérôme\t0612\t1\n".utf8)),
+            .callerID(Data("Spam probable\nAppel entrant".utf8)),
         ]
         var decoder = MessageDecoder()
         for message in messages { decoder.append(MessageCodec.encode(message)) }

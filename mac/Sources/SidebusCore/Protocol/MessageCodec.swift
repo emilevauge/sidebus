@@ -110,7 +110,7 @@ public enum MessageCodec {
         case .callStart, .callStop, .contactsRequest:
             break
 
-        case let .callAudio(data), let .contacts(data):
+        case let .callAudio(data), let .contacts(data), let .callerID(data):
             payload.bytes(data)
 
         case let .unknown(_, unknownFlags, data):
@@ -264,6 +264,9 @@ public enum MessageCodec {
 
             case .contacts:
                 return .contacts(reader.rest())
+
+            case .callerID:
+                return .callerID(reader.rest())
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)

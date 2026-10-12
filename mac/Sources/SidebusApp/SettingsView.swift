@@ -60,6 +60,9 @@ struct SettingsView: View {
                         .controlSize(.small)
                 }
             }
+            LabeledContent("Caller names") {
+                StatusText(phone.callerNamesReadable ? "From the phone" : "Allow on the phone", ok: phone.callerNamesReadable)
+            }
             LabeledContent("tel: links") {
                 if handlesLinks {
                     Text("Sidebus").foregroundStyle(.secondary)

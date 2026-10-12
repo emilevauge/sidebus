@@ -71,6 +71,9 @@ class PhoneService : Service() {
         )
         val info = DeviceDescriptor.deviceInfo(this)
         advertiser.start(PORT, info, ServiceAdvertiser.CALL_SERVICE_TYPE)
+        CallerIdListener.onCaller = { caller ->
+            granted?.let { connection -> scope.launch { runCatching { connection.send(Message.CallerId(caller.encoded())) } } }
+        }
         scope.launch { serve(info) }
     }
 
@@ -140,6 +143,7 @@ class PhoneService : Service() {
             granted = connection
             connection.send(Message.CallGrant(CallGrantStatus.GRANTED, token))
             sendStatus(connection, force = true)
+            sendRecentCaller(connection)
             watchStatus()
             return
         }
@@ -180,10 +184,18 @@ class PhoneService : Service() {
         }
     }
 
+    /** A Mac connecting while the phone rings gets the caller it missed. */
+    private fun sendRecentCaller(connection: Connection) {
+        val caller = CallerIdListener.latest ?: return
+        if (System.currentTimeMillis() - caller.at > 60_000) return
+        connection.send(Message.CallerId(caller.encoded()))
+    }
+
     private fun sendStatus(connection: Connection, force: Boolean) {
         var flags = 0
         if (helper.isRunning() || call != null) flags = flags or 0x01
         if (hasContacts()) flags = flags or 0x02
+        if (CallerIdListener.isEnabled(this)) flags = flags or 0x04
         if (flags == lastStatus && !force) return
         lastStatus = flags
         connection.send(Message.CallStatus(flags))
@@ -269,8 +281,13 @@ class PhoneService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("Sidebus carries calls to your Mac")
             .setOngoing(true)
-        if (!hasContacts()) {
-            builder.setContentText("Tap to let the Mac search your contacts")
+        val missing = when {
+            !hasContacts() -> "Tap to let the Mac search your contacts"
+            !CallerIdListener.isEnabled(this) -> "Tap to let the Mac show who calls"
+            else -> null
+        }
+        if (missing != null) {
+            builder.setContentText(missing)
             builder.setContentIntent(
                 PendingIntent.getActivity(
                     this, 0, Intent(this, PermissionsActivity::class.java), PendingIntent.FLAG_IMMUTABLE,

@@ -83,6 +83,7 @@ object MessageCodec {
             is Message.CallStart, is Message.CallStop, is Message.ContactsRequest -> Unit
             is Message.CallAudio -> payload.write(message.pcm)
             is Message.Contacts -> payload.write(message.entries)
+            is Message.CallerId -> payload.write(message.caller)
 
             is Message.Unknown -> {
                 flags = message.flags
@@ -165,6 +166,7 @@ object MessageCodec {
             MessageType.CALL_AUDIO -> Message.CallAudio(reader.rest())
             MessageType.CONTACTS_REQ -> Message.ContactsRequest
             MessageType.CONTACTS -> Message.Contacts(reader.rest())
+            MessageType.CALLER_ID -> Message.CallerId(reader.rest())
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

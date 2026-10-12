@@ -35,6 +35,11 @@ public actor PhoneChannel {
         case audioStopped
         /// The phone's persistent identifier, the one its screen pairing knows it by.
         case device(UUID)
+        /// Who rings, as the phone's call screen shows it: a contact, a business, a spam
+        /// warning.
+        case caller(title: String, text: String)
+        /// Whether the phone may read its dialer's notification, for the caller names.
+        case callerNamesReadable(Bool)
     }
 
     private let macName: String
@@ -199,6 +204,7 @@ public actor PhoneChannel {
                         helperRuns: flags & 0x01 != 0,
                         contactsReadable: flags & 0x02 != 0
                     )))
+                    emit(.callerNamesReadable(flags & 0x04 != 0))
 
                 case let .contacts(data):
                     let text = String(decoding: data, as: UTF8.self)
@@ -208,6 +214,10 @@ public actor PhoneChannel {
 
                 case let .callAudio(pcm):
                     emit(.audio(pcm))
+
+                case let .callerID(data):
+                    let lines = String(decoding: data, as: UTF8.self).split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+                    emit(.caller(title: lines.first.map(String.init) ?? "", text: lines.count > 1 ? String(lines[1]) : ""))
 
                 case .callStop:
                     emit(.audioStopped)

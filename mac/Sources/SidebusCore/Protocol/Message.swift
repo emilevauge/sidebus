@@ -23,6 +23,7 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case callAudio = 0x13
     case contactsRequest = 0x14
     case contacts = 0x15
+    case callerID = 0x16
 }
 
 /// CALL_GRANT status, `protocol/PROTOCOL.md` 10.2.
@@ -101,6 +102,8 @@ public enum Message: Sendable, Equatable {
     case contactsRequest
     /// One line per number: name, tab, number, tab, starred as 0 or 1.
     case contacts(Data)
+    /// The ringing call's caller as the phone's call screen shows it: title, newline, text.
+    case callerID(Data)
 
     /// A message of a type this version does not know. Kept so that it can be skipped
     /// cleanly rather than closing the connection.
@@ -129,6 +132,7 @@ public enum Message: Sendable, Equatable {
         case .callAudio: return MessageType.callAudio.rawValue
         case .contactsRequest: return MessageType.contactsRequest.rawValue
         case .contacts: return MessageType.contacts.rawValue
+        case .callerID: return MessageType.callerID.rawValue
         case let .unknown(type, _, _): return type
         }
     }

@@ -83,6 +83,7 @@ Fields are serialised in table order, with no alignment and no padding.
 | `0x13` | CALL_AUDIO     | bidirectional      | see 10.4                                |
 | `0x14` | CONTACTS_REQ   | Mac to Android     | empty, see 10.5                         |
 | `0x15` | CONTACTS       | Android to Mac     | see 10.5                                |
+| `0x16` | CALLER_ID      | Android to Mac     | see 10.6                                |
 
 Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
 the socket.
@@ -403,7 +404,7 @@ Until a CALL_GRANT with status 1, the phone ignores every message below.
 
 | Field | Type | Description                                                  |
 | ----- | ---- | ------------------------------------------------------------ |
-| flags | `u8` | bit 0: the audio helper runs, bit 1: contacts are readable   |
+| flags | `u8` | bit 0: the audio helper runs, bit 1: contacts are readable, bit 2: caller names are readable |
 
 Sent after CALL_GRANT, then on every change.
 
@@ -424,3 +425,14 @@ CALL_STATUS is clear.
 | Field   | Type | Description                                                     |
 | ------- | ---- | --------------------------------------------------------------- |
 | entries | rest | UTF-8 text, one line per number: name, tab, number, tab, `0` or `1` for starred |
+
+### 10.6 CALLER_ID (`0x16`)
+
+What the phone's own call screen shows for a ringing call: a contact, a business found
+online, a spam warning. The phone reads it from its dialer's incoming call notification,
+with the notification access its user granted (bit 2 of CALL_STATUS), and sends it as soon
+as it shows, or right after CALL_GRANT when the call already rings.
+
+| Field   | Type | Description                                                       |
+| ------- | ---- | ----------------------------------------------------------------- |
+| caller  | rest | UTF-8 text: the notification's title, then a newline and its text |

@@ -16,11 +16,29 @@ class PermissionsActivity : Activity() {
         PhoneService.start(this)
         val missing = arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.POST_NOTIFICATIONS)
             .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isEmpty()) finish() else requestPermissions(missing.toTypedArray(), 0)
+        if (missing.isEmpty()) {
+            askNotificationAccess()
+            finish()
+        } else {
+            requestPermissions(missing.toTypedArray(), 0)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         PhoneService.start(this)
+        askNotificationAccess()
         finish()
+    }
+
+    /** Caller names come from the dialer's notification, which needs notification access. */
+    private fun askNotificationAccess() {
+        if (CallerIdListener.isEnabled(this)) return
+        startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                .putExtra(
+                    android.provider.Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                    android.content.ComponentName(this, CallerIdListener::class.java).flattenToString(),
+                ),
+        )
     }
 }

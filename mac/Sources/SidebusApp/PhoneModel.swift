@@ -23,6 +23,8 @@ final class PhoneModel {
     /// answered from the Mac, or moved to it. A call placed or answered on the phone
     /// stays there.
     private(set) var callOnMac = false
+    /// Whether the phone passes on who calls, as its call screen shows it.
+    private(set) var callerNamesReadable = false
     /// When the current call was answered, for its duration.
     private(set) var answeredAt: Date?
     /// Who the current call is with: a contact's name, or the number.
@@ -160,6 +162,21 @@ final class PhoneModel {
         syncAudio()
     }
 
+    /// The phone's call screen named the caller: shown in place of a bare number, with
+    /// what it adds (a spam warning, a business), unless a contact already names it.
+    private func callerShown(title: String, text: String) {
+        guard case let .incoming(number) = callState else { return }
+        if let number, ContactBook.contact(for: number, in: contacts) != nil { return }
+        let digits = ContactBook.dialable(title)
+        // A title that is only the number again adds nothing.
+        let isNumber = !digits.isEmpty && digits.count * 2 >= title.filter { !$0.isWhitespace }.count
+        guard !title.isEmpty, !isNumber else { return }
+        let generic = ["incoming call", "appel entrant", "appel vocal entrant"]
+        let detail = generic.contains(text.lowercased()) ? nil : text.isEmpty ? nil : text
+        peer = detail.map { "\(title) · \($0)" } ?? title
+        notifications.showIncoming(caller: [peer, number].compactMap { $0 }.joined(separator: "\n"))
+    }
+
     private func syncChannel() {
         guard let channel else { return }
         let wanted = callOnMac || {
@@ -236,6 +253,10 @@ final class PhoneModel {
             contacts = list
         case let .audio(pcm):
             audio?.play(pcm)
+        case let .caller(title, text):
+            callerShown(title: title, text: text)
+        case let .callerNamesReadable(readable):
+            callerNamesReadable = readable
         case let .device(uuid):
             phoneDeviceID = uuid.uuidString
             UserDefaults.standard.set(uuid.uuidString, forKey: "phoneDeviceID")
