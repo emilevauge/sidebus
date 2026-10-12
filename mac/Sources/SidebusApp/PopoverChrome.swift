@@ -70,6 +70,15 @@ final class PopoverHost<Content: View>: NSViewController {
         popover.contentSize = size
     }
 
+    /// Taller at once by `height`, without animation, ahead of content that will fill it.
+    func grow(by height: CGFloat) {
+        guard let popover, popover.isShown else { return }
+        let animates = popover.animates
+        popover.animates = false
+        popover.contentSize.height += height
+        popover.animates = animates
+    }
+
     /// Once per pass, after SwiftUI's update: SwiftUI may invalidate several times in a
     /// row, and resizing within its update (an animated one, say the keypad opening)
     /// made it animate every view from positions offset by the change in height.

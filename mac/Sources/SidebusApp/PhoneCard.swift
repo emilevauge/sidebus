@@ -179,9 +179,7 @@ private struct CallView: View {
                             title: phone.isMuted ? "Unmute" : "Mute"
                         ) { phone.toggleMute() }
                     }
-                    RoundButton(symbol: "circle.grid.3x3.fill", color: .gray, title: "Keypad") {
-                        withAnimation(Motion.resize) { showsKeypad.toggle() }
-                    }
+                    RoundButton(symbol: "circle.grid.3x3.fill", color: .gray, title: "Keypad") { toggleKeypad() }
                     RoundButton(symbol: "phone.down.fill", color: .red, title: "Hang up") { phone.hangUp() }
                 }
             }
@@ -198,6 +196,20 @@ private struct CallView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Opening, the popover makes room first, with nothing animating, then the keypad
+    /// fades into it: resized during SwiftUI's animation, the popover made SwiftUI move
+    /// every view from positions offset by the added height. Closing needs no care.
+    private func toggleKeypad() {
+        guard !showsKeypad else {
+            withAnimation(Motion.resize) { showsKeypad = false }
+            return
+        }
+        AppDelegate.shared.growPanel(by: Keypad.height + 12)
+        DispatchQueue.main.async {
+            withAnimation(Motion.resize) { showsKeypad = true }
+        }
     }
 
     private var soundStatus: String {
@@ -241,6 +253,8 @@ private struct RoundButton: View {
 
 private struct Keypad: View {
     let press: (String) -> Void
+    /// Fixed, so the popover can make room for it before it shows.
+    static let height: CGFloat = 4 * 30 + 3 * 6
     private let rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]
 
     var body: some View {
@@ -250,7 +264,7 @@ private struct Keypad: View {
                     ForEach(row, id: \.self) { key in
                         Button(key) { press(key) }
                             .font(.title3.monospaced())
-                            .frame(width: 44)
+                            .frame(width: 44, height: 30)
                     }
                 }
             }

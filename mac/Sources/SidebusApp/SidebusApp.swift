@@ -170,6 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Makes room at the bottom of the panel, at once, for content about to appear there.
+    func growPanel(by height: CGFloat) {
+        (popover?.contentViewController as? PopoverHost<SidebusPanel>)?.grow(by: height)
+    }
+
     /// Opens the panel for a ringing call, and closes it when the call ends if it was
     /// opened that way and left alone.
     func showPanelForCall() {
