@@ -518,7 +518,17 @@ final class DeviceManager {
             )
         }
 
-        for device in paired.values where visible[device.deviceID] == nil {
+        // A tablet whose identity was reset pairs again under a new identifier and leaves
+        // its old pairings behind, offline for good: show one row per name, the most
+        // recently seen, and none when that name is online. The settings list them all.
+        let onlineNames = Set(rows.map(\.name))
+        var offlineNames = Set<String>()
+        let offline = paired.values
+            .filter { visible[$0.deviceID] == nil }
+            .sorted { $0.lastSeen > $1.lastSeen }
+            .filter { !onlineNames.contains($0.name) && offlineNames.insert($0.name).inserted }
+
+        for device in offline {
             rows.append(
                 DeviceEntry(
                     id: device.deviceID,

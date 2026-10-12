@@ -45,7 +45,6 @@ public final class CallAudioLink: @unchecked Sendable {
     /// Starts the audio engine. Needs the microphone permission; throws when the engine
     /// cannot start.
     public func start() throws {
-        borrowInput()
         do {
             try startWithVoiceProcessing()
             // Voice processing takes the built-in microphone in place of any aggregate.
@@ -116,7 +115,14 @@ public final class CallAudioLink: @unchecked Sendable {
     public func stop() {
         queue.sync { stopped = true }
         stopEngines()
-        returnInput()
+    }
+
+    private func stopEngines() {
+        captureEngine.inputNode.removeTap(onBus: 0)
+        player.stop()
+        captureEngine.stop()
+        playbackEngine.stop()
+        if player.engine != nil { playbackEngine.detach(player) }
     }
 
     /// The devices the call's sound actually goes through, set once started.
@@ -126,28 +132,6 @@ public final class CallAudioLink: @unchecked Sendable {
         public let microphone: String
         public let speaker: String
         public let echoCancellation: Bool
-    }
-
-    /// Default input set aside for the call, put back when it ends.
-    private var setAsideInput: AudioDeviceID?
-
-    /// Voice processing builds on the default input, and fails (-10875) when that is an
-    /// aggregate missing a member, a USB microphone unplugged say. The call then borrows
-    /// the built-in microphone as the default input.
-    private func borrowInput() {
-        guard let current = Self.defaultInput(),
-              Self.isIncompleteAggregate(current),
-              let builtIn = Self.inputDevices().first(where: { Self.transportType($0) == kAudioDeviceTransportTypeBuiltIn }),
-              Self.setDefaultInput(builtIn)
-        else { return }
-        setAsideInput = current
-        log.info("default input set to the built-in microphone for the call")
-    }
-
-    private func returnInput() {
-        guard let input = setAsideInput else { return }
-        setAsideInput = nil
-        _ = Self.setDefaultInput(input)
     }
 
     /// An aggregate device some of whose members are not connected.
@@ -176,25 +160,6 @@ public final class CallAudioLink: @unchecked Sendable {
             }
             return status != noErr || found == 0
         }
-    }
-
-    private static func setDefaultInput(_ device: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        var value = device
-        return AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
-            UInt32(MemoryLayout<AudioDeviceID>.size), &value) == noErr
-    }
-
-    private func stopEngines() {
-        captureEngine.inputNode.removeTap(onBus: 0)
-        player.stop()
-        captureEngine.stop()
-        playbackEngine.stop()
-        if player.engine != nil { playbackEngine.detach(player) }
     }
 
     /// The system's default input, unless it is an aggregate missing a member. The

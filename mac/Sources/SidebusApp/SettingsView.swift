@@ -71,6 +71,19 @@ struct SettingsView: View {
                     }
                 }
             }
+            // Older pairings of a tablet that paired again, which the panel leaves out.
+            ForEach(devices.pairedDevices.filter { device in !devices.entries.contains { $0.id == device.deviceID } }, id: \.deviceID) { device in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(device.name)
+                        Text("older pairing, last seen \(device.lastSeen.formatted(.relative(presentation: .named)))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Unpair") { devices.unpair(device.deviceID) }
+                }
+            }
             if !devices.pairedDevices.isEmpty {
                 Button("Forget all…", role: .destructive) { confirmingForgetAll = true }
             }
