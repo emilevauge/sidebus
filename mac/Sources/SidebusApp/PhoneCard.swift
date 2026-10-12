@@ -146,7 +146,12 @@ private struct CallView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text(phone.peer ?? "").font(.title2).lineLimit(1)
+            VStack(spacing: 2) {
+                Text(phone.peer ?? "").font(.title2).lineLimit(1)
+                // Held from the start, empty until the number is known.
+                Text(phone.peerCountry ?? " ").font(.subheadline).foregroundStyle(.secondary)
+            }
+            .transaction { $0.animation = nil }
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
             }

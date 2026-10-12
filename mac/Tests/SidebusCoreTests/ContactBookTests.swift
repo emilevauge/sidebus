@@ -60,3 +60,21 @@ final class CallMessageTests: XCTestCase {
         for message in messages { XCTAssertEqual(try decoder.next(), message) }
     }
 }
+
+final class CallingCodeTests: XCTestCase {
+
+    func testFindsTheCountryOfAnInternationalNumber() {
+        XCTAssertEqual(CallingCode.region(of: "+1 415 555 0100"), "US")
+        XCTAssertEqual(CallingCode.region(of: "+33 6 71 23 39 49"), "FR")
+        XCTAssertEqual(CallingCode.region(of: "0044 20 7946 0000"), "GB")
+        XCTAssertEqual(CallingCode.region(of: "+352 621 000 000"), "LU")
+    }
+
+    func testANationalNumberIsFromHome() {
+        XCTAssertEqual(CallingCode.region(of: "06 71 23 39 49", home: "FR"), "FR")
+    }
+
+    func testDrawsTheFlag() {
+        XCTAssertEqual(CallingCode.flag("FR"), "🇫🇷")
+    }
+}

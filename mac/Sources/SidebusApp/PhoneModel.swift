@@ -29,6 +29,11 @@ final class PhoneModel {
     private(set) var answeredAt: Date?
     /// Who the current call is with: a contact's name, or the number.
     private(set) var peer: String?
+    /// The current call's number, when known, for its country.
+    private(set) var peerNumber: String?
+
+    /// "🇺🇸 United States" for the current call's number.
+    var peerCountry: String? { peerNumber.flatMap { CallingCode.label(of: $0) } }
     /// The phone's identifier among the paired devices, once its call channel told it.
     private(set) var phoneDeviceID: String? = UserDefaults.standard.string(forKey: "phoneDeviceID")
     /// The Mac devices the current call's sound goes through.
@@ -144,6 +149,7 @@ final class PhoneModel {
         guard !dialable.isEmpty else { return }
         problem = nil
         peer = name ?? ContactBook.contact(for: dialable, in: contacts)?.name ?? number
+        peerNumber = dialable
         callOnMac = true
         link.dial(dialable)
         syncAudio()
@@ -172,11 +178,18 @@ final class PhoneModel {
         // A title that is only the number again adds nothing, unless Bluetooth gave none.
         let isNumber = !digits.isEmpty && digits.count * 2 >= title.filter { !$0.isWhitespace }.count
         guard !title.isEmpty, !isNumber || number == nil else { return }
+        if isNumber, number == nil { peerNumber = title }
         let generic = ["incoming call", "appel entrant", "appel vocal entrant"]
         let detail = generic.contains(text.lowercased()) ? nil : text.isEmpty ? nil : text
         phoneCaller = detail.map { "\(title) · \($0)" } ?? title
         peer = phoneCaller
-        notifications.showIncoming(caller: [peer, number].compactMap { $0 }.joined(separator: "\n"))
+        notifications.showIncoming(caller: incomingBody)
+    }
+
+    /// The incoming call notification's text: who, then the number and its country.
+    private var incomingBody: String {
+        let numberLine = [peerNumber.flatMap { $0 == peer ? nil : $0 }, peerCountry].compactMap { $0 }.joined(separator: " · ")
+        return [peer, numberLine.isEmpty ? nil : numberLine].compactMap { $0 }.joined(separator: "\n")
     }
 
     /// Who rings, as the phone's call screen named it, for the ringing call only.
@@ -222,8 +235,9 @@ final class PhoneModel {
         case let .incoming(number):
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
             peer = name ?? phoneCaller ?? number ?? "Unknown number"
+            if let number { peerNumber = number }
             if previous != callState {
-                notifications.showIncoming(caller: peer ?? "")
+                notifications.showIncoming(caller: incomingBody)
                 AppDelegate.shared.showPanelForCall()
             }
         case .active:
@@ -240,6 +254,7 @@ final class PhoneModel {
             isMuted = false
             callOnMac = false
             phoneCaller = nil
+            peerNumber = nil
             if previous != .idle {
                 problem = nil
                 AppDelegate.shared.callEnded()
