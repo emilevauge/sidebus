@@ -16,12 +16,16 @@ struct PhoneCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if phone.isInCall {
-                CallView(phone: phone)
-                    .transition(.opacity)
-            } else {
-                SearchView(phone: phone, entry: entry)
-                    .transition(.opacity)
+            // Stacked, not one under the other: during the fade both are there, and in a
+            // column the card, then the popover, would grow by both for a moment.
+            ZStack(alignment: .top) {
+                if phone.isInCall {
+                    CallView(phone: phone)
+                        .transition(.opacity)
+                } else {
+                    SearchView(phone: phone, entry: entry)
+                        .transition(.opacity)
+                }
             }
             if let problem = phone.problem {
                 Text(problem).font(.caption).foregroundStyle(.red)

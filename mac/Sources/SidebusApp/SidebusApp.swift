@@ -92,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         host.popover = popover
         popover.contentViewController = host
+        host.fitPopover()
         self.popover = popover
         NotificationCenter.default.addObserver(
             forName: NSPopover.didCloseNotification, object: popover, queue: .main
@@ -134,15 +135,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the panel, with `number` typed in the call field when a link brought one.
+    ///
+    /// The hop to the next pass lets SwiftUI apply what changed while the popover was
+    /// closed, a call that started say, before it is measured: shown at once, it opened at
+    /// its old size and jumped.
     func showPanel(number: String? = nil) {
         if let number { dialer.text = number }
-        guard let popover, let button = statusItem?.button else { return }
-        (popover.contentViewController as? PopoverHost<SidebusPanel>)?.fitPopover()
-        NSApp.activate(ignoringOtherApps: true)
-        if !popover.isShown {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            watchOutside()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let popover, let button = statusItem?.button else { return }
+            (popover.contentViewController as? PopoverHost<SidebusPanel>)?.fitPopover()
+            NSApp.activate(ignoringOtherApps: true)
+            if !popover.isShown {
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                watchOutside()
+            }
+            popover.contentViewController?.view.window?.makeKey()
         }
-        popover.contentViewController?.view.window?.makeKey()
     }
 }
