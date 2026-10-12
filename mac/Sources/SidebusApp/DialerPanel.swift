@@ -161,6 +161,20 @@ private struct CallView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
             }
+            if let route = phone.audioRoute {
+                VStack(spacing: 2) {
+                    Label(route.microphone, systemImage: "mic")
+                    Label(route.speaker, systemImage: "speaker.wave.2")
+                    Text(route.echoCancellation ? "Echo cancellation on" : "Echo cancellation off: use headphones")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if phone.isInCall, !phone.audioReady {
+                Text("Sound stays on the phone: \(phone.summary)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
 
             if showsKeypad {
                 Keypad { phone.sendTone($0) }

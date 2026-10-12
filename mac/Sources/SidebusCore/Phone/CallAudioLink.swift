@@ -48,6 +48,13 @@ public final class CallAudioLink: @unchecked Sendable {
         borrowInput()
         do {
             try startWithVoiceProcessing()
+            // Voice processing takes the built-in microphone in place of any aggregate.
+            let input = Self.defaultInput().flatMap { Self.transportType($0) == kAudioDeviceTransportTypeAggregate ? nil : $0 }
+                ?? Self.inputDevices().first { Self.transportType($0) == kAudioDeviceTransportTypeBuiltIn }
+            route = Route(
+                microphone: input.map(Self.name) ?? "?",
+                speaker: Self.defaultOutput().map(Self.name) ?? "?",
+                echoCancellation: true)
         } catch {
             // macOS sometimes refuses voice processing altogether (-10875), as when the
             // default input is an aggregate missing a member. A call with some echo beats
@@ -57,6 +64,10 @@ public final class CallAudioLink: @unchecked Sendable {
             captureEngine = AVAudioEngine()
             playbackEngine = AVAudioEngine()
             try startPlain()
+            route = Route(
+                microphone: Self.microphone().map(Self.name) ?? "?",
+                speaker: Self.defaultOutput().map(Self.name) ?? "?",
+                echoCancellation: false)
         }
     }
 
@@ -103,15 +114,24 @@ public final class CallAudioLink: @unchecked Sendable {
         returnInput()
     }
 
+    /// The devices the call's sound actually goes through, set once started.
+    public private(set) var route: Route?
+
+    public struct Route: Sendable, Equatable {
+        public let microphone: String
+        public let speaker: String
+        public let echoCancellation: Bool
+    }
+
     /// Default input set aside for the call, put back when it ends.
     private var setAsideInput: AudioDeviceID?
 
     /// Voice processing builds on the default input, and fails (-10875) when that is an
-    /// aggregate missing a member, a USB microphone unplugged say. With an aggregate it
-    /// takes the built-in microphone anyway, so the call borrows that as the default.
+    /// aggregate missing a member, a USB microphone unplugged say. The call then borrows
+    /// the built-in microphone as the default input.
     private func borrowInput() {
         guard let current = Self.defaultInput(),
-              Self.transportType(current) == kAudioDeviceTransportTypeAggregate,
+              Self.isIncompleteAggregate(current),
               let builtIn = Self.inputDevices().first(where: { Self.transportType($0) == kAudioDeviceTransportTypeBuiltIn }),
               Self.setDefaultInput(builtIn)
         else { return }
@@ -123,6 +143,34 @@ public final class CallAudioLink: @unchecked Sendable {
         guard let input = setAsideInput else { return }
         setAsideInput = nil
         _ = Self.setDefaultInput(input)
+    }
+
+    /// An aggregate device some of whose members are not connected.
+    static func isIncompleteAggregate(_ device: AudioDeviceID) -> Bool {
+        guard transportType(device) == kAudioDeviceTransportTypeAggregate else { return false }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioAggregateDevicePropertyFullSubDeviceList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var list: Unmanaged<CFArray>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFArray>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &list) == noErr,
+              let uids = list?.takeRetainedValue() as? [String] else { return false }
+        return uids.contains { uid in
+            var translate = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            var cfUID = uid as CFString
+            var found = AudioDeviceID(0)
+            var foundSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let status = withUnsafeMutablePointer(to: &cfUID) { pointer in
+                AudioObjectGetPropertyData(
+                    AudioObjectID(kAudioObjectSystemObject), &translate,
+                    UInt32(MemoryLayout<CFString>.size), pointer, &foundSize, &found)
+            }
+            return status != noErr || found == 0
+        }
     }
 
     private static func setDefaultInput(_ device: AudioDeviceID) -> Bool {
@@ -144,10 +192,10 @@ public final class CallAudioLink: @unchecked Sendable {
         if player.engine != nil { playbackEngine.detach(player) }
     }
 
-    /// The system's default input, unless it is an aggregate device, which may miss a
-    /// member. The built-in microphone then.
+    /// The system's default input, unless it is an aggregate missing a member. The
+    /// built-in microphone then.
     static func microphone() -> AudioDeviceID? {
-        if let device = defaultInput(), transportType(device) != kAudioDeviceTransportTypeAggregate {
+        if let device = defaultInput(), !isIncompleteAggregate(device) {
             return device
         }
         return inputDevices().first { transportType($0) == kAudioDeviceTransportTypeBuiltIn }
@@ -158,6 +206,26 @@ public final class CallAudioLink: @unchecked Sendable {
         guard property(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultInputDevice, &device),
               device != 0 else { return nil }
         return device
+    }
+
+    private static func defaultOutput() -> AudioDeviceID? {
+        var device = AudioDeviceID(0)
+        guard property(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDefaultOutputDevice, &device),
+              device != 0 else { return nil }
+        return device
+    }
+
+    private static func name(_ device: AudioDeviceID) -> String {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name) == noErr, let name else {
+            return "#\(device)"
+        }
+        return name.takeRetainedValue() as String
     }
 
     private static func inputDevices() -> [AudioDeviceID] {

@@ -23,6 +23,8 @@ final class PhoneModel {
     private(set) var answeredAt: Date?
     /// Who the current call is with: a contact's name, or the number.
     private(set) var peer: String?
+    /// The Mac devices the current call's sound goes through.
+    private(set) var audioRoute: CallAudioLink.Route?
     /// Last problem worth showing, cleared by the next call.
     private(set) var problem: String?
 
@@ -217,6 +219,7 @@ final class PhoneModel {
             guard self.audio === audio else { return }
             do {
                 try audio.start()
+                audioRoute = audio.route
                 audio.setMuted(isMuted)
                 await channel.send(.callStart)
             } catch {
@@ -230,6 +233,7 @@ final class PhoneModel {
         guard let audio else { return }
         audio.stop()
         self.audio = nil
+        audioRoute = nil
         uplink?.finish()
         uplink = nil
         if let channel { Task { await channel.send(.callStop) } }
