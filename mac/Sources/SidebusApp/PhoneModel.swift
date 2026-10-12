@@ -84,24 +84,23 @@ final class PhoneModel {
         }
     }
 
-    /// One line on where calls stand, for the menu and the dialer.
+    /// Where calls stand, short enough for the phone's row in the device list.
     var summary: String {
         guard isBluetoothConnected else {
-            return phoneName.map { "\($0) is not connected over Bluetooth" }
-                ?? "No phone paired over Bluetooth"
+            return phoneName == nil ? "No phone paired over Bluetooth" : "Not connected over Bluetooth"
         }
         switch channelState {
         case .searching:
-            return "Calls stay on the phone: it is not on this Wi-Fi, nor plugged in"
+            return "Not on this Wi-Fi, nor plugged in"
         case .connecting:
             return "Reaching the phone…"
-        case let .waitingForGrant(phone):
-            return "Allow this Mac in the notification on \(phone)"
-        case let .refused(phone):
-            return "\(phone) refused this Mac its calls"
-        case let .ready(phone, over, helperRuns, _), let .resting(phone, over, helperRuns, _):
-            guard helperRuns else { return "Calls stay on the phone: plug \(phone) in over USB once" }
-            return "Calls go through \(phone), over \(over == .usb ? "USB" : "Wi-Fi")"
+        case .waitingForGrant:
+            return "Allow this Mac in the phone's notification"
+        case .refused:
+            return "Refused this Mac its calls"
+        case let .ready(_, over, helperRuns, _), let .resting(_, over, helperRuns, _):
+            guard helperRuns else { return "Plug it in over USB once to bring calls to the Mac" }
+            return over == .usb ? "USB" : "Wi-Fi"
         }
     }
 

@@ -92,8 +92,9 @@ private struct DeviceList: View {
     let devices: DeviceManager
     let phone: PhoneModel
 
+    /// The devices in reach, and the phone always: its row tells where calls stand.
     private var reachable: [DeviceEntry] {
-        devices.entries.filter { $0.isOnline || ($0.id == phone.phoneDeviceID && phone.callsAvailable) }
+        devices.entries.filter { $0.isOnline || $0.id == phone.phoneDeviceID }
     }
 
     var body: some View {
@@ -141,7 +142,7 @@ private struct DeviceRow: View {
                         .foregroundStyle(reachable ? .primary : .secondary)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isPhone && !phone.callsAvailable ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                 }
 
@@ -178,9 +179,7 @@ private struct DeviceRow: View {
         if entry.isOnline {
             return entry.isPaired ? "\(entry.transportLabel) · click to share the screen" : "\(entry.transportLabel) · click to pair"
         }
-        if isPhone, phone.callsAvailable, let over = phone.channelTransport {
-            return over == .usb ? "USB" : "Wi-Fi"
-        }
+        if isPhone { return phone.summary }
         return entry.detail ?? "Offline"
     }
 

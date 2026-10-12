@@ -76,7 +76,7 @@ private struct SearchView: View {
             HStack(spacing: 8) {
                 Image(systemName: "phone")
                     .foregroundStyle(.secondary)
-                TextField("Call a name or a number", text: $entry.text)
+                TextField(phone.callsAvailable ? "Call a name or a number" : "Calls stay on the phone", text: $entry.text)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .focused($focused)
@@ -130,8 +130,8 @@ private struct SearchView: View {
         }
     }
 
+    /// What concerns calling itself; the phone's state shows in its row of the devices.
     private var statusProblem: String? {
-        if !phone.callsAvailable { return phone.summary }
         if phone.contactsNeedPermission {
             return "Tap the Sidebus notification on the phone to let the Mac search your contacts"
         }
