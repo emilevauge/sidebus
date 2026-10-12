@@ -118,9 +118,13 @@ final class PopoverHost<Content: View>: NSViewController {
         let start = popover.contentSize
         let began = CACurrentMediaTime()
         popover.animates = false
-        animation = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self, weak popover] timer in
+        animation = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self, weak popover] _ in
             MainActor.assumeIsolated {
-                guard let popover else { return timer.invalidate() }
+                guard let self else { return }
+                guard let popover else {
+                    self.animation?.invalidate()
+                    return
+                }
                 let linear = min(1, (CACurrentMediaTime() - began) / Motion.duration)
                 let progress = CGFloat(Self.ease(linear))
                 popover.contentSize = NSSize(
@@ -128,8 +132,8 @@ final class PopoverHost<Content: View>: NSViewController {
                     height: start.height + (target.height - start.height) * progress
                 )
                 if linear >= 1 {
-                    timer.invalidate()
-                    self?.animation = nil
+                    self.animation?.invalidate()
+                    self.animation = nil
                     popover.animates = true
                 }
             }
