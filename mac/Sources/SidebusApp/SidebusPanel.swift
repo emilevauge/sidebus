@@ -31,8 +31,8 @@ struct SidebusPanel: View {
                     }
                 }
 
-                PanelSection(title: "Screens") {
-                    ScreenList(devices: devices, phoneName: phone.phoneName)
+                PanelSection(title: "Devices") {
+                    DeviceList(devices: devices, phone: phone)
                 }
             }
             .padding(14)
@@ -73,16 +73,11 @@ struct PanelSection<Content: View>: View {
     }
 }
 
-/// The screens in sight and the paired ones: a click pairs, shares or stops.
-private struct ScreenList: View {
+/// The devices in sight and the paired ones, each with what it can do right now: carry
+/// calls, show the Mac's screen. A click pairs, shares or stops sharing.
+private struct DeviceList: View {
     let devices: DeviceManager
-    /// The phone, which the Phone card stands for: listed here only while its screen
-    /// server is in sight, that is the Sidebus app open on it.
-    let phoneName: String?
-
-    private var entries: [DeviceEntry] {
-        devices.entries.filter { $0.isOnline || $0.name != phoneName }
-    }
+    let phone: PhoneModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,26 +85,29 @@ private struct ScreenList: View {
                 Text(refusal).font(.caption).foregroundStyle(.red)
                     .padding(.bottom, 6)
             }
-            if entries.isEmpty {
+            if devices.entries.isEmpty {
                 Text(devices.summary).foregroundStyle(.secondary)
             }
-            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+            ForEach(Array(devices.entries.enumerated()), id: \.element.id) { index, entry in
                 if index > 0 { Divider().padding(.vertical, 6) }
                 Button {
                     devices.perform(entry)
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: entry.symbol)
-                            .frame(width: 22)
-                            .foregroundStyle(entry.isOnline ? .primary : .secondary)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.name).foregroundStyle(entry.isOnline ? .primary : .secondary)
+                            Text(entry.name)
                             if let subtitle = subtitle(entry) {
                                 Text(subtitle).font(.caption).foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         Spacer()
+                        if isPhone(entry) {
+                            Capability(symbol: "phone.fill", active: phone.callsAvailable)
+                                .help(phone.summary)
+                        }
+                        Capability(symbol: "display", active: entry.isOnline, highlighted: entry.isSharing)
+                            .help(screenHelp(entry))
                     }
                     .contentShape(Rectangle())
                 }
@@ -119,11 +117,43 @@ private struct ScreenList: View {
         }
     }
 
+    private func isPhone(_ entry: DeviceEntry) -> Bool {
+        entry.id == phone.phoneDeviceID
+    }
+
     private func subtitle(_ entry: DeviceEntry) -> String? {
         var parts: [String] = []
-        if entry.isOnline { parts.append(entry.transportLabel) }
-        if let detail = entry.detail, !detail.isEmpty { parts.append(detail) }
+        if entry.isOnline {
+            parts.append(entry.transportLabel)
+        } else if isPhone(entry), phone.callsAvailable, case let .ready(_, over, _, _) = phone.channelState {
+            parts.append(over == .usb ? "USB" : "Wi-Fi")
+        } else if isPhone(entry), phone.callsAvailable, case let .resting(_, over, _, _) = phone.channelState {
+            parts.append(over == .usb ? "USB" : "Wi-Fi")
+        }
+        if let detail = entry.detail, !detail.isEmpty, entry.isOnline || !isPhone(entry) || !phone.callsAvailable {
+            parts.append(detail)
+        }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    private func screenHelp(_ entry: DeviceEntry) -> String {
+        if entry.isSharing { return "Showing the Mac's screen: click to stop" }
+        if !entry.isOnline { return isPhone(entry) ? "Open Sidebus on the phone to share the Mac's screen" : "Not in sight" }
+        return entry.isPaired ? "Click to share the Mac's screen" : "Click to pair"
+    }
+}
+
+/// One thing a device can do, in colour when it can right now, greyed otherwise.
+private struct Capability: View {
+    let symbol: String
+    let active: Bool
+    var highlighted = false
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14))
+            .foregroundStyle(highlighted ? AnyShapeStyle(Color.accentColor) : active ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .frame(width: 22)
     }
 }
 

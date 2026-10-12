@@ -33,6 +33,8 @@ public actor PhoneChannel {
         case audio(Data)
         /// The phone ended the call's audio: the call is over, or the helper went away.
         case audioStopped
+        /// The phone's persistent identifier, the one its screen pairing knows it by.
+        case device(UUID)
     }
 
     private let macName: String
@@ -166,6 +168,7 @@ public actor PhoneChannel {
             case let .connected(device):
                 phone = device.name
                 deviceID = device.uuid.uuidString
+                emit(.device(device.uuid))
                 let token = await Task.detached { CallTokenStore.token(forDeviceID: device.uuid.uuidString) }.value
                 try? await session.send(.callAccess(token: token ?? Data()))
 

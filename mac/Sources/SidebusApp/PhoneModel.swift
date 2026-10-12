@@ -23,6 +23,8 @@ final class PhoneModel {
     private(set) var answeredAt: Date?
     /// Who the current call is with: a contact's name, or the number.
     private(set) var peer: String?
+    /// The phone's identifier among the paired devices, once its call channel told it.
+    private(set) var phoneDeviceID: String? = UserDefaults.standard.string(forKey: "phoneDeviceID")
     /// The Mac devices the current call's sound goes through.
     private(set) var audioRoute: CallAudioLink.Route?
     /// Last problem worth showing, cleared by the next call.
@@ -37,6 +39,14 @@ final class PhoneModel {
     @ObservationIgnored private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
     var isInCall: Bool { callState != .idle }
+
+    /// True when the last word from the phone is that calls can reach the Mac.
+    var callsAvailable: Bool {
+        switch channelState {
+        case .ready(_, _, true, _), .resting(_, _, true, _): return true
+        default: return false
+        }
+    }
 
     /// True when calls can carry their sound to the Mac right now.
     var audioReady: Bool {
@@ -193,6 +203,9 @@ final class PhoneModel {
             contacts = list
         case let .audio(pcm):
             audio?.play(pcm)
+        case let .device(uuid):
+            phoneDeviceID = uuid.uuidString
+            UserDefaults.standard.set(uuid.uuidString, forKey: "phoneDeviceID")
         case .audioStopped:
             // The phone ended the sound (the call, or the link, is over): CALL_START again
             // if the call goes on over a new link.
