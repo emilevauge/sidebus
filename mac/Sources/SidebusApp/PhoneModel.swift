@@ -92,7 +92,7 @@ final class PhoneModel {
         }
         switch channelState {
         case .searching:
-            return "\(phoneName ?? "The phone") is out of reach: not on this Wi-Fi, not plugged in"
+            return "Sound stays on the phone: it is not on this Wi-Fi, nor plugged in"
         case .connecting:
             return "Reaching the phone…"
         case let .waitingForGrant(phone):
