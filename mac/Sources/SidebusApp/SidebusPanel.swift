@@ -28,7 +28,9 @@ struct SidebusPanel: View {
                 Divider()
             }
 
-            if phone.phoneName != nil || phone.isInCall {
+            // Only when calls can reach the Mac, or one is under way: the phone's row in the
+            // devices says why not otherwise.
+            if phone.callsAvailable || phone.isInCall {
                 PhoneCard(phone: phone, entry: dialer)
                     .padding(14)
                 Divider()
