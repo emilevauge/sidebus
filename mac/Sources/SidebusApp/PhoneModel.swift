@@ -169,14 +169,18 @@ final class PhoneModel {
         guard case let .incoming(number) = callState else { return }
         if let number, ContactBook.contact(for: number, in: contacts) != nil { return }
         let digits = ContactBook.dialable(title)
-        // A title that is only the number again adds nothing.
+        // A title that is only the number again adds nothing, unless Bluetooth gave none.
         let isNumber = !digits.isEmpty && digits.count * 2 >= title.filter { !$0.isWhitespace }.count
-        guard !title.isEmpty, !isNumber else { return }
+        guard !title.isEmpty, !isNumber || number == nil else { return }
         let generic = ["incoming call", "appel entrant", "appel vocal entrant"]
         let detail = generic.contains(text.lowercased()) ? nil : text.isEmpty ? nil : text
-        peer = detail.map { "\(title) · \($0)" } ?? title
+        phoneCaller = detail.map { "\(title) · \($0)" } ?? title
+        peer = phoneCaller
         notifications.showIncoming(caller: [peer, number].compactMap { $0 }.joined(separator: "\n"))
     }
+
+    /// Who rings, as the phone's call screen named it, for the ringing call only.
+    @ObservationIgnored private var phoneCaller: String?
 
     private func syncChannel() {
         guard let channel else { return }
@@ -217,7 +221,7 @@ final class PhoneModel {
         switch callState {
         case let .incoming(number):
             let name = number.flatMap { ContactBook.contact(for: $0, in: contacts)?.name }
-            peer = name ?? number ?? "Unknown number"
+            peer = name ?? phoneCaller ?? number ?? "Unknown number"
             if previous != callState {
                 notifications.showIncoming(caller: peer ?? "")
                 AppDelegate.shared.showPanelForCall()
@@ -235,6 +239,7 @@ final class PhoneModel {
             answeredAt = nil
             isMuted = false
             callOnMac = false
+            phoneCaller = nil
             if previous != .idle {
                 problem = nil
                 AppDelegate.shared.callEnded()

@@ -148,6 +148,18 @@ extension HandsFreeLink: @preconcurrency IOBluetoothHandsFreeDeviceDelegate {
     public func handsFree(_ device: IOBluetoothHandsFreeDevice!, callSetupMode value: NSNumber!) {
         callSetup = value.intValue
         update()
+        // The caller's number comes with the ring (CLIP), when the phone sends it; ask the
+        // call list too, which carries it as well.
+        if callSetup == 1, incomingNumber == nil { handsFree?.currentCallList() }
+    }
+
+    public func handsFree(_ device: IOBluetoothHandsFreeDevice!, currentCall call: [AnyHashable: Any]!) {
+        log.info("current call: \(String(describing: call), privacy: .private)")
+        guard callSetup == 1, incomingNumber == nil else { return }
+        let number = call.flatMap { $0[IOBluetoothHandsFreeCallNumber] as? String }
+        guard let number, !number.isEmpty else { return }
+        incomingNumber = number
+        update()
     }
 
     public func handsFree(_ device: IOBluetoothHandsFreeDevice!, incomingCallFrom number: String!) {
