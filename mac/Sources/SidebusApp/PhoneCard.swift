@@ -74,7 +74,7 @@ private struct SearchView: View {
         let choices = self.choices
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "phone")
+                Image(systemName: phone.callsAvailable ? "phone" : "phone.down")
                     .foregroundStyle(.secondary)
                 TextField(phone.callsAvailable ? "Call a name or a number" : "Calls stay on the phone", text: $entry.text)
                     .textFieldStyle(.plain)
@@ -93,7 +93,18 @@ private struct SearchView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            // Greyed out plainly when calls cannot reach the Mac: flat, dashed, faded.
+            .background(
+                phone.callsAvailable ? AnyShapeStyle(.quaternary.opacity(0.7)) : AnyShapeStyle(.clear),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay {
+                if !phone.callsAvailable {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
+            .opacity(phone.callsAvailable ? 1 : 0.55)
 
             // Under the field, in the panel: the popover grows and shrinks around the
             // list, its content held still (see PopoverHost).
