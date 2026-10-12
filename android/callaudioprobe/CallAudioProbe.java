@@ -23,8 +23,6 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
-import android.os.Binder;
-import android.os.IBinder;
 import android.os.Looper;
 import android.telephony.TelephonyManager;
 
@@ -33,7 +31,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 public final class CallAudioProbe {
     private static final int RATE = 16000;
@@ -63,18 +60,6 @@ public final class CallAudioProbe {
             case "down": down(audio, format, seconds); break;
             case "up": up(audio, format, seconds); break;
             case "stream": stream(audio); break;
-            case "reset":
-                routeCall(audio, false);
-                fakeUsbHeadset(false);
-                break;
-            case "usb-on": fakeUsbHeadset(true); listOutputs(audio); break;
-            case "usb-off": fakeUsbHeadset(false); listOutputs(audio); break;
-            case "sig":
-                for (Method m : Class.forName("android.media.AudioSystem").getMethods()) {
-                    if (m.getName().matches("setStreamVolumeIndexAS|initStreamVolume|setVolumeIndexForAttributes|setVoiceVolume"))
-                        System.out.println(m);
-                }
-                break;
             default: break;
         }
     }
@@ -179,15 +164,15 @@ public final class CallAudioProbe {
         for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
             if (device.getType() == AudioDeviceInfo.TYPE_TELEPHONY) uplink.setPreferredDevice(device);
         }
-        // The Mac's microphone replaces the phone's. The phone's own output is not a
-        // matter of volume or mode, which HyperOS ignores: a Bluetooth headset silences
-        // the earpiece by taking the call's route. The bridge does the same with a
-        // route nobody hears. The remote submix sits in another module than the modem,
-        // which only reaches its own outputs, so the route is the Mac's Bluetooth SCO
-        // output instead: the Mac refuses SCO, so the voice goes nowhere.
+        // The Mac's microphone replaces the phone's, and the voice call volume drops to
+        // its minimum. On HyperOS the earpiece cannot go quieter than that without
+        // root: the modem feeds it directly, and neither audio modes, stream mute,
+        // policy indexes nor routing changes take it off (see the git history).
         boolean wasMuted = audio.isMicrophoneMute();
+        int volume = audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
         audio.setMicrophoneMute(true);
-        routeCall(audio, true);
+        audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
+                audio.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL), 0);
 
         downlink.startRecording();
         uplink.play();
@@ -235,7 +220,7 @@ public final class CallAudioProbe {
             System.out.println("to Mac: " + e);
         } finally {
             audio.setMicrophoneMute(wasMuted);
-            try { routeCall(audio, false); } catch (Exception e) { System.out.println("route: " + e); }
+            audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, volume, 0);
             downlink.stop();
             downlink.release();
             uplink.stop();
@@ -245,92 +230,6 @@ public final class CallAudioProbe {
             System.out.println("call ended");
             System.exit(0);
         }
-    }
-
-    // A USB headset nobody plugged in. The modem only reaches outputs of its own
-    // audio module; the earpiece is one, and so is the USB headset output, which a
-    // call takes over from the earpiece as soon as one is connected. Declaring one
-    // through the audio service, as the USB stack would, moves the call there.
-    private static final String FAKE_USB_ADDRESS = "card=1;device=0";
-
-    private static void fakeUsbHeadset(boolean connected) throws Exception {
-        Method getService = AudioManager.class.getDeclaredMethod("getService");
-        getService.setAccessible(true);
-        Object service = getService.invoke(null);
-        Class<?> deviceClass = Class.forName("android.media.AudioDeviceAttributes");
-        Object usb = deviceClass.getConstructor(int.class, int.class, String.class)
-                .newInstance(2 /* ROLE_OUTPUT */, AudioDeviceInfo.TYPE_USB_HEADSET, FAKE_USB_ADDRESS);
-        for (Method method : service.getClass().getMethods()) {
-            if (method.getName().equals("setWiredDeviceConnectionState")
-                    && method.getParameterCount() == 3) {
-                method.invoke(service, usb, connected ? 1 : 0, "com.android.shell");
-                System.out.println("fake USB headset " + (connected ? "connected" : "disconnected"));
-                return;
-            }
-        }
-        System.out.println("no setWiredDeviceConnectionState(AudioDeviceAttributes, int, String)");
-    }
-
-    private static void listOutputs(AudioManager audio) throws Exception {
-        Thread.sleep(1500);
-        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            System.out.println("output: type " + device.getType() + " " + device.getProductName()
-                    + " " + device.getAddress());
-        }
-    }
-
-    // The Mac's Bluetooth address, as the phone sees it once paired.
-    private static final String MAC_ADDRESS = "CC:08:FA:B6:57:17";
-
-    // setPreferredDeviceForStrategy and its types are system APIs, hence reflection.
-    private static void routeCall(AudioManager audio, boolean away) throws Exception {
-        Class<?> strategyClass = Class.forName("android.media.audiopolicy.AudioProductStrategy");
-        Class<?> deviceClass = Class.forName("android.media.AudioDeviceAttributes");
-        android.media.AudioAttributes voice = new android.media.AudioAttributes.Builder()
-                .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION).build();
-        Object strategy = null;
-        for (Object candidate : (java.util.List<?>) strategyClass
-                .getMethod("getAudioProductStrategies").invoke(null)) {
-            if ((boolean) strategyClass.getMethod("supportsAudioAttributes",
-                    android.media.AudioAttributes.class).invoke(candidate, voice)) {
-                strategy = candidate;
-            }
-        }
-        if (strategy == null) {
-            System.out.println("no strategy for voice communication");
-            return;
-        }
-        if (away) {
-            Object sco = deviceClass.getConstructor(int.class, int.class, String.class)
-                    .newInstance(2 /* ROLE_OUTPUT */, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, MAC_ADDRESS);
-            Object result = AudioManager.class
-                    .getMethod("setPreferredDeviceForStrategy", strategyClass, deviceClass)
-                    .invoke(audio, strategy, sco);
-            System.out.println("call routed to the Mac's SCO output: " + result);
-        } else {
-            Object result = AudioManager.class
-                    .getMethod("removePreferredDeviceForStrategy", strategyClass)
-                    .invoke(audio, strategy);
-            System.out.println("call route restored: " + result);
-        }
-    }
-
-    // Audio service keeps the mode only while this binder lives, so it stays referenced.
-    private static final IBinder MODE_TOKEN = new Binder();
-
-    // AudioManager.setMode reads the application context, which app_process lacks;
-    // the service it calls takes the package name directly.
-    private static void setMode(int mode) throws Exception {
-        Method getService = AudioManager.class.getDeclaredMethod("getService");
-        getService.setAccessible(true);
-        Object service = getService.invoke(null);
-        for (Method method : service.getClass().getMethods()) {
-            if (method.getName().equals("setMode") && method.getParameterCount() == 3) {
-                method.invoke(service, mode, MODE_TOKEN, "com.android.shell");
-                return;
-            }
-        }
-        System.out.println("no IAudioService.setMode(int, IBinder, String)");
     }
 
     private static void record(AudioRecord record, int seconds, String path) {
