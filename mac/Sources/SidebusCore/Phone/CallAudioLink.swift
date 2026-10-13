@@ -36,6 +36,7 @@ public final class CallAudioLink: @unchecked Sendable {
     private var buffering = true
     private var stopped = false
     private var muted = false
+    private var shaper = VoiceShaper(sampleRate: sampleRate)
     private var recording: FileHandle?
     private var recordedBytes = 0
     // The tap's buffers as they come, before conversion. Touched on the tap's thread.
@@ -45,6 +46,10 @@ public final class CallAudioLink: @unchecked Sendable {
     public init(send: @escaping @Sendable (Data) -> Void) {
         self.send = send
     }
+
+    /// Readies the microphone for the call's narrow band, see [VoiceShaper]. Set before
+    /// `start()`.
+    public var shapesVoice = true
 
     /// Keeps a copy of what goes to the phone in a WAV file, to judge the microphone's
     /// sound apart from the call's. Set before `start()`.
@@ -415,6 +420,7 @@ public final class CallAudioLink: @unchecked Sendable {
         var data = Data(bytes: output.int16ChannelData![0], count: Int(output.frameLength) * 2)
         queue.async { [self] in
             guard !stopped else { return }
+            if shapesVoice { shaper.process(&data) }
             if muted { data.resetBytes(in: 0..<data.count) }
             if let recording {
                 try? recording.write(contentsOf: data)

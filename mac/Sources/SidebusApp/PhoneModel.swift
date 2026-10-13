@@ -457,6 +457,9 @@ final class PhoneModel {
         // Development aid: defaults write app.sidebus callVoiceProcessing -bool false, to
         // hear the microphone without macOS's voice processing.
         audio.voiceProcessing = UserDefaults.standard.object(forKey: "callVoiceProcessing") as? Bool ?? true
+        // defaults write app.sidebus callVoiceShaping -bool false sends the microphone as
+        // macOS hands it, to compare.
+        audio.shapesVoice = UserDefaults.standard.object(forKey: "callVoiceShaping") as? Bool ?? true
         self.audio = audio
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else {
