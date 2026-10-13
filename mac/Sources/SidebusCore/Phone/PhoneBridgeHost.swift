@@ -54,7 +54,15 @@ public actor PhoneBridgeHost {
             return
         }
         do {
-            guard serial != phone else { return }
+            guard serial != phone else {
+                // The app can die while plugged, as when Android's debug app setting
+                // names it: bring it back rather than leave the Mac unanswered.
+                if try await !appRuns(on: phone) {
+                    log.info("Sidebus stopped on the phone, starting it again")
+                    try await startApp(on: phone, secret: try await storedSecret(on: phone))
+                }
+                return
+            }
             var secret = try await storedSecret(on: phone)
             let runs = try await helperRuns(on: phone)
             let current = try await helperIsCurrent(on: phone)
@@ -64,12 +72,7 @@ public actor PhoneBridgeHost {
             // HyperOS freezes background apps, foreground service or not, and a frozen app
             // left the Mac's pings unanswered for seconds: the power whitelist spares it.
             _ = try? await adb(["-s", phone, "shell", "dumpsys", "deviceidle", "whitelist", "+app.sidebus"])
-            // The app proves itself to the helper with this secret. HyperOS also keeps the
-            // app's call service from starting on its own at boot: this starts it.
-            try await adb([
-                "-s", phone, "shell", "am", "start", "-n", "app.sidebus/.phone.HelperActivity",
-                "--es", "secret", secret ?? "",
-            ])
+            try await startApp(on: phone, secret: secret)
             try await adb(["-s", phone, "forward", "tcp:\(Sidebus.callPort)", "tcp:\(Sidebus.callPort)"])
             serial = phone
             onUSB?(true)
@@ -91,6 +94,20 @@ public actor PhoneBridgeHost {
             if sim.contains("LOADED") || sim.contains("READY") { return serial }
         }
         return nil
+    }
+
+    /// The app proves itself to the helper with this secret. HyperOS also keeps the app's
+    /// call service from starting on its own at boot: this starts it.
+    private func startApp(on serial: String, secret: String?) async throws {
+        try await adb([
+            "-s", serial, "shell", "am", "start", "-n", "app.sidebus/.phone.HelperActivity",
+            "--es", "secret", secret ?? "",
+        ])
+    }
+
+    private func appRuns(on serial: String) async throws -> Bool {
+        let output = (try? await adb(["-s", serial, "shell", "pidof", "app.sidebus"])) ?? ""
+        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func helperRuns(on serial: String) async throws -> Bool {
