@@ -95,11 +95,9 @@ public enum Message: Sendable, Equatable {
     /// Phone calls, `protocol/PROTOCOL.md` section 10.
     case callAccess(token: Data)
     case callGrant(status: CallGrantStatus, token: Data)
-    /// Bit 0: the audio helper runs. Bit 1: contacts are readable. Bit 2: caller names
-    /// are readable. Bit 3: the call audio can go in 48 kHz.
+    /// Bit 0: the audio helper runs. Bit 1: contacts are readable.
     case callStatus(flags: UInt8)
-    /// `wideband`: the Mac sends and wants 48 kHz rather than 16 kHz.
-    case callStart(wideband: Bool)
+    case callStart
     case callStop
     /// 16 kHz mono 16 bit little endian PCM.
     case callAudio(Data)

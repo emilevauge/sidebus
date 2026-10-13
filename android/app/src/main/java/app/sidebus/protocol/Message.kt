@@ -176,8 +176,7 @@ sealed class Message {
         override val type = MessageType.CALL_STATUS
     }
 
-    /** `wideband`: the Mac sends and wants 48 kHz rather than 16 kHz. */
-    data class CallStart(val wideband: Boolean = false) : Message() {
+    object CallStart : Message() {
         override val type = MessageType.CALL_START
     }
 

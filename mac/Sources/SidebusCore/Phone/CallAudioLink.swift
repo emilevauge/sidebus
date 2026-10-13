@@ -4,15 +4,14 @@ import Foundation
 import os
 
 /// Mac half of a call's audio: plays what the phone sends (the other party) and hands the
-/// microphone back, both as mono 16 bit little endian PCM, at 16 or 48 kHz. [PhoneChannel] carries
+/// microphone back, both as 16 kHz mono 16 bit little endian PCM. [PhoneChannel] carries
 /// them; this class only deals with sound.
 ///
 /// The microphone goes through macOS voice processing, so the speakers do not echo into
 /// the call. One instance carries one call.
 public final class CallAudioLink: @unchecked Sendable {
-    /// 16 kHz, or 48 kHz when the phone takes it (CALL_STATUS bit 3).
-    public let sampleRate: Double
-    private var frameBytes: Int { Int(sampleRate) / 50 * 2 }
+    private static let sampleRate = 16000.0
+    private static let frameBytes = Int(sampleRate) / 50 * 2
     // Beyond this much audio waiting to play, incoming frames are dropped to keep the
     // delay down rather than letting it grow for the rest of the call.
     private static let maxQueuedMs = 200
@@ -24,8 +23,9 @@ public final class CallAudioLink: @unchecked Sendable {
     private var captureEngine = AVAudioEngine()
     private var playbackEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
-    private let wireFormat: AVAudioFormat
-    private let playFormat: AVAudioFormat
+    private let wireFormat = AVAudioFormat(
+        commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+    private let playFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
     private let queue = DispatchQueue(label: "app.sidebus.call-audio")
     private let log = Logger(subsystem: "app.sidebus", category: "phone")
 
@@ -42,11 +42,8 @@ public final class CallAudioLink: @unchecked Sendable {
     private var rawRecording: AVAudioFile?
 
     /// `send` receives the microphone, in 20 ms or so pieces, on a background queue.
-    public init(sampleRate: Double = 16000, send: @escaping @Sendable (Data) -> Void) {
-        self.sampleRate = sampleRate
+    public init(send: @escaping @Sendable (Data) -> Void) {
         self.send = send
-        wireFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
-        playFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
     }
 
     /// Keeps a copy of what goes to the phone in a WAV file, to judge the microphone's
@@ -69,7 +66,7 @@ public final class CallAudioLink: @unchecked Sendable {
     /// Call on the main queue.
     public func start() throws {
         if let url = recordingURL {
-            FileManager.default.createFile(atPath: url.path, contents: Self.wavHeader(dataBytes: 0, sampleRate: sampleRate))
+            FileManager.default.createFile(atPath: url.path, contents: Self.wavHeader(dataBytes: 0))
             let handle = try? FileHandle(forWritingTo: url)
             _ = try? handle?.seekToEnd()
             queue.sync { recording = handle }
@@ -151,7 +148,6 @@ public final class CallAudioLink: @unchecked Sendable {
                                             commonFormat: micFormat.commonFormat, interleaved: micFormat.isInterleaved)
         }
         let converter = AVAudioConverter(from: micFormat, to: wireFormat)
-        converter?.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         // With voice processing on, channel 0 carries the processed voice; the other
         // channels are not meant to be mixed in.
         converter?.channelMap = [0]
@@ -170,7 +166,7 @@ public final class CallAudioLink: @unchecked Sendable {
             stopped = true
             if let recording {
                 try? recording.seek(toOffset: 0)
-                try? recording.write(contentsOf: Self.wavHeader(dataBytes: recordedBytes, sampleRate: sampleRate))
+                try? recording.write(contentsOf: Self.wavHeader(dataBytes: recordedBytes))
                 try? recording.close()
                 self.recording = nil
             }
@@ -219,8 +215,8 @@ public final class CallAudioLink: @unchecked Sendable {
         }
     }
 
-    /// Mono 16 bit PCM.
-    private static func wavHeader(dataBytes: Int, sampleRate: Double) -> Data {
+    /// 16 kHz mono 16 bit PCM.
+    private static func wavHeader(dataBytes: Int) -> Data {
         var header = Data()
         func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { header.append(contentsOf: $0) } }
         header.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + dataBytes))
@@ -370,16 +366,15 @@ public final class CallAudioLink: @unchecked Sendable {
     // MARK: Audio
 
     private func playPending() {
-        let frameBytes = self.frameBytes
-        let framesPerChunk = AVAudioFrameCount(frameBytes / 2)
+        let framesPerChunk = AVAudioFrameCount(Self.frameBytes / 2)
         if buffering {
-            guard pending.count >= Int(sampleRate) * Self.prebufferMs / 1000 * 2 else { return }
+            guard pending.count >= Int(Self.sampleRate) * Self.prebufferMs / 1000 * 2 else { return }
             buffering = false
         }
-        while pending.count >= frameBytes {
-            let chunk = pending.prefix(frameBytes)
-            pending.removeFirst(frameBytes)
-            if queuedFrames * 1000 / Int(sampleRate) > Self.maxQueuedMs { continue }
+        while pending.count >= Self.frameBytes {
+            let chunk = pending.prefix(Self.frameBytes)
+            pending.removeFirst(Self.frameBytes)
+            if queuedFrames * 1000 / Int(Self.sampleRate) > Self.maxQueuedMs { continue }
 
             let buffer = AVAudioPCMBuffer(pcmFormat: playFormat, frameCapacity: framesPerChunk)!
             buffer.frameLength = framesPerChunk
@@ -403,7 +398,7 @@ public final class CallAudioLink: @unchecked Sendable {
     private func encode(_ buffer: AVAudioPCMBuffer) {
         try? rawRecording?.write(from: buffer)
         guard let converter = queue.sync(execute: { self.converter }) else { return }
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * sampleRate / buffer.format.sampleRate) + 16
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * Self.sampleRate / buffer.format.sampleRate) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: wireFormat, frameCapacity: capacity) else { return }
         var consumed = false
         var error: NSError?

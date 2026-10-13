@@ -32,16 +32,8 @@ class CallBridgeClient(context: Context) {
         open('P').use { socket -> socket.getInputStream().read() == 'K'.code }
     }.getOrDefault(false)
 
-    /** True when the helper carries calls in 48 kHz too: an older one closes on V. */
-    fun takesWideband(): Boolean = runCatching {
-        open('V').use { socket -> socket.getInputStream().read() == '2'.code }
-    }.getOrDefault(false)
-
-    /**
-     * Opens a call: read the other party from `input`, write the Mac's voice to `output`,
-     * in 48 kHz when `wideband`, 16 kHz otherwise.
-     */
-    fun call(wideband: Boolean): Call = Call(open(if (wideband) 'W' else 'C'))
+    /** Opens a call: read the other party from `input`, write the Mac's voice to `output`. */
+    fun call(): Call = Call(open('C'))
 
     class Call(private val socket: Socket) : AutoCloseable {
         val input: InputStream = socket.getInputStream()

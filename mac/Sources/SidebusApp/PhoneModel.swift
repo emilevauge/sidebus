@@ -32,8 +32,6 @@ final class PhoneModel {
     /// The current call's number, when known, for its country.
     private(set) var peerNumber: String?
 
-    /// Whether the phone's last word is that it takes the call's audio in 48 kHz.
-    @ObservationIgnored private var widebandAudio = false
     /// Bumped as contact photos come in, for the views showing them to redraw.
     private(set) var photosVersion = 0
     /// The photo of the contact the current call is with.
@@ -387,8 +385,6 @@ final class PhoneModel {
         case let .device(uuid):
             phoneDeviceID = uuid.uuidString
             UserDefaults.standard.set(uuid.uuidString, forKey: "phoneDeviceID")
-        case let .widebandAudio(wideband):
-            widebandAudio = wideband
         case .photosChanged:
             photosVersion += 1
         case .audioStopped:
@@ -429,8 +425,7 @@ final class PhoneModel {
         let streamWanted = callOnMac && (callState == .active || callState == .outgoing) && audioReady && audioStarted
         if streamWanted, !streaming {
             streaming = true
-            let wideband = audio?.sampleRate == 48000
-            if let channel { Task { await channel.send(.callStart(wideband: wideband)) } }
+            if let channel { Task { await channel.send(.callStart) } }
         } else if !streamWanted, streaming {
             streaming = false
             if let channel { Task { await channel.send(.callStop) } }
@@ -451,7 +446,7 @@ final class PhoneModel {
         Task {
             for await pcm in stream { await channel.send(.callAudio(pcm)) }
         }
-        let audio = CallAudioLink(sampleRate: widebandAudio ? 48000 : 16000) { pcm in continuation.yield(pcm) }
+        let audio = CallAudioLink { pcm in continuation.yield(pcm) }
         // Development aid: defaults write app.sidebus recordCallAudio -bool true keeps what
         // the microphone sends to the phone on the Desktop, one WAV per call.
         if UserDefaults.standard.bool(forKey: "recordCallAudio") {

@@ -80,8 +80,7 @@ object MessageCodec {
                 payload.write(message.token)
             }
             is Message.CallStatus -> payload.u8(message.flags)
-            is Message.CallStart -> if (message.wideband) payload.u8(1)
-            is Message.CallStop, is Message.ContactsRequest -> Unit
+            is Message.CallStart, is Message.CallStop, is Message.ContactsRequest -> Unit
             is Message.CallAudio -> payload.write(message.pcm)
             is Message.Contacts -> payload.write(message.entries)
             is Message.CallerId -> payload.write(message.caller)
@@ -167,7 +166,7 @@ object MessageCodec {
             MessageType.CALL_ACCESS -> Message.CallAccess(reader.rest())
             MessageType.CALL_GRANT -> Message.CallGrant(reader.u8(), reader.rest())
             MessageType.CALL_STATUS -> Message.CallStatus(reader.u8())
-            MessageType.CALL_START -> Message.CallStart(reader.rest().firstOrNull() == 1.toByte())
+            MessageType.CALL_START -> Message.CallStart
             MessageType.CALL_STOP -> Message.CallStop
             MessageType.CALL_AUDIO -> Message.CallAudio(reader.rest())
             MessageType.CONTACTS_REQ -> Message.ContactsRequest

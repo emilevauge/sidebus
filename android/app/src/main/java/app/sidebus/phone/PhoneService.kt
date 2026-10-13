@@ -130,7 +130,7 @@ class PhoneService : Service() {
     private fun handleGranted(message: Message, connection: Connection) {
         when (message) {
             // Off the read loop, which must keep answering the Mac's pings.
-            is Message.CallStart -> scope.launch { startCall(connection, message.wideband) }
+            is Message.CallStart -> scope.launch { startCall(connection) }
             is Message.CallStop -> endCall()
             is Message.CallAudio -> uplink.offer(message.pcm)
             is Message.ContactsRequest -> contacts()?.let { connection.send(Message.Contacts(it)) }
@@ -223,7 +223,6 @@ class PhoneService : Service() {
         if (helper.isRunning() || call != null) flags = flags or 0x01
         if (hasContacts()) flags = flags or 0x02
         if (CallerIdListener.isEnabled(this)) flags = flags or 0x04
-        if ((flags and 0x01) != 0 && helper.takesWideband()) flags = flags or 0x08
         if (flags == lastStatus && !force) return
         lastStatus = flags
         connection.send(Message.CallStatus(flags))
@@ -231,9 +230,9 @@ class PhoneService : Service() {
 
     // MARK: call
 
-    private fun startCall(connection: Connection, wideband: Boolean) {
+    private fun startCall(connection: Connection) {
         endCall()
-        val opened = runCatching { helper.call(wideband) }.getOrElse {
+        val opened = runCatching { helper.call() }.getOrElse {
             Log.w(TAG, "call helper unreachable", it)
             connection.send(Message.CallStop)
             return
@@ -244,9 +243,9 @@ class PhoneService : Service() {
         wifiLock = getSystemService(WifiManager::class.java)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "sidebus-call")
             .apply { acquire() }
-        Log.i(TAG, "call audio started, ${if (wideband) 48 else 16} kHz")
+        Log.i(TAG, "call audio started")
         scope.launch {
-            val buffer = ByteArray((if (wideband) 48_000 else 16_000) / 50 * 2)
+            val buffer = ByteArray(FRAME_BYTES)
             try {
                 while (true) {
                     val read = opened.input.read(buffer)
@@ -370,6 +369,7 @@ class PhoneService : Service() {
     companion object {
         /** Port of the call channel, apart from the display server's 27183. */
         const val PORT = 27185
+        private const val FRAME_BYTES = 16_000 / 50 * 2
         private const val NOTIFICATION_ID = 1
         private const val GRANT_NOTIFICATION_ID = 2
         private const val CHANNEL_STATUS = "status"

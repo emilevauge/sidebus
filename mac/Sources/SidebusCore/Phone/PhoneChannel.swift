@@ -40,8 +40,6 @@ public actor PhoneChannel {
         case caller(title: String, text: String)
         /// Whether the phone may read its dialer's notification, for the caller names.
         case callerNamesReadable(Bool)
-        /// Whether the phone takes the call's audio in 48 kHz.
-        case widebandAudio(Bool)
         /// New contact photos are in [ContactPhotos].
         case photosChanged
     }
@@ -238,7 +236,6 @@ public actor PhoneChannel {
                         contactsReadable: flags & 0x02 != 0
                     )))
                     emit(.callerNamesReadable(flags & 0x04 != 0))
-                    emit(.widebandAudio(flags & 0x08 != 0))
 
                 case let .contacts(data):
                     let text = String(decoding: data, as: UTF8.self)
