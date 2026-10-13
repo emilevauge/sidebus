@@ -19,12 +19,21 @@ final class VoiceShaperTests: XCTestCase {
         return (tail.map { $0 * $0 }.reduce(0, +) / Double(tail.count)).squareRoot()
     }
 
-    func testBringsQuietSpeechUpTowardsTheTarget() {
+    private func shaped(_ amplitude: Double) -> Double {
         var shaper = VoiceShaper(sampleRate: 16000)
-        var data = tone(1000, amplitude: 0.02)
+        var data = tone(1000, amplitude: amplitude)
         shaper.process(&data)
-        XCTAssertGreaterThan(rms(data), 0.08)
-        XCTAssertLessThan(rms(data), 0.2)
+        return rms(data)
+    }
+
+    func testLiftsQuietSpeechByTheMakeupGain() {
+        // -34 dBFS stays below the threshold: only the makeup gain, +8 dB, applies.
+        XCTAssertEqual(20 * log10(shaped(0.02) / (0.02 / 2.0.squareRoot())), 8, accuracy: 1)
+    }
+
+    func testNarrowsTheGapBetweenLoudAndQuiet() {
+        // 20 dB apart going in, much less coming out.
+        XCTAssertLessThan(20 * log10(shaped(0.5) / shaped(0.05)), 10)
     }
 
     func testTheHighPassCutsTheRumbleAndKeepsTheVoice() {

@@ -2,25 +2,28 @@ import Foundation
 
 /// Readies the microphone for a narrowband call. The phone mixes the Mac's voice into the
 /// call at telephone bandwidth (300 to 3400 Hz), so what lies outside only takes room:
-/// cut the rumble, lift the band that carries the consonants, and hold the level steady,
-/// as telephone headsets do.
+/// cut the rumble, lift the band that carries the consonants, and even out the loud and
+/// the quiet with a compressor, as telephone headsets do.
 public struct VoiceShaper: Sendable {
     private var highPass: Biquad
     private var presence: Biquad
-    private var gain: Float = 1
     private var envelope: Float = 0
-    private let sampleRate: Float
+    private let attack: Float
+    private let release: Float
 
-    // Speech is brought towards this level, by at most maxGain; below the gate, the room's
-    // noise, the gain stops moving rather than lifting it.
-    private static let targetRMS: Float = 0.12 // about -18 dBFS
-    private static let maxGain: Float = 8 // +18 dB
-    private static let gate: Float = 0.004 // about -48 dBFS
+    // Above the threshold, each 3 dB louder comes out 1 dB louder; the makeup gain then
+    // lifts the whole. Below the threshold the gain stays fixed, so silences keep their
+    // level rather than being pulled up.
+    private static let thresholdDB: Float = -28
+    private static let ratio: Float = 3
+    private static let makeupDB: Float = 8
 
     public init(sampleRate: Double) {
-        self.sampleRate = Float(sampleRate)
-        highPass = .highPass(frequency: 150, q: 0.707, sampleRate: Float(sampleRate))
-        presence = .peak(frequency: 2500, q: 0.9, gainDB: 5, sampleRate: Float(sampleRate))
+        let rate = Float(sampleRate)
+        highPass = .highPass(frequency: 150, q: 0.707, sampleRate: rate)
+        presence = .peak(frequency: 2500, q: 0.9, gainDB: 5, sampleRate: rate)
+        attack = 1 - exp(-1 / (0.005 * rate))
+        release = 1 - exp(-1 / (0.15 * rate))
     }
 
     /// Shapes 16 bit little endian mono PCM in place.
@@ -29,23 +32,16 @@ public struct VoiceShaper: Sendable {
         guard count > 0 else { return }
         pcm.withUnsafeMutableBytes { raw in
             let samples = raw.bindMemory(to: Int16.self)
-            // Envelope: fast to rise, slow to fall, so syllables do not pump.
-            let attack = 1 - exp(-1 / (0.01 * sampleRate))
-            let release = 1 - exp(-1 / (0.3 * sampleRate))
-            let glide = 1 - exp(-1 / (0.15 * sampleRate))
             for index in 0..<count {
-                var x = Float(Int16(littleEndian: samples[index])) / 32768
-                x = presence.process(highPass.process(x))
+                let x = presence.process(highPass.process(Float(Int16(littleEndian: samples[index])) / 32768))
                 let level = abs(x)
                 envelope += (level > envelope ? attack : release) * (level - envelope)
-                if envelope > Self.gate {
-                    // The envelope of a sine sits near 0.64 of its peak, its RMS near 0.71.
-                    let wanted = min(Self.maxGain, Self.targetRMS / (envelope * 1.1))
-                    gain += glide * (wanted - gain)
-                }
-                var y = x * gain
-                // Soft limit: peaks round off instead of clipping.
-                if abs(y) > 0.7 { y = (y < 0 ? -1 : 1) * (0.7 + 0.3 * tanh((abs(y) - 0.7) / 0.3)) }
+                let levelDB = 20 * log10(max(envelope, 1e-6))
+                let over = levelDB - Self.thresholdDB
+                let gainDB = Self.makeupDB - (over > 0 ? over * (1 - 1 / Self.ratio) : 0)
+                var y = x * pow(10, gainDB / 20)
+                // Soft limit: what still peaks rounds off below full scale instead of clipping.
+                if abs(y) > 0.7 { y = (y < 0 ? -1 : 1) * (0.7 + 0.25 * tanh((abs(y) - 0.7) / 0.25)) }
                 samples[index] = Int16(clamping: Int((y * 32767).rounded())).littleEndian
             }
         }
