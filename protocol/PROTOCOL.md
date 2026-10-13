@@ -84,6 +84,8 @@ Fields are serialised in table order, with no alignment and no padding.
 | `0x14` | CONTACTS_REQ   | Mac to Android     | empty, see 10.5                         |
 | `0x15` | CONTACTS       | Android to Mac     | see 10.5                                |
 | `0x16` | CALLER_ID      | Android to Mac     | see 10.6                                |
+| `0x17` | PHOTOS_REQ     | Mac to Android     | see 10.7                                |
+| `0x18` | PHOTO          | Android to Mac     | see 10.7                                |
 
 Receiving a message in the wrong direction (a HELLO on the Mac side, say) is fatal: close
 the socket.
@@ -369,7 +371,8 @@ pairs. DISPLAY_CONFIG and the video messages are not used here.
 
 A live connection keeps the phone's Wi-Fi awake, so the Mac only holds one when needed:
 from the moment Bluetooth announces a call, placed or ringing, until it ends, and every
-15 minutes for a short check, which ends once CALL_STATUS and CONTACTS have come.
+15 minutes for a short check, which ends once CALL_STATUS, CONTACTS and the photos asked
+for have come.
 
 Call audio is not reachable from an app: the phone side holds a helper process started over
 adb, which lives until the phone restarts. The app relays between it and this channel.
@@ -424,7 +427,10 @@ CALL_STATUS is clear.
 
 | Field   | Type | Description                                                     |
 | ------- | ---- | --------------------------------------------------------------- |
-| entries | rest | UTF-8 text, one line per number: name, tab, number, tab, `0` or `1` for starred |
+| entries | rest | UTF-8 text, one line per number: name, tab, number, tab, `0` or `1` for starred, tab, photo id |
+
+The photo id names the contact's photo, and changes when the photo does. It is empty, or
+missing, when the contact has none.
 
 ### 10.6 CALLER_ID (`0x16`)
 
@@ -436,3 +442,21 @@ as it shows, or right after CALL_GRANT when the call already rings.
 | Field   | Type | Description                                                       |
 | ------- | ---- | ----------------------------------------------------------------- |
 | caller  | rest | UTF-8 text: the notification's title, then a newline and its text |
+
+### 10.7 PHOTOS_REQ (`0x17`) and PHOTO (`0x18`)
+
+The Mac keeps the photos it received, and asks only for the ids of CONTACTS it does not
+hold yet.
+
+PHOTOS_REQ, Mac to Android:
+
+| Field | Type | Description                                 |
+| ----- | ---- | ------------------------------------------- |
+| ids   | rest | UTF-8 text, one photo id per line           |
+
+The phone answers each id with one PHOTO:
+
+| Field | Type  | Description                                                    |
+| ----- | ----- | -------------------------------------------------------------- |
+| id    | `u64` | the photo id                                                   |
+| image | rest  | the contact's thumbnail, JPEG, about 96 pixels square; empty when the photo is gone |

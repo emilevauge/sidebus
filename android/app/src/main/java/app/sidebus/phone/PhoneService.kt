@@ -13,7 +13,9 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.provider.ContactsContract
 import android.provider.ContactsContract.CommonDataKinds.Phone
+import android.provider.ContactsContract.CommonDataKinds.Photo
 import android.util.Log
 import app.sidebus.DeviceDescriptor
 import app.sidebus.R
@@ -132,6 +134,8 @@ class PhoneService : Service() {
             is Message.CallStop -> endCall()
             is Message.CallAudio -> uplink.offer(message.pcm)
             is Message.ContactsRequest -> contacts()?.let { connection.send(Message.Contacts(it)) }
+            // Off the read loop: a first sync asks for every photo at once.
+            is Message.PhotosRequest -> scope.launch { sendPhotos(message.ids, connection) }
             else -> Unit
         }
     }
@@ -274,7 +278,7 @@ class PhoneService : Service() {
         val text = StringBuilder()
         contentResolver.query(
             Phone.CONTENT_URI,
-            arrayOf(Phone.DISPLAY_NAME, Phone.NUMBER, Phone.STARRED),
+            arrayOf(Phone.DISPLAY_NAME, Phone.NUMBER, Phone.STARRED, Phone.PHOTO_ID),
             null,
             null,
             null,
@@ -282,10 +286,28 @@ class PhoneService : Service() {
             while (cursor.moveToNext()) {
                 val name = cursor.getString(0)?.replace('\t', ' ')?.replace('\n', ' ') ?: continue
                 val number = cursor.getString(1) ?: continue
-                text.append(name).append('\t').append(number).append('\t').append(cursor.getInt(2)).append('\n')
+                val photo = if (cursor.isNull(3)) "" else cursor.getLong(3).toString()
+                text.append(name).append('\t').append(number).append('\t').append(cursor.getInt(2))
+                    .append('\t').append(photo).append('\n')
             }
         }
         return text.toString().toByteArray(Charsets.UTF_8)
+    }
+
+    /** Answers PHOTOS_REQ: each photo id is the row holding the contact's thumbnail. */
+    private fun sendPhotos(ids: ByteArray, connection: Connection) {
+        if (!hasContacts()) return
+        val wanted = String(ids, Charsets.UTF_8).lines().mapNotNull { it.trim().toLongOrNull() }
+        for (id in wanted) {
+            val image = contentResolver.query(
+                ContactsContract.Data.CONTENT_URI,
+                arrayOf(Photo.PHOTO),
+                "${ContactsContract.Data._ID} = ?",
+                arrayOf(id.toString()),
+                null,
+            )?.use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
+            runCatching { connection.send(Message.Photo(id, image ?: ByteArray(0))) }.onFailure { return }
+        }
     }
 
     // MARK: notifications

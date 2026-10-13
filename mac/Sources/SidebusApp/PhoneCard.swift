@@ -41,6 +41,7 @@ private struct CallChoice: Equatable {
     let detail: String
     let number: String
     let name: String?
+    var photoID: String?
 }
 
 private struct SearchView: View {
@@ -59,7 +60,7 @@ private struct SearchView: View {
         guard phone.callsAvailable else { return [] }
         var list = typedNumber.map { [CallChoice(title: "Call \(entry.text)", detail: "", number: $0, name: nil)] } ?? []
         list += ContactBook.search(entry.text, in: phone.contacts, limit: 6)
-            .map { CallChoice(title: $0.name, detail: $0.number, number: $0.number, name: $0.name) }
+            .map { CallChoice(title: $0.name, detail: $0.number, number: $0.number, name: $0.name, photoID: $0.photoID) }
         return list
     }
 
@@ -104,7 +105,7 @@ private struct SearchView: View {
             if !choices.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
-                        SuggestionRow(choice: choice, selected: index == selection) {
+                        SuggestionRow(choice: choice, photosVersion: phone.photosVersion, selected: index == selection) {
                             call(choices, index)
                         }
                     }
@@ -156,13 +157,15 @@ private struct SearchView: View {
 
 private struct SuggestionRow: View {
     let choice: CallChoice
+    let photosVersion: Int
     let selected: Bool
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 8) {
+                ContactAvatar(name: choice.name, photoID: choice.photoID, size: 22, photosVersion: photosVersion)
                 Text(choice.title).lineLimit(1)
                 Spacer(minLength: 8)
                 Text(choice.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -189,6 +192,8 @@ private struct CallView: View {
     var body: some View {
         VStack(spacing: 12) {
             VStack(spacing: 2) {
+                ContactAvatar(name: phone.peer, photoID: phone.peerPhotoID, size: 56, photosVersion: phone.photosVersion)
+                    .padding(.bottom, 6)
                 Text(phone.peer ?? "").font(.title2).lineLimit(1)
                 // Held from the start, empty until the number is known.
                 Text(phone.peerCountry ?? " ").font(.subheadline).foregroundStyle(.secondary)
@@ -196,6 +201,7 @@ private struct CallView: View {
             // Text that changes swaps in place; moves still follow the card's animation.
             .animation(nil, value: phone.peer)
             .animation(nil, value: phone.peerCountry)
+            .animation(nil, value: phone.peerPhotoID)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(state(at: context.date)).foregroundStyle(.secondary).monospacedDigit()
                     .animation(nil, value: context.date)

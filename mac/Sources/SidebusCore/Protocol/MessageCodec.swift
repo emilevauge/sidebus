@@ -110,8 +110,12 @@ public enum MessageCodec {
         case .callStart, .callStop, .contactsRequest:
             break
 
-        case let .callAudio(data), let .contacts(data), let .callerID(data):
+        case let .callAudio(data), let .contacts(data), let .callerID(data), let .photosRequest(data):
             payload.bytes(data)
+
+        case let .photo(id, image):
+            payload.u64(id)
+            payload.bytes(image)
 
         case let .unknown(_, unknownFlags, data):
             flags = unknownFlags
@@ -267,6 +271,12 @@ public enum MessageCodec {
 
             case .callerID:
                 return .callerID(reader.rest())
+
+            case .photosRequest:
+                return .photosRequest(reader.rest())
+
+            case .photo:
+                return .photo(id: try reader.u64(), image: reader.rest())
             }
         } catch is ByteReader.OutOfBounds {
             throw ProtocolError.truncatedPayload(type)

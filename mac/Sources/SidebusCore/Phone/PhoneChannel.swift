@@ -40,6 +40,8 @@ public actor PhoneChannel {
         case caller(title: String, text: String)
         /// Whether the phone may read its dialer's notification, for the caller names.
         case callerNamesReadable(Bool)
+        /// New contact photos are in [ContactPhotos].
+        case photosChanged
     }
 
     private let macName: String
@@ -176,11 +178,14 @@ public actor PhoneChannel {
             return false
         }
 
-        // Lets the check end once its answers are in, the call aside.
+        // Lets the check end once its answers are in, the call aside. A phone that never
+        // sends all of them does not hold the link open: the next check asks again.
+        let opened = ContinuousClock.now
         let closer = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                if self.checkComplete && !self.inCall {
+                let overdue = ContinuousClock.now - opened > .seconds(60)
+                if (self.checkComplete || overdue) && !self.inCall {
                     await session.stop(reason: "check done")
                     return
                 }
@@ -191,6 +196,7 @@ public actor PhoneChannel {
         checkComplete = false
         var gotStatus = false
         var gotContacts = false
+        var pendingPhotos = Set<String>()
         var phone = "the phone"
         var deviceID: String?
         for await event in events {
@@ -222,7 +228,7 @@ public actor PhoneChannel {
                 case let .callStatus(flags):
                     lastStatus = (phone, flags)
                     gotStatus = true
-                    checkComplete = gotContacts || flags & 0x02 == 0
+                    checkComplete = (gotContacts && pendingPhotos.isEmpty) || flags & 0x02 == 0
                     emit(.state(.ready(
                         phone: phone,
                         over: peer.kind,
@@ -233,9 +239,27 @@ public actor PhoneChannel {
 
                 case let .contacts(data):
                     let text = String(decoding: data, as: UTF8.self)
-                    emit(.contacts(ContactBook.parse(lines: text)))
+                    let contacts = ContactBook.parse(lines: text)
+                    emit(.contacts(contacts))
                     gotContacts = true
-                    checkComplete = gotStatus
+                    let missing = await Task.detached {
+                        ContactPhotos.prune(keeping: contacts)
+                        return ContactPhotos.missing(in: contacts)
+                    }.value
+                    pendingPhotos = Set(missing)
+                    if !missing.isEmpty {
+                        log.info("asking the phone for \(missing.count) contact photos")
+                        try? await session.send(.photosRequest(Data(missing.joined(separator: "\n").utf8)))
+                    }
+                    checkComplete = gotStatus && pendingPhotos.isEmpty
+
+                case let .photo(id, image):
+                    let key = String(id)
+                    await Task.detached { ContactPhotos.save(image, for: key) }.value
+                    pendingPhotos.remove(key)
+                    // Shown as they come, without redrawing the panel for each of hundreds.
+                    if pendingPhotos.isEmpty || pendingPhotos.count % 25 == 0 { emit(.photosChanged) }
+                    checkComplete = gotStatus && gotContacts && pendingPhotos.isEmpty
 
                 case let .callAudio(pcm):
                     emit(.audio(pcm))

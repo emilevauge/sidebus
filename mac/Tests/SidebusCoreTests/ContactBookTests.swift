@@ -12,6 +12,11 @@ final class ContactBookTests: XCTestCase {
         ])
     }
 
+    func testReadsThePhotoIDWhenThePhoneSendsOne() {
+        let text = "Ada\t0600000001\t0\t812\nBob\t0600000002\t0\t\nEve\t0600000003\t0\tx\n"
+        XCTAssertEqual(ContactBook.parse(lines: text).map(\.photoID), ["812", nil, nil])
+    }
+
     func testDialableKeepsOnlyWhatThePhoneDials() {
         XCTAssertEqual(ContactBook.dialable("(0033) 6.64-21 79 60"), "0033664217960")
         XCTAssertEqual(ContactBook.dialable("+33 6 12"), "+33612")
@@ -54,6 +59,8 @@ final class CallMessageTests: XCTestCase {
             .contactsRequest,
             .contacts(Data("Jérôme\t0612\t1\n".utf8)),
             .callerID(Data("Spam probable\nAppel entrant".utf8)),
+            .photosRequest(Data("12\n34".utf8)),
+            .photo(id: 4242, image: Data([0xFF, 0xD8, 0xFF, 0xD9])),
         ]
         var decoder = MessageDecoder()
         for message in messages { decoder.append(MessageCodec.encode(message)) }

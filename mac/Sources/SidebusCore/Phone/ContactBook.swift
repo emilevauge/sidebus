@@ -5,13 +5,16 @@ public struct PhoneContact: Sendable, Hashable, Identifiable {
     public let name: String
     public let number: String
     public let isStarred: Bool
+    /// Names the contact's photo on the phone, see [ContactPhotos]. Nil without one.
+    public let photoID: String?
 
     public var id: String { name + "\u{0}" + number }
 
-    public init(name: String, number: String, isStarred: Bool = false) {
+    public init(name: String, number: String, isStarred: Bool = false, photoID: String? = nil) {
         self.name = name
         self.number = number
         self.isStarred = isStarred
+        self.photoID = photoID
     }
 }
 
@@ -20,7 +23,7 @@ public struct PhoneContact: Sendable, Hashable, Identifiable {
 public enum ContactBook {
 
     /// Parses the CONTACTS message (`protocol/PROTOCOL.md` 10.5): one line per number,
-    /// name, tab, number, tab, starred as 0 or 1.
+    /// name, tab, number, tab, starred as 0 or 1, tab, photo id.
     public static func parse(lines text: String) -> [PhoneContact] {
         let contacts = text.split(separator: "\n").compactMap { line -> PhoneContact? in
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
@@ -28,7 +31,8 @@ public enum ContactBook {
             return PhoneContact(
                 name: fields[0].isEmpty ? String(fields[1]) : String(fields[0]),
                 number: String(fields[1]),
-                isStarred: fields.count > 2 && fields[2] == "1"
+                isStarred: fields.count > 2 && fields[2] == "1",
+                photoID: fields.count > 3 && UInt64(fields[3]) != nil ? String(fields[3]) : nil
             )
         }
         // The same number saved twice under one name shows once.

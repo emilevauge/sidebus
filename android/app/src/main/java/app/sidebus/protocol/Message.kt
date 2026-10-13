@@ -26,6 +26,8 @@ object MessageType {
     const val CONTACTS_REQ = 0x14
     const val CONTACTS = 0x15
     const val CALLER_ID = 0x16
+    const val PHOTOS_REQ = 0x17
+    const val PHOTO = 0x18
 }
 
 /** CALL_GRANT status, `protocol/PROTOCOL.md` 10.2. */
@@ -191,7 +193,7 @@ sealed class Message {
         override val type = MessageType.CONTACTS_REQ
     }
 
-    /** One line per number: name, tab, number, tab, starred as 0 or 1. */
+    /** One line per number: name, tab, number, tab, starred as 0 or 1, tab, photo id. */
     class Contacts(val entries: ByteArray) : Message() {
         override val type = MessageType.CONTACTS
     }
@@ -199,6 +201,16 @@ sealed class Message {
     /** The ringing call's caller as the phone's call screen shows it: title, newline, text. */
     class CallerId(val caller: ByteArray) : Message() {
         override val type = MessageType.CALLER_ID
+    }
+
+    /** Photo ids the Mac lacks, one per line. */
+    class PhotosRequest(val ids: ByteArray) : Message() {
+        override val type = MessageType.PHOTOS_REQ
+    }
+
+    /** A contact's thumbnail, JPEG, or empty when the photo is gone. */
+    class Photo(val id: Long, val image: ByteArray) : Message() {
+        override val type = MessageType.PHOTO
     }
 
     /**

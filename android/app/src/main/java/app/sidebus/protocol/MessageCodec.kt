@@ -84,6 +84,11 @@ object MessageCodec {
             is Message.CallAudio -> payload.write(message.pcm)
             is Message.Contacts -> payload.write(message.entries)
             is Message.CallerId -> payload.write(message.caller)
+            is Message.PhotosRequest -> payload.write(message.ids)
+            is Message.Photo -> {
+                payload.u64(message.id)
+                payload.write(message.image)
+            }
 
             is Message.Unknown -> {
                 flags = message.flags
@@ -167,6 +172,8 @@ object MessageCodec {
             MessageType.CONTACTS_REQ -> Message.ContactsRequest
             MessageType.CONTACTS -> Message.Contacts(reader.rest())
             MessageType.CALLER_ID -> Message.CallerId(reader.rest())
+            MessageType.PHOTOS_REQ -> Message.PhotosRequest(reader.rest())
+            MessageType.PHOTO -> Message.Photo(reader.u64(), reader.rest())
             else -> Message.Unknown(type, flags, source.copyOfRange(offset, offset + length))
         }
     }

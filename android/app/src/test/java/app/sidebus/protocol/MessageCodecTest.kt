@@ -271,4 +271,17 @@ class MessageCodecTest {
         assertTrue(decoded.name.toByteArray(Charsets.UTF_8).size <= MessageCodec.MAX_STRING_LENGTH)
         assertTrue(long.startsWith(decoded.name))
     }
+
+    @Test
+    fun photo() {
+        val image = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte())
+        val decoder = MessageDecoder()
+        decoder.append(MessageCodec.encode(Message.Photo(4242L, image)))
+        val decoded = decoder.next() as Message.Photo
+        assertEquals(4242L, decoded.id)
+        assertArrayEquals(image, decoded.image)
+
+        decoder.append(MessageCodec.encode(Message.PhotosRequest("12\n34".toByteArray())))
+        assertEquals("12\n34", String((decoder.next() as Message.PhotosRequest).ids))
+    }
 }

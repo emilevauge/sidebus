@@ -32,6 +32,13 @@ final class PhoneModel {
     /// The current call's number, when known, for its country.
     private(set) var peerNumber: String?
 
+    /// Bumped as contact photos come in, for the views showing them to redraw.
+    private(set) var photosVersion = 0
+    /// The photo of the contact the current call is with.
+    var peerPhotoID: String? {
+        peerNumber.flatMap { ContactBook.contact(for: $0, in: contacts)?.photoID }
+    }
+
     /// "🇺🇸 United States" for the current call's number.
     var peerCountry: String? { peerNumber.flatMap { CallingCode.label(of: $0) } }
     /// The phone's identifier among the paired devices, once its call channel told it.
@@ -265,7 +272,7 @@ final class PhoneModel {
         let detail = generic.contains(text.lowercased()) ? nil : text.isEmpty ? nil : text
         phoneCaller = detail.map { "\(title) · \($0)" } ?? title
         peer = phoneCaller
-        if callsAvailable { notifications.showIncoming(caller: incomingBody) }
+        if callsAvailable { notifications.showIncoming(caller: incomingBody, photo: peerPhotoID.flatMap(ContactPhotos.image)) }
     }
 
     /// The incoming call notification's text: who, then the number and its country.
@@ -328,7 +335,7 @@ final class PhoneModel {
             if let number { peerNumber = number }
             // Rings on the phone alone when its sound cannot come to the Mac.
             if previous != callState, callsAvailable {
-                notifications.showIncoming(caller: incomingBody)
+                notifications.showIncoming(caller: incomingBody, photo: peerPhotoID.flatMap(ContactPhotos.image))
                 AppDelegate.shared.showPanelForCall()
             }
         case .active:
@@ -378,6 +385,8 @@ final class PhoneModel {
         case let .device(uuid):
             phoneDeviceID = uuid.uuidString
             UserDefaults.standard.set(uuid.uuidString, forKey: "phoneDeviceID")
+        case .photosChanged:
+            photosVersion += 1
         case .audioStopped:
             // The phone ended the sound (the call, or the link, is over): CALL_START again
             // if the call goes on over a new link.
@@ -503,11 +512,19 @@ private final class IncomingCallNotifier: NSObject, UNUserNotificationCenterDele
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func showIncoming(caller: String) {
+    func showIncoming(caller: String, photo: Data?) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = "Incoming call"
         content.body = caller
+        // The system moves an attachment's file away: hand it a copy.
+        if let photo {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("caller-\(UUID().uuidString).jpg")
+            if (try? photo.write(to: file)) != nil,
+               let attachment = try? UNNotificationAttachment(identifier: "photo", url: file) {
+                content.attachments = [attachment]
+            }
+        }
         content.categoryIdentifier = Self.category
         content.sound = .default
         center.add(UNNotificationRequest(identifier: Self.identifier, content: content, trigger: nil))

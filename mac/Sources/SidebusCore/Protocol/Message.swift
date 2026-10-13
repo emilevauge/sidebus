@@ -24,6 +24,8 @@ public enum MessageType: UInt8, Sendable, CaseIterable {
     case contactsRequest = 0x14
     case contacts = 0x15
     case callerID = 0x16
+    case photosRequest = 0x17
+    case photo = 0x18
 }
 
 /// CALL_GRANT status, `protocol/PROTOCOL.md` 10.2.
@@ -100,10 +102,14 @@ public enum Message: Sendable, Equatable {
     /// 16 kHz mono 16 bit little endian PCM.
     case callAudio(Data)
     case contactsRequest
-    /// One line per number: name, tab, number, tab, starred as 0 or 1.
+    /// One line per number: name, tab, number, tab, starred as 0 or 1, tab, photo id.
     case contacts(Data)
     /// The ringing call's caller as the phone's call screen shows it: title, newline, text.
     case callerID(Data)
+    /// Photo ids the Mac lacks, one per line.
+    case photosRequest(Data)
+    /// A contact's thumbnail, JPEG, or empty when the photo is gone.
+    case photo(id: UInt64, image: Data)
 
     /// A message of a type this version does not know. Kept so that it can be skipped
     /// cleanly rather than closing the connection.
@@ -133,6 +139,8 @@ public enum Message: Sendable, Equatable {
         case .contactsRequest: return MessageType.contactsRequest.rawValue
         case .contacts: return MessageType.contacts.rawValue
         case .callerID: return MessageType.callerID.rawValue
+        case .photosRequest: return MessageType.photosRequest.rawValue
+        case .photo: return MessageType.photo.rawValue
         case let .unknown(type, _, _): return type
         }
     }
