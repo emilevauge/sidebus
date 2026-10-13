@@ -38,6 +38,8 @@ public final class CallAudioLink: @unchecked Sendable {
     private var muted = false
     private var recording: FileHandle?
     private var recordedBytes = 0
+    // The tap's buffers as they come, before conversion. Touched on the tap's thread.
+    private var rawRecording: AVAudioFile?
 
     /// `send` receives the microphone, in 20 ms or so pieces, on a background queue.
     public init(send: @escaping @Sendable (Data) -> Void) {
@@ -139,6 +141,12 @@ public final class CallAudioLink: @unchecked Sendable {
 
         let input = captureEngine.inputNode
         let micFormat = input.outputFormat(forBus: 0)
+        log.info("microphone format: \(micFormat.description, privacy: .public)")
+        if let url = recordingURL {
+            let raw = url.deletingPathExtension().appendingPathExtension("raw.wav")
+            rawRecording = try? AVAudioFile(forWriting: raw, settings: micFormat.settings,
+                                            commonFormat: micFormat.commonFormat, interleaved: micFormat.isInterleaved)
+        }
         let converter = AVAudioConverter(from: micFormat, to: wireFormat)
         // With voice processing on, channel 0 carries the processed voice; the other
         // channels are not meant to be mixed in.
@@ -166,6 +174,7 @@ public final class CallAudioLink: @unchecked Sendable {
         restart?.cancel()
         unwatchDefaultDevices()
         stopEngines()
+        rawRecording = nil
     }
 
     /// An engine stays on the devices it started with: when the user picks another
@@ -387,6 +396,7 @@ public final class CallAudioLink: @unchecked Sendable {
 
     // Called on the audio tap's thread.
     private func encode(_ buffer: AVAudioPCMBuffer) {
+        try? rawRecording?.write(from: buffer)
         guard let converter = queue.sync(execute: { self.converter }) else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * Self.sampleRate / buffer.format.sampleRate) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: wireFormat, frameCapacity: capacity) else { return }
