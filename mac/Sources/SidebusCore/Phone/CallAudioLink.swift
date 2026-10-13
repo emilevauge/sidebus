@@ -48,6 +48,11 @@ public final class CallAudioLink: @unchecked Sendable {
     /// sound apart from the call's. Set before `start()`.
     public var recordingURL: URL?
 
+    /// Off, the microphone goes out as is: no echo cancellation, for headphones. Set
+    /// before `start()`.
+    public var voiceProcessing = true
+    private struct VoiceProcessingOff: Error {}
+
     /// Called on the main queue when the call's sound moves to other devices.
     public var onRouteChange: ((Route) -> Void)?
 
@@ -79,6 +84,7 @@ public final class CallAudioLink: @unchecked Sendable {
             }
         }
         do {
+            guard voiceProcessing else { throw VoiceProcessingOff() }
             try startWithVoiceProcessing()
             // Voice processing takes the built-in microphone in place of any aggregate.
             let input = Self.defaultInput().flatMap { Self.transportType($0) == kAudioDeviceTransportTypeAggregate ? nil : $0 }
@@ -91,7 +97,9 @@ public final class CallAudioLink: @unchecked Sendable {
             // macOS sometimes refuses voice processing altogether (-10875), as when the
             // default input is an aggregate missing a member. A call with some echo beats
             // no call.
-            log.error("voice processing unavailable, going without: \(String(describing: error), privacy: .public)")
+            if voiceProcessing {
+                log.error("voice processing unavailable, going without: \(String(describing: error), privacy: .public)")
+            }
             stopEngines()
             captureEngine = AVAudioEngine()
             playbackEngine = AVAudioEngine()

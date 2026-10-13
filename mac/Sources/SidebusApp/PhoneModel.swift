@@ -454,6 +454,9 @@ final class PhoneModel {
             audio.recordingURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("sidebus-mic-\(stamp).wav")
         }
+        // Development aid: defaults write app.sidebus callVoiceProcessing -bool false, to
+        // hear the microphone without macOS's voice processing.
+        audio.voiceProcessing = UserDefaults.standard.object(forKey: "callVoiceProcessing") as? Bool ?? true
         self.audio = audio
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else {
