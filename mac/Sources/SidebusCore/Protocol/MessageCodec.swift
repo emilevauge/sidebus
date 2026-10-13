@@ -107,7 +107,10 @@ public enum MessageCodec {
         case let .callStatus(statusFlags):
             payload.u8(statusFlags)
 
-        case .callStart, .callStop, .contactsRequest:
+        case let .callStart(wideband):
+            if wideband { payload.u8(1) }
+
+        case .callStop, .contactsRequest:
             break
 
         case let .callAudio(data), let .contacts(data), let .callerID(data), let .photosRequest(data):
@@ -255,7 +258,7 @@ public enum MessageCodec {
                 return .callStatus(flags: try reader.u8())
 
             case .callStart:
-                return .callStart
+                return .callStart(wideband: reader.rest().first == 1)
 
             case .callStop:
                 return .callStop

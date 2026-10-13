@@ -18,10 +18,14 @@
 // HMAC is SHA-256. Then one command byte:
 //
 //   P   is the bridge running? It answers K and closes.
+//   V   which commands does it take? It answers 2 (C and W) and closes. A helper
+//       without W closes without a word.
 //   C   carry a call: once the call is up, the downlink (the other party) goes out on
 //       the socket, and what comes in (the Mac's microphone) goes into the uplink, both
 //       as 16 kHz mono 16 bit little endian PCM, until the call ends or the socket
 //       closes.
+//   W   the same in 48 kHz: what goes beyond 8 kHz, which 16 kHz cannot carry, reaches
+//       calls whose codec takes it (EVS on VoLTE).
 //
 // The app relays between this socket and the Mac, over Sidebus's call channel.
 //
@@ -54,12 +58,10 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class CallBridge {
-    private static final int RATE = 16000;
-    private static final int FRAME_BYTES = RATE / 50 * 2;
     // Audio from the Mac allowed to wait in the socket, 200 ms, and what is kept when it
     // goes beyond, 60 ms. The gap between the two keeps drops rare: each one clicks.
-    private static final int MAX_BACKLOG_BYTES = RATE / 5 * 2;
-    private static final int KEPT_BACKLOG_BYTES = RATE * 6 / 100 * 2;
+    private static int maxBacklogBytes(int rate) { return rate / 5 * 2; }
+    private static int keptBacklogBytes(int rate) { return rate * 6 / 100 * 2; }
     // How long a connection may wait for its call to come up.
     private static final long CALL_WAIT_MS = 15_000;
     private static final int PORT = 27186;
@@ -116,14 +118,19 @@ public final class CallBridge {
                 socket.getOutputStream().write('K');
                 return;
             }
-            if (command != 'C') return;
+            if (command == 'V') {
+                socket.getOutputStream().write('2');
+                return;
+            }
+            if (command != 'C' && command != 'W') return;
+            int rate = command == 'W' ? 48000 : 16000;
             synchronized (CallBridge.class) {
                 if (current != null) {
                     try { current.close(); } catch (IOException ignored) { }
                 }
                 current = socket;
             }
-            if (awaitCall(socket)) bridge(socket);
+            if (awaitCall(socket)) bridge(socket, rate);
         } catch (Exception e) {
             System.out.println("bridge: " + e);
         } finally {
@@ -181,11 +188,11 @@ public final class CallBridge {
         return true;
     }
 
-    private static void bridge(Socket client) throws Exception {
-        AudioFormat in = new AudioFormat.Builder().setSampleRate(RATE)
+    private static void bridge(Socket client, int rate) throws Exception {
+        AudioFormat in = new AudioFormat.Builder().setSampleRate(rate)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
-        AudioFormat out = new AudioFormat.Builder().setSampleRate(RATE)
+        AudioFormat out = new AudioFormat.Builder().setSampleRate(rate)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
         AudioRecord downlink = (AudioRecord) AudioManager.class
@@ -209,13 +216,13 @@ public final class CallBridge {
 
         downlink.startRecording();
         uplink.play();
-        System.out.println("bridging");
+        System.out.println("bridging at " + rate + " Hz");
 
         InputStream fromMac = client.getInputStream();
         OutputStream toMac = client.getOutputStream();
         Thread receiver = new Thread(() -> {
             try {
-                receive(fromMac, uplink);
+                receive(fromMac, uplink, rate);
             } catch (Exception e) {
                 // The connection is gone; the sending side notices on its own.
             }
@@ -223,7 +230,7 @@ public final class CallBridge {
         receiver.setDaemon(true);
         receiver.start();
 
-        byte[] buffer = new byte[FRAME_BYTES];
+        byte[] buffer = new byte[rate / 50 * 2];
         try {
             while (receiver.isAlive() && !client.isClosed()
                     && telephony.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
@@ -243,15 +250,15 @@ public final class CallBridge {
         }
     }
 
-    private static void receive(InputStream fromMac, AudioTrack uplink) throws IOException {
-        byte[] buffer = new byte[FRAME_BYTES];
+    private static void receive(InputStream fromMac, AudioTrack uplink, int rate) throws IOException {
+        byte[] buffer = new byte[rate / 50 * 2];
         // The Mac may have started sending before the call came up, and a blocked write
         // lets more pile up: play only the latest audio, or the other party hears it late.
         skipBacklog(fromMac, 0);
         int held = 0, read;
         while (true) {
-            if (held == 0 && fromMac.available() > MAX_BACKLOG_BYTES) {
-                skipBacklog(fromMac, KEPT_BACKLOG_BYTES);
+            if (held == 0 && fromMac.available() > maxBacklogBytes(rate)) {
+                skipBacklog(fromMac, keptBacklogBytes(rate));
             }
             if ((read = fromMac.read(buffer, held, buffer.length - held)) <= 0) return;
             // A read may end in the middle of a sample; AudioTrack refuses that write

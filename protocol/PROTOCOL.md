@@ -407,18 +407,21 @@ Until a CALL_GRANT with status 1, the phone ignores every message below.
 
 | Field | Type | Description                                                  |
 | ----- | ---- | ------------------------------------------------------------ |
-| flags | `u8` | bit 0: the audio helper runs, bit 1: contacts are readable, bit 2: caller names are readable |
+| flags | `u8` | bit 0: the audio helper runs, bit 1: contacts are readable, bit 2: caller names are readable, bit 3: call audio can go in 48 kHz |
 
 Sent after CALL_GRANT, then on every change.
 
 ### 10.4 CALL_START (`0x11`), CALL_STOP (`0x12`) and CALL_AUDIO (`0x13`)
 
-The Mac sends CALL_START once a call is placed or answered. The phone then sends the other
+The Mac sends CALL_START once a call is placed or answered. Its payload is empty, or one
+`u8`: 1 when the Mac wants the audio in 48 kHz, which it may ask only when bit 3 of
+CALL_STATUS is set. 16 kHz cannot carry what lies above 8 kHz, which calls coded in EVS
+(VoLTE, VoWiFi) do carry. The phone then sends the other
 party's voice as CALL_AUDIO, and plays the CALL_AUDIO it receives into the call, until the
 call ends or either side sends CALL_STOP.
 
-CALL_AUDIO's payload is 16 kHz mono 16 bit little endian PCM, to the end of the message,
-usually 20 ms (640 bytes) per message.
+CALL_AUDIO's payload is mono 16 bit little endian PCM, at the rate CALL_START chose (16 kHz
+by default), to the end of the message, usually 20 ms (640 bytes at 16 kHz) per message.
 
 ### 10.5 CONTACTS_REQ (`0x14`) and CONTACTS (`0x15`)
 
