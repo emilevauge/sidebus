@@ -46,6 +46,7 @@ public final class HandsFreeLink: NSObject {
         guard handsFree == nil else { return }
         let paired = (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice]) ?? []
         guard let phone = paired.first(where: \.isHandsFreeAudioGateway) else {
+            log.info("no paired phone offers hands-free")
             phoneName = nil
             onChange?()
             scheduleReconnect()
@@ -56,7 +57,12 @@ public final class HandsFreeLink: NSObject {
         // A fresh SDP query first: the record macOS cached at pairing time can name a
         // stale RFCOMM channel, as a Xiaomi 15 did (1 instead of 8), and the hands-free
         // connection then fails without a word.
-        phone.performSDPQuery(self)
+        log.info("asking \(phone.nameOrAddress ?? "?", privacy: .public) for its hands-free service")
+        let status = phone.performSDPQuery(self)
+        if status != kIOReturnSuccess { log.error("SDP query refused: \(status)") }
+        // Neither the query nor the connection always answers, out of range or as the Mac
+        // wakes: start over when nothing has come back.
+        scheduleReconnect(after: 20)
     }
 
     public func stop() {
@@ -86,15 +92,16 @@ public final class HandsFreeLink: NSObject {
     }
 
     @objc func sdpQueryComplete(_ device: IOBluetoothDevice, status: IOReturn) {
+        log.info("SDP query done: \(status), connecting")
         let handsFree = IOBluetoothHandsFreeDevice(device: device, delegate: self)
         self.handsFree = handsFree
         handsFree?.connect()
     }
 
-    private func scheduleReconnect() {
+    private func scheduleReconnect(after seconds: Int = 15) {
         reconnect?.cancel()
         reconnect = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(15))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self else { return }
             self.handsFree = nil
             self.start()
@@ -127,6 +134,8 @@ extension HandsFreeLink: @preconcurrency IOBluetoothHandsFreeDeviceDelegate {
             return
         }
         log.info("hands-free connected to \(self.phoneName ?? "?", privacy: .public)")
+        reconnect?.cancel()
+        reconnect = nil
         isConnected = true
         update()
     }
