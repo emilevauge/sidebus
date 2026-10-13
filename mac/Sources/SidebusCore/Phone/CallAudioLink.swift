@@ -42,9 +42,30 @@ public final class CallAudioLink: @unchecked Sendable {
         self.send = send
     }
 
-    /// Starts the audio engine. Needs the microphone permission; throws when the engine
-    /// cannot start.
+    /// Called on the main queue when the call's sound moves to other devices.
+    public var onRouteChange: ((Route) -> Void)?
+
+    private var deviceListener: AudioObjectPropertyListenerBlock?
+    private var restart: DispatchWorkItem?
+
+    /// Starts the audio engine, and follows the system's default input and output from
+    /// then on. Needs the microphone permission; throws when the engine cannot start.
+    /// Call on the main queue.
     public func start() throws {
+        try startEngines(fresh: false)
+        watchDefaultDevices()
+    }
+
+    private func startEngines(fresh: Bool) throws {
+        if fresh {
+            stopEngines()
+            captureEngine = AVAudioEngine()
+            playbackEngine = AVAudioEngine()
+            queue.sync {
+                pending.removeAll()
+                buffering = true
+            }
+        }
         do {
             try startWithVoiceProcessing()
             // Voice processing takes the built-in microphone in place of any aggregate.
@@ -114,7 +135,54 @@ public final class CallAudioLink: @unchecked Sendable {
 
     public func stop() {
         queue.sync { stopped = true }
+        restart?.cancel()
+        unwatchDefaultDevices()
         stopEngines()
+    }
+
+    /// An engine stays on the devices it started with: when the user picks another
+    /// speaker or microphone mid call, start over on the new ones.
+    private func watchDefaultDevices() {
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self else { return }
+            // Switching devices fires several changes in a row: act on the last one.
+            self.restart?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.followDefaultDevices() }
+            self.restart = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
+        deviceListener = listener
+        for selector in [kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDefaultInputDevice] {
+            var address = Self.systemAddress(selector)
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
+        }
+    }
+
+    private func unwatchDefaultDevices() {
+        guard let listener = deviceListener else { return }
+        deviceListener = nil
+        for selector in [kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDefaultInputDevice] {
+            var address = Self.systemAddress(selector)
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
+        }
+    }
+
+    private func followDefaultDevices() {
+        guard !queue.sync(execute: { stopped }) else { return }
+        log.info("default audio devices changed, restarting the call's sound")
+        do {
+            try startEngines(fresh: true)
+            if let route { onRouteChange?(route) }
+        } catch {
+            log.error("call sound could not restart: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private static func systemAddress(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
     }
 
     private func stopEngines() {

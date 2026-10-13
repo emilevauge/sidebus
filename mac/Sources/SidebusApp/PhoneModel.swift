@@ -446,6 +446,10 @@ final class PhoneModel {
             }
             guard self.audio === audio else { return }
             do {
+                audio.onRouteChange = { [weak self, weak audio] route in
+                    guard let self, self.audio === audio else { return }
+                    self.audioRoute = route
+                }
                 try audio.start()
                 audioRoute = audio.route
                 audio.setMuted(isMuted)
