@@ -447,6 +447,13 @@ final class PhoneModel {
             for await pcm in stream { await channel.send(.callAudio(pcm)) }
         }
         let audio = CallAudioLink { pcm in continuation.yield(pcm) }
+        // Development aid: defaults write app.sidebus recordCallAudio -bool true keeps what
+        // the microphone sends to the phone on the Desktop, one WAV per call.
+        if UserDefaults.standard.bool(forKey: "recordCallAudio") {
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            audio.recordingURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("sidebus-mic-\(stamp).wav")
+        }
         self.audio = audio
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else {

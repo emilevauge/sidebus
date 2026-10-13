@@ -36,11 +36,17 @@ public final class CallAudioLink: @unchecked Sendable {
     private var buffering = true
     private var stopped = false
     private var muted = false
+    private var recording: FileHandle?
+    private var recordedBytes = 0
 
     /// `send` receives the microphone, in 20 ms or so pieces, on a background queue.
     public init(send: @escaping @Sendable (Data) -> Void) {
         self.send = send
     }
+
+    /// Keeps a copy of what goes to the phone in a WAV file, to judge the microphone's
+    /// sound apart from the call's. Set before `start()`.
+    public var recordingURL: URL?
 
     /// Called on the main queue when the call's sound moves to other devices.
     public var onRouteChange: ((Route) -> Void)?
@@ -52,6 +58,12 @@ public final class CallAudioLink: @unchecked Sendable {
     /// then on. Needs the microphone permission; throws when the engine cannot start.
     /// Call on the main queue.
     public func start() throws {
+        if let url = recordingURL {
+            FileManager.default.createFile(atPath: url.path, contents: Self.wavHeader(dataBytes: 0))
+            let handle = try? FileHandle(forWritingTo: url)
+            _ = try? handle?.seekToEnd()
+            queue.sync { recording = handle }
+        }
         try startEngines(fresh: false)
         watchDefaultDevices()
     }
@@ -134,7 +146,15 @@ public final class CallAudioLink: @unchecked Sendable {
     }
 
     public func stop() {
-        queue.sync { stopped = true }
+        queue.sync {
+            stopped = true
+            if let recording {
+                try? recording.seek(toOffset: 0)
+                try? recording.write(contentsOf: Self.wavHeader(dataBytes: recordedBytes))
+                try? recording.close()
+                self.recording = nil
+            }
+        }
         restart?.cancel()
         unwatchDefaultDevices()
         stopEngines()
@@ -176,6 +196,17 @@ public final class CallAudioLink: @unchecked Sendable {
         } catch {
             log.error("call sound could not restart: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    /// 16 kHz mono 16 bit PCM.
+    private static func wavHeader(dataBytes: Int) -> Data {
+        var header = Data()
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { header.append(contentsOf: $0) } }
+        header.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + dataBytes))
+        header.append(contentsOf: Array("WAVEfmt ".utf8)); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(sampleRate)); append(UInt32(sampleRate * 2)); append(UInt16(2)); append(UInt16(16))
+        header.append(contentsOf: Array("data".utf8)); append(UInt32(dataBytes))
+        return header
     }
 
     private static func systemAddress(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
@@ -367,6 +398,10 @@ public final class CallAudioLink: @unchecked Sendable {
         queue.async { [self] in
             guard !stopped else { return }
             if muted { data.resetBytes(in: 0..<data.count) }
+            if let recording {
+                try? recording.write(contentsOf: data)
+                recordedBytes += data.count
+            }
             send(data)
         }
     }
