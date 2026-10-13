@@ -52,8 +52,10 @@ final class PhoneModel {
     /// A call is under way, or being placed: the link to the phone is coming up first.
     var isInCall: Bool { callState != .idle || dialing }
 
-    /// True when the last word from the phone is that calls can reach the Mac.
+    /// True when the phone is connected over Bluetooth and its last word is that calls can
+    /// reach the Mac.
     var callsAvailable: Bool {
+        guard isBluetoothConnected else { return false }
         switch channelState {
         case .ready(_, _, true, _), .resting(_, _, true, _): return true
         default: return false
@@ -70,6 +72,7 @@ final class PhoneModel {
 
     /// True when calls can carry their sound to the Mac right now.
     var audioReady: Bool {
+        guard isBluetoothConnected else { return false }
         if case .ready(_, _, true, _) = channelState { return true }
         return false
     }

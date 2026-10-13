@@ -50,7 +50,7 @@ struct SettingsView: View {
                 )
             }
             LabeledContent("Sound on the Mac") {
-                StatusText(phone.callsAvailable ? "Ready" : "Plug the phone in once", ok: phone.callsAvailable)
+                StatusText(phone.callsAvailable ? "Ready" : phone.summary, ok: phone.callsAvailable)
             }
             LabeledContent("Contacts") {
                 HStack(spacing: 8) {
