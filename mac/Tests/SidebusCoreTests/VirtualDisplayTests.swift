@@ -26,6 +26,15 @@ final class CGVirtualDisplayProviderTests: XCTestCase {
         XCTAssertEqual(coarse.pointSize.width, 1920)
     }
 
+    func testATabletKeepsItsSerialNumber() {
+        let tablet = UUID(uuidString: "6F1C2A4E-8B1D-4C55-9E2A-3D7B0F9A1C42")!
+        let other = UUID(uuidString: "0A9B8C7D-6E5F-4A3B-2C1D-0E9F8A7B6C5D")!
+        let serial = CGVirtualDisplayProvider.Configuration.serialNumber(for: tablet)
+        XCTAssertEqual(serial, CGVirtualDisplayProvider.Configuration.serialNumber(for: tablet))
+        XCTAssertNotEqual(serial, CGVirtualDisplayProvider.Configuration.serialNumber(for: other))
+        XCTAssertNotEqual(serial, 0)
+    }
+
     func testPrivateApiIsPresent() {
         // If this test fails on a future macOS release, that is the signal the
         // bascule sur ExistingDisplayProvider devient le chemin normal.

@@ -25,19 +25,36 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         public var density: Int
         public var refreshRate: Double
         public var name: String
+        /// Serial number the display shows macOS. The same one on every connection of a
+        /// tablet lets macOS recognize the display: it puts it back where the user arranged
+        /// it, and its windows with it. `nil` draws a new one.
+        public var serialNumber: UInt32?
 
         public init(
             width: Int,
             height: Int,
             density: Int,
             refreshRate: Double = 60,
-            name: String = "Sidebus"
+            name: String = "Sidebus",
+            serialNumber: UInt32? = nil
         ) {
             self.width = width
             self.height = height
             self.density = density
             self.refreshRate = refreshRate
             self.name = name
+            self.serialNumber = serialNumber
+        }
+
+        /// A tablet's serial number, drawn from its persistent identifier. Never 0, which
+        /// macOS reads as no serial at all.
+        public static func serialNumber(for device: UUID) -> UInt32 {
+            let bytes = withUnsafeBytes(of: device.uuid) { Array($0) }
+            var hash: UInt32 = 2_166_136_261
+            for byte in bytes {
+                hash = (hash ^ UInt32(byte)) &* 16_777_619
+            }
+            return hash == 0 ? 1 : hash
         }
 
         /// Physical size to declare in order to land on the wanted density.
@@ -103,12 +120,9 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         descriptor.maxPixelsWide = UInt32(configuration.width)
         descriptor.maxPixelsHigh = UInt32(configuration.height)
         descriptor.sizeInMillimeters = configuration.sizeInMillimeters
-        descriptor.productID = 0x1234
-        descriptor.vendorID = 0x5342  // "SB"
-        // Serial number drawn at random on every creation. Reusing the same vendor, product,
-        // serial triple eventually collides with the records the system keeps of earlier
-        // displays.
-        descriptor.serialNum = UInt32.random(in: 1...UInt32.max)
+        descriptor.productID = Self.productID
+        descriptor.vendorID = Self.vendorID
+        descriptor.serialNum = await serialNumber()
         descriptor.terminationHandler = { _, _ in }
 
         let display = CGVirtualDisplay(descriptor: descriptor)
@@ -138,13 +152,40 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
         selectHiDPIMode(for: display.displayID)
 
         self.display = display
-        log.info(
+        log.notice(
             """
             virtual display \(display.displayID) created at \(pointWidth)×\(pointHeight) points, \
-            \(self.configuration.width)×\(self.configuration.height) pixels
+            \(self.configuration.width)×\(self.configuration.height) pixels, serial \
+            \(descriptor.serialNum), Sidebus displays online: \(Self.onlineDisplays().count)
             """
         )
         return display.displayID
+    }
+
+    private static let vendorID: UInt32 = 0x5342  // "SB"
+    private static let productID: UInt32 = 0x1234
+
+    /// Every Sidebus display macOS lists right now, this process's or not.
+    static func onlineDisplays() -> [(id: CGDirectDisplayID, serial: UInt32)] {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 32)
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(32, &ids, &count) == .success else { return [] }
+        return ids.prefix(Int(count))
+            .filter { CGDisplayVendorNumber($0) == vendorID && CGDisplayModelNumber($0) == productID }
+            .map { ($0, CGDisplaySerialNumber($0)) }
+    }
+
+    /// The tablet's own serial, once the display that last carried it is gone. The removal
+    /// of a released display takes macOS a moment, and two displays with one serial get
+    /// mixed up: after two seconds, a fresh serial instead, the arrangement lost for once.
+    private func serialNumber() async -> UInt32 {
+        guard let wanted = configuration.serialNumber else { return UInt32.random(in: 1...UInt32.max) }
+        for _ in 0..<20 {
+            guard Self.onlineDisplays().contains(where: { $0.serial == wanted }) else { return wanted }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        log.error("a display still holds serial \(wanted), drawing a fresh one")
+        return UInt32.random(in: 1...UInt32.max)
     }
 
     /// Switches the display to its 2x mode, when it offers one at the right definition.
@@ -175,7 +216,7 @@ public actor CGVirtualDisplayProvider: VirtualDisplayProvider {
 
     public func release() async {
         guard let display else { return }
-        log.info("virtual display \(display.displayID) removed")
+        log.notice("virtual display \(display.displayID) removed")
         // Releasing the object removes the display, and macOS then restores the user's window
         // layout.
         self.display = nil

@@ -243,7 +243,7 @@ final class DeviceSession {
     private func runOnce(peer: Peer) async -> Bool {
         var sawDeviceInfo = false
         phase = .connecting
-        log.info("connecting to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
+        log.notice("connecting to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
 
         do {
             if peer.kind == .usb {
@@ -324,7 +324,7 @@ final class DeviceSession {
                     await handle(message, session: session, peer: peer)
 
                 case let .closed(reason):
-                    log.info("session closed: \(reason, privacy: .public)")
+                    log.notice("session closed: \(reason, privacy: .public)")
                     await stopStreaming()
                     roundTripMilliseconds = nil
                     if case .failed = phase {} else { phase = .stopped(reason) }
@@ -489,7 +489,8 @@ final class DeviceSession {
                         width: Int(device.width),
                         height: Int(device.height),
                         density: Int(device.density),
-                        name: "Sidebus \(device.name)"
+                        name: "Sidebus \(device.name)",
+                        serialNumber: CGVirtualDisplayProvider.Configuration.serialNumber(for: device.uuid)
                     )
                 )
                 displayID = try await virtual.acquire()

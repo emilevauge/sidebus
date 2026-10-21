@@ -361,7 +361,7 @@ final class DeviceManager {
             refreshEntries()
             return
         }
-        log.info("sharing stopped for \(key, privacy: .public)")
+        log.notice("sharing stopped for \(key, privacy: .public)")
         refreshEntries()
         Task {
             await session.stop(bye: .normal, status: "sharing stopped")
@@ -403,7 +403,7 @@ final class DeviceManager {
             guard let peer = visible[key]?.first else { continue }
 
             guard let session = sessions[key] else {
-                log.info("sharing to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
+                log.notice("sharing to \(peer.name, privacy: .public) over \(peer.kind.rawValue, privacy: .public)")
                 let session = makeSession(key: key, mode: .sharing, peer: peer)
                 sessions[key] = session
                 session.start()
@@ -414,7 +414,7 @@ final class DeviceManager {
             // reconnect. No live socket migration, the gain is not worth the complexity,
             // and a 200 ms cut when the cable goes in passes unnoticed.
             if session.mode == .sharing, session.peer.kind == .wifi, peer.kind == .usb {
-                log.info("switching Wi-Fi to USB for \(peer.name, privacy: .public)")
+                log.notice("switching Wi-Fi to USB for \(peer.name, privacy: .public)")
                 sessions.removeValue(forKey: key)
                 Task {
                     await session.stop(bye: .transportSwitch, status: "transport switch")
@@ -444,7 +444,7 @@ final class DeviceManager {
         )
         session.systemStoppedCapture = { [weak self] stopped in
             guard let self else { return }
-            log.info("capture cut by macOS, sharing dropped for \(stopped.key, privacy: .public)")
+            log.notice("capture cut by macOS, sharing dropped for \(stopped.key, privacy: .public)")
             self.stopSharing(stopped.key)
         }
         return session
