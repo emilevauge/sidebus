@@ -16,7 +16,8 @@
 #
 # The disk image is signed with the local identity, not with a Developer ID. Gatekeeper
 # would refuse it on another Mac, but the self updater strips the quarantine flag, so the
-# in app path works. A download by hand on a third party Mac needs `xattr -dr
+# in app path works. It first checks that the new bundle satisfies the installed one's
+# designated requirement, so the release must be signed with the same identity. A download by hand on a third party Mac needs `xattr -dr
 # com.apple.quarantine` or a proper notarized build through `mac/Scripts/release.sh`.
 
 set -euo pipefail
